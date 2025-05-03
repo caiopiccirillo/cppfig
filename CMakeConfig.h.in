@@ -1,0 +1,7 @@
+#pragma once
+
+/* Name of project */
+#cmakedefine PROJECT_NAME "@PROJECT_NAME@"
+
+/* Version number of project */
+#cmakedefine PROJECT_VERSION "@PROJECT_VERSION@"
