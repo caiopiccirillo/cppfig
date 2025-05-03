@@ -1,0 +1,3 @@
+[submodule "third/vcpkg"]
+	path = third/vcpkg
+	url = https://github.com/Microsoft/vcpkg.git

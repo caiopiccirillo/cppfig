@@ -24,18 +24,16 @@
 				"C_Cpp.intelliSenseEngine": "disabled",
 				"terminal.integrated.defaultProfile.linux": "zsh",
 				"cmake.copyCompileCommands": "${workspaceFolder}/compile_commands.json",
-				"cmake.configureOnOpen": true,
-				"cmake.generator": "Ninja",
-				"cmake.configureSettings": {
-					"CMAKE_TOOLCHAIN_FILE": "/usr/local/vcpkg/scripts/buildsystems/vcpkg.cmake"
-				}
+				"cmake.configureOnOpen": true
 			},
 			"extensions": [
 				"llvm-vs-code-extensions.vscode-clangd",
 				"ms-vscode.cmake-tools", // Reference: https://github.com/microsoft/vscode-cmake-tools/blob/main/docs/cmake-settings.md
 				"ms-vscode.cpptools",
 				"matepek.vscode-catch2-test-adapter",
-				"cschlosser.doxdocgen"
+				"cschlosser.doxdocgen",
+				"vadimcn.vscode-lldb",
+				"EditorConfig.EditorConfig"
 			]
 		}
 	}
