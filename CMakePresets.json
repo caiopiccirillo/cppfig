@@ -1,0 +1,171 @@
+{
+    "version": 10,
+    "configurePresets": [
+        {
+            "name": "config-debug-dev",
+            "displayName": "Debug Dev",
+            "description": "Configure debug build for development",
+            "binaryDir": "${sourceDir}/build/debug/dev",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_C_COMPILER": "/usr/local/bin/clang",
+                "CMAKE_CXX_COMPILER": "/usr/local/bin/clang++",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "STRICT_BUILD": "ON"
+            }
+        },
+        {
+            "name": "config-release-dev",
+            "displayName": "Release Dev",
+            "description": "Configure release build for development",
+            "binaryDir": "${sourceDir}/build/release/dev",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_C_COMPILER": "/usr/local/bin/clang",
+                "CMAKE_CXX_COMPILER": "/usr/local/bin/clang++",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "STRICT_BUILD": "ON"
+            }
+        },
+        {
+            "name": "config-debug-prod",
+            "displayName": "Debug Production",
+            "description": "Configure debug build for production",
+            "binaryDir": "${sourceDir}/build/debug/prod",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_C_COMPILER": "/usr/bin/gcc",
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "STRICT_BUILD": "ON"
+            }
+        },
+        {
+            "name": "config-release-prod",
+            "displayName": "Release Production",
+            "description": "Configure release build for production",
+            "binaryDir": "${sourceDir}/build/release/prod",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_C_COMPILER": "/usr/bin/gcc",
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "STRICT_BUILD": "ON"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "build-debug-dev",
+            "configurePreset": "config-debug-dev",
+            "displayName": "Debug Dev",
+            "description": "Build debug version for development"
+        },
+        {
+            "name": "build-release-dev",
+            "configurePreset": "config-release-dev",
+            "displayName": "Release Dev",
+            "description": "Build release version for development"
+        },
+        {
+            "name": "build-debug-prod",
+            "configurePreset": "config-debug-prod",
+            "displayName": "Debug Production",
+            "description": "Build debug version for production"
+        },
+        {
+            "name": "build-release-prod",
+            "configurePreset": "config-release-prod",
+            "displayName": "Release Production",
+            "description": "Build release version for production"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "test-debug-dev",
+            "configurePreset": "config-debug-dev",
+            "displayName": "Test Debug Dev",
+            "description": "Test debug version for development"
+        },
+        {
+            "name": "test-release-dev",
+            "configurePreset": "config-release-dev",
+            "displayName": "Test Release Dev",
+            "description": "Test release version for development"
+        },
+        {
+            "name": "test-debug-prod",
+            "configurePreset": "config-debug-prod",
+            "displayName": "Test Debug Production",
+            "description": "Test debug version for production"
+        },
+        {
+            "name": "test-release-prod",
+            "configurePreset": "config-release-prod",
+            "displayName": "Test Release Production",
+            "description": "Test release version for production"
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "debug-dev",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "config-debug-dev"
+                },
+                {
+                    "type": "build",
+                    "name": "build-debug-dev"
+                }
+            ]
+        },
+        {
+            "name": "release-dev",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "config-release-dev"
+                },
+                {
+                    "type": "build",
+                    "name": "build-release-dev"
+                }
+            ]
+        },
+        {
+            "name": "debug-prod",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "config-debug-prod"
+                },
+                {
+                    "type": "build",
+                    "name": "build-debug-prod"
+                }
+            ]
+        },
+        {
+            "name": "release-prod",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "config-release-prod"
+                },
+                {
+                    "type": "build",
+                    "name": "build-release-prod"
+                }
+            ]
+        }
+    ]
+}
