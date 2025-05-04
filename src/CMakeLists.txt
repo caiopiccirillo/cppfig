@@ -1,6 +1,6 @@
-add_library(CppfigLib)
+add_library(cppfig)
 
-target_sources(CppfigLib
+target_sources(cppfig
     PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/Configuration.cpp
     PUBLIC
@@ -8,21 +8,20 @@ target_sources(CppfigLib
     ${CMAKE_CURRENT_LIST_DIR}/IConfiguration.h
 )
 
-target_include_directories(CppfigLib
+target_include_directories(cppfig
     PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}
 )
 
-target_link_libraries(CppfigLib
+target_link_libraries(cppfig
     PUBLIC
-    # nlohmann_json::nlohmann_json
-    # spdlog::spdlog
+    nlohmann_json::nlohmann_json
 )
 
 if(STRICT_BUILD)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        target_compile_options(CppfigLib PRIVATE -Wall -Wextra -Wpedantic -Werror -Wdocumentation)
+        target_compile_options(cppfig PRIVATE -Wall -Wextra -Wpedantic -Werror -Wdocumentation)
     else()
-        target_compile_options(CppfigLib PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        target_compile_options(cppfig PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 endif(STRICT_BUILD)

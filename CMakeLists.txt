@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.22.0)
-project(cpp-template VERSION 0.1.0)
+project(cppfig VERSION 0.1.0)
 
 set(CMAKE_CXX_STANDARD 17)
 
-find_package(GTest REQUIRED)
+find_package(GTest CONFIG REQUIRED)
 
 option(STRICT_BUILD "Enable warnings as errors" ON)
 
