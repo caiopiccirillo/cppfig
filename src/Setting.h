@@ -2,90 +2,149 @@
 
 #include <optional>
 #include <string>
-#include <utility>
 #include <variant>
-
-#include "ConfigurationName.h"
 
 namespace config {
 
-// Variant types for the setting value
+// Legacy variant type for backward compatibility
 using SettingValueType = std::variant<int, float, double, std::string, bool>;
 
 /**
- * @brief Class representing the configuration data.
+ * @brief Generic Setting class that is strongly typed
+ *
+ * @tparam E Enum type that defines the configuration keys
+ * @tparam T Type of the setting value
  */
+template <typename E, typename T>
 class Setting {
 public:
-    /**
-     * @brief Setting data.
-     *
-     * @param name Configuration name
-     * @param value Setting value
-     * @param max_value Maximum value
-     * @param min_value Minimum value
-     * @param unit Unit of the value
-     * @param description Description of the setting
-     */
-    Setting(ConfigurationName name,
-            SettingValueType value,
-            std::optional<SettingValueType> max_value, // NOLINT(bugprone-easily-swappable-parameters)
-            std::optional<SettingValueType> min_value,
-            std::optional<std::string> unit,
-            std::optional<std::string> description)
+    Setting(E name,
+            T value,
+            std::optional<T> max_value = std::nullopt,
+            std::optional<T> min_value = std::nullopt,
+            std::optional<std::string> unit = std::nullopt,
+            std::optional<std::string> description = std::nullopt)
         : name_(name)
         , value_(std::move(value))
         , max_value_(std::move(max_value))
         , min_value_(std::move(min_value))
         , unit_(std::move(unit))
-        , description_(std::move(description)) { };
-
-    /**
-     * @brief Get the name of the configuration.
-     *
-     * @return ConfigurationName
-     */
-    [[nodiscard]] ConfigurationName Name() const { return this->name_; };
+        , description_(std::move(description))
+    {
+    }
 
     Setting() = default;
 
-    /**
-     * @brief Check if the variant holds a value of type T.
-     *
-     * @return The value of type T if it holds. If not, throw an exception
-     */
-    [[nodiscard]] SettingValueType Value() const { return this->value_; }
-    [[nodiscard]] std::optional<SettingValueType> MaxValue() const { return this->max_value_; };
-    [[nodiscard]] std::optional<SettingValueType> MinValue() const { return this->min_value_; };
-    [[nodiscard]] std::optional<std::string> Unit() const { return this->unit_; };
-    [[nodiscard]] std::optional<std::string> Description() const { return this->description_; };
+    [[nodiscard]] E Name() const { return name_; }
+    [[nodiscard]] const T& Value() const { return value_; }
+    [[nodiscard]] std::optional<T> MaxValue() const { return max_value_; }
+    [[nodiscard]] std::optional<T> MinValue() const { return min_value_; }
+    [[nodiscard]] std::optional<std::string> Unit() const { return unit_; }
+    [[nodiscard]] std::optional<std::string> Description() const { return description_; }
 
-    template <typename T>
-    [[nodiscard]] T ValueByType() const
+private:
+    E name_;
+    T value_;
+    std::optional<T> max_value_;
+    std::optional<T> min_value_;
+    std::optional<std::string> unit_;
+    std::optional<std::string> description_;
+};
+
+/**
+ * @brief A generic Setting wrapper that contains a variant of typed settings
+ * and provides a more natural Value<T>() access method
+ *
+ * @tparam E Enum type that defines the configuration keys
+ */
+template <typename E>
+class GenericSetting {
+public:
+    using SettingVariant = std::variant<
+        Setting<E, int>,
+        Setting<E, float>,
+        Setting<E, double>,
+        Setting<E, std::string>,
+        Setting<E, bool>>;
+
+    explicit GenericSetting(SettingVariant setting)
+        : setting_(std::move(setting))
     {
-        return std::visit([](auto&& arg) -> T {
-            using ArgType = std::decay_t<decltype(arg)>;
+    }
 
-            if constexpr (std::is_same_v<ArgType, T>) {
-                return arg;
-            }
-            else if constexpr (std::is_arithmetic_v<ArgType> && std::is_arithmetic_v<T>) {
-                return static_cast<T>(arg);
-            }
-            else {
-                throw std::bad_variant_access();
-            }
-        },
-                          this->value_);
+    /**
+     * @brief Get the value of the setting as the specified type
+     *
+     * @tparam T Type to retrieve the value as
+     * @return const T& The value
+     * @throws std::bad_variant_access if T doesn't match the stored type
+     */
+    template <typename T>
+    [[nodiscard]] const T& Value() const
+    {
+        return std::get<Setting<E, T>>(setting_).Value();
+    }
+
+    /**
+     * @brief Get the name of the setting
+     */
+    [[nodiscard]] E Name() const
+    {
+        return std::visit([](const auto& s) { return s.Name(); }, setting_);
+    }
+
+    /**
+     * @brief Get maximum value if defined
+     *
+     * @tparam T Type of the maximum value
+     * @return std::optional<T> The maximum value if defined
+     * @throws std::bad_variant_access if T doesn't match the stored type
+     */
+    template <typename T>
+    [[nodiscard]] std::optional<T> MaxValue() const
+    {
+        return std::get<Setting<E, T>>(setting_).MaxValue();
+    }
+
+    /**
+     * @brief Get minimum value if defined
+     *
+     * @tparam T Type of the minimum value
+     * @return std::optional<T> The minimum value if defined
+     * @throws std::bad_variant_access if T doesn't match the stored type
+     */
+    template <typename T>
+    [[nodiscard]] std::optional<T> MinValue() const
+    {
+        return std::get<Setting<E, T>>(setting_).MinValue();
+    }
+
+    /**
+     * @brief Get the unit of the setting
+     */
+    [[nodiscard]] std::optional<std::string> Unit() const
+    {
+        return std::visit([](const auto& s) { return s.Unit(); }, setting_);
+    }
+
+    /**
+     * @brief Get the description of the setting
+     */
+    [[nodiscard]] std::optional<std::string> Description() const
+    {
+        return std::visit([](const auto& s) { return s.Description(); }, setting_);
+    }
+
+    /**
+     * @brief Get the underlying setting variant
+     */
+     [[nodiscard]] const SettingVariant& GetVariant() const
+    {
+        return setting_;
     }
 
 private:
-    ConfigurationName name_;
-    SettingValueType value_;
-    std::optional<SettingValueType> max_value_;
-    std::optional<SettingValueType> min_value_;
-    std::optional<std::string> unit_;
-    std::optional<std::string> description_;
+    SettingVariant setting_;
 };
 
 } // namespace config

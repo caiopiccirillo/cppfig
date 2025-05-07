@@ -1,27 +1,20 @@
-add_library(cppfig)
+add_library(cppfig INTERFACE)
 
 target_sources(cppfig
-    PRIVATE
-    ${CMAKE_CURRENT_LIST_DIR}/Configuration.cpp
-    PUBLIC
-    ${CMAKE_CURRENT_LIST_DIR}/Configuration.h
+    INTERFACE
+    ${CMAKE_CURRENT_LIST_DIR}/GenericConfiguration.h
     ${CMAKE_CURRENT_LIST_DIR}/IConfiguration.h
+    ${CMAKE_CURRENT_LIST_DIR}/IConfigurationSerializer.h
+    ${CMAKE_CURRENT_LIST_DIR}/JsonSerializer.h
+    ${CMAKE_CURRENT_LIST_DIR}/Setting.h
 )
 
 target_include_directories(cppfig
-    PUBLIC
+    INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}
 )
 
 target_link_libraries(cppfig
-    PUBLIC
+    INTERFACE
     nlohmann_json::nlohmann_json
 )
-
-if(STRICT_BUILD)
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        target_compile_options(cppfig PRIVATE -Wall -Wextra -Wpedantic -Werror -Wdocumentation)
-    else()
-        target_compile_options(cppfig PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    endif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-endif(STRICT_BUILD)
