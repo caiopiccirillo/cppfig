@@ -17,19 +17,19 @@ int main()
         auto& config = app.GetConfig();
 
         // Type-safe value retrieval
-        std::string db_url = config.GetSetting(example::AppConfigName::DatabaseUrl).Value<std::string>();
+        auto db_url = config.GetSetting(example::AppConfigName::DatabaseUrl).Value<std::string>();
         std::cout << "Database URL: " << db_url << '\n';
 
-        int max_conn = config.GetSetting(example::AppConfigName::MaxConnections).Value<int>();
+        auto max_conn = config.GetSetting(example::AppConfigName::MaxConnections).Value<int>();
         std::cout << "Max Connections: " << max_conn << '\n';
 
-        bool logging_enabled = config.GetSetting(example::AppConfigName::EnableLogging).Value<bool>();
+        auto logging_enabled = config.GetSetting(example::AppConfigName::EnableLogging).Value<bool>();
         std::cout << "Logging Enabled: " << (logging_enabled ? "Yes" : "No") << '\n';
 
-        int retry_count = config.GetSetting(example::AppConfigName::RetryCount).Value<int>();
+        auto retry_count = config.GetSetting(example::AppConfigName::RetryCount).Value<int>();
         std::cout << "Retry Count: " << retry_count << '\n';
 
-        std::string log_level = config.GetSetting(example::AppConfigName::LogLevel).Value<std::string>();
+        auto log_level = config.GetSetting(example::AppConfigName::LogLevel).Value<std::string>();
         std::cout << "Log Level: " << log_level << '\n';
 
         // Update a setting

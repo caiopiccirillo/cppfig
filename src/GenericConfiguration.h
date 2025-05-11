@@ -19,7 +19,7 @@ namespace config {
  * @brief Type trait to check if a serializer derives from IConfigurationSerializer
  */
 template <typename E, typename Serializer>
-struct is_valid_serializer : std::is_base_of<IConfigurationSerializer<E>, Serializer> { };
+struct is_valid_serializer : std::is_base_of<IConfigurationSerializer<E>, Serializer> { }; // NOLINT(readability-identifier-naming)
 
 /**
  * @brief Generic configuration implementation

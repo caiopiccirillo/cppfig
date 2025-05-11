@@ -5,11 +5,12 @@
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <typeinfo>
+#include <utility>
 #include <variant>
 
 namespace config {
 
-// Legacy variant type for backward compatibility
 using SettingValueType = std::variant<int, float, double, std::string, bool>;
 
 // Forward declaration of Setting
@@ -37,7 +38,7 @@ using default_setting_type_t = typename default_setting_type<E, SettingVariant, 
  * @brief Compile-time check if a type is valid for an enum value based on defaults
  */
 template <typename E, typename SettingVariant, E EnumValue, typename T>
-inline constexpr bool is_valid_type_v = std::is_same_v<default_setting_type_t<E, SettingVariant, EnumValue>, T>;
+inline constexpr bool is_valid_type_v = std::is_same_v<default_setting_type_t<E, SettingVariant, EnumValue>, T>; // NOLINT(readability-identifier-naming)
 
 /**
  * @brief Type trait to associate enum values with their types at compile time
@@ -48,7 +49,7 @@ inline constexpr bool is_valid_type_v = std::is_same_v<default_setting_type_t<E,
  * @tparam Enable SFINAE enabler
  */
 template <typename E, E EnumValue, typename Enable = void>
-struct setting_type_trait {
+struct setting_type_trait { // NOLINT(readability-identifier-naming)
     // Default implementation provides a compile error
     static_assert(sizeof(E) == 0,
                   "You must specialize setting_type_trait for your enum values");
@@ -73,7 +74,7 @@ using setting_type = typename setting_type_trait<E, EnumValue>::type;
  * @tparam T The type to check against
  */
 template <typename E, E EnumValue, typename T>
-inline constexpr bool is_correct_type_v = std::is_same_v<setting_type<E, EnumValue>, T>;
+inline constexpr bool is_correct_type_v = std::is_same_v<setting_type<E, EnumValue>, T>; // NOLINT(readability-identifier-naming)
 
 /**
  * @brief Generic Setting class that is strongly typed

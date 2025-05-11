@@ -7,6 +7,7 @@
 #include <nlohmann/json_fwd.hpp>
 #include <optional>
 #include <ostream>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
