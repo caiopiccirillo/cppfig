@@ -1,13 +1,79 @@
 #pragma once
 
+#include <functional>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <variant>
 
 namespace config {
 
 // Legacy variant type for backward compatibility
 using SettingValueType = std::variant<int, float, double, std::string, bool>;
+
+// Forward declaration of Setting
+template <typename E, typename T>
+class Setting;
+
+/**
+ * @brief Utility to extract Setting type from variant
+ */
+template <typename E, typename SettingVariant, E EnumValue>
+struct default_setting_type;
+
+// Partial specialization for std::variant
+template <typename E, E EnumValue, typename... Ts>
+struct default_setting_type<E, std::variant<Ts...>, EnumValue> {
+    // Default type is void if not found (will cause a compile error)
+    using type = void;
+};
+
+// Helper type alias to extract the type
+template <typename E, typename SettingVariant, E EnumValue>
+using default_setting_type_t = typename default_setting_type<E, SettingVariant, EnumValue>::type;
+
+/**
+ * @brief Compile-time check if a type is valid for an enum value based on defaults
+ */
+template <typename E, typename SettingVariant, E EnumValue, typename T>
+inline constexpr bool is_valid_type_v = std::is_same_v<default_setting_type_t<E, SettingVariant, EnumValue>, T>;
+
+/**
+ * @brief Type trait to associate enum values with their types at compile time
+ * This must be specialized by users for their configuration enum types
+ *
+ * @tparam E Enum type that defines the configuration keys
+ * @tparam EnumValue The specific enum value
+ * @tparam Enable SFINAE enabler
+ */
+template <typename E, E EnumValue, typename Enable = void>
+struct setting_type_trait {
+    // Default implementation provides a compile error
+    static_assert(sizeof(E) == 0,
+                  "You must specialize setting_type_trait for your enum values");
+
+    using type = void; // This won't be used due to static_assert
+};
+
+/**
+ * @brief Helper type to extract the associated type for an enum value
+ *
+ * @tparam E Enum type that defines the configuration keys
+ * @tparam EnumValue The specific enum value
+ */
+template <typename E, E EnumValue>
+using setting_type = typename setting_type_trait<E, EnumValue>::type;
+
+/**
+ * @brief Compile-time check if a given type matches the expected type for an enum value
+ *
+ * @tparam E Enum type that defines the configuration keys
+ * @tparam EnumValue The specific enum value
+ * @tparam T The type to check against
+ */
+template <typename E, E EnumValue, typename T>
+inline constexpr bool is_correct_type_v = std::is_same_v<setting_type<E, EnumValue>, T>;
 
 /**
  * @brief Generic Setting class that is strongly typed
@@ -67,22 +133,66 @@ public:
         Setting<E, std::string>,
         Setting<E, bool>>;
 
-    explicit GenericSetting(SettingVariant setting)
+    explicit GenericSetting(SettingVariant setting, E name = E {}, std::function<std::string(E)> type_checker = nullptr)
         : setting_(std::move(setting))
+        , name_(name)
+        , type_checker_(type_checker)
     {
     }
 
     /**
-     * @brief Get the value of the setting as the specified type
+     * @brief Get the value of the setting as the specified type with type checking
      *
      * @tparam T Type to retrieve the value as
      * @return const T& The value
+     * @throws std::runtime_error if T doesn't match the expected type
      * @throws std::bad_variant_access if T doesn't match the stored type
      */
     template <typename T>
     [[nodiscard]] const T& Value() const
     {
+        if (type_checker_) {
+            std::string expected_type = type_checker_(name_);
+
+            std::string requested_type;
+            if constexpr (std::is_same_v<T, int>) {
+                requested_type = "int";
+            }
+            else if constexpr (std::is_same_v<T, float>) {
+                requested_type = "float";
+            }
+            else if constexpr (std::is_same_v<T, double>) {
+                requested_type = "double";
+            }
+            else if constexpr (std::is_same_v<T, std::string>) {
+                requested_type = "string";
+            }
+            else if constexpr (std::is_same_v<T, bool>) {
+                requested_type = "bool";
+            }
+            else {
+                requested_type = "unknown";
+            }
+
+            if (expected_type != requested_type) {
+                throw std::runtime_error("Type mismatch: Requested type '" + requested_type + "' doesn't match expected type '" + expected_type + "' for this setting");
+            }
+        }
+
         return std::get<Setting<E, T>>(setting_).Value();
+    }
+
+    /**
+     * @brief Get the actual type of this setting
+     *
+     * @return std::type_info The runtime type information
+     */
+    [[nodiscard]] const std::type_info& ValueType() const
+    {
+        return std::visit([](const auto& s) -> const std::type_info& {
+            return typeid(s.Value());
+        },
+                          setting_);
     }
 
     /**
@@ -138,13 +248,15 @@ public:
     /**
      * @brief Get the underlying setting variant
      */
-     [[nodiscard]] const SettingVariant& GetVariant() const
+    [[nodiscard]] const SettingVariant& GetVariant() const
     {
         return setting_;
     }
 
 private:
     SettingVariant setting_;
+    E name_;
+    std::function<std::string(E)> type_checker_;
 };
 
 } // namespace config

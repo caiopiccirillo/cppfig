@@ -22,6 +22,10 @@ enum class AppConfigName : uint8_t {
     LogLevel
 };
 
+} // namespace example
+
+namespace example {
+
 // Implement the toString and fromString functions for the enum
 // (These are required by JsonSerializer)
 inline std::string ToString(AppConfigName name)
@@ -62,7 +66,7 @@ inline AppConfigName FromString(const std::string& str)
     throw std::runtime_error("Invalid configuration name: " + str);
 }
 
-}  // namespace example
+} // namespace example
 
 // Provide template specializations for the JsonSerializer
 namespace config {
@@ -77,25 +81,24 @@ inline example::AppConfigName JsonSerializer<example::AppConfigName>::FromString
 {
     return example::FromString(str);
 }
-}  // namespace config
+} // namespace config
 
 namespace example {
 
 // Define the configuration type
-using AppConfig = config::GenericConfiguration<AppConfigName, config::JsonSerializer<AppConfigName>>;
-
+using AppConfig = ::config::GenericConfiguration<AppConfigName, ::config::JsonSerializer<AppConfigName>>;
 // Define the variant type for AppConfig settings
 using AppSettingVariant = std::variant<
-    config::Setting<AppConfigName, int>,
-    config::Setting<AppConfigName, float>,
-    config::Setting<AppConfigName, double>,
-    config::Setting<AppConfigName, std::string>,
-    config::Setting<AppConfigName, bool>>;
+    ::config::Setting<AppConfigName, int>,
+    ::config::Setting<AppConfigName, float>,
+    ::config::Setting<AppConfigName, double>,
+    ::config::Setting<AppConfigName, std::string>,
+    ::config::Setting<AppConfigName, bool>>;
 
 // Define default configuration values
 inline const AppConfig::DefaultConfigMap DefaultAppConfig = {
     { AppConfigName::DatabaseUrl,
-      config::Setting<AppConfigName, std::string>(
+      ::config::Setting<AppConfigName, std::string>(
           AppConfigName::DatabaseUrl,
           "mongodb://localhost:27017",
           std::nullopt,
@@ -103,7 +106,7 @@ inline const AppConfig::DefaultConfigMap DefaultAppConfig = {
           std::nullopt,
           "URL for database connection") },
     { AppConfigName::MaxConnections,
-      config::Setting<AppConfigName, int>(
+      ::config::Setting<AppConfigName, int>(
           AppConfigName::MaxConnections,
           100,
           1000,
@@ -111,7 +114,7 @@ inline const AppConfig::DefaultConfigMap DefaultAppConfig = {
           "connections",
           "Maximum number of database connections") },
     { AppConfigName::EnableLogging,
-      config::Setting<AppConfigName, bool>(
+      ::config::Setting<AppConfigName, bool>(
           AppConfigName::EnableLogging,
           true,
           std::nullopt,
@@ -119,7 +122,7 @@ inline const AppConfig::DefaultConfigMap DefaultAppConfig = {
           std::nullopt,
           "Enable application logging") },
     { AppConfigName::RetryCount,
-      config::Setting<AppConfigName, int>(
+      ::config::Setting<AppConfigName, int>(
           AppConfigName::RetryCount,
           3,
           10,
@@ -127,7 +130,7 @@ inline const AppConfig::DefaultConfigMap DefaultAppConfig = {
           "retries",
           "Number of retry attempts for operations") },
     { AppConfigName::LogLevel,
-      config::Setting<AppConfigName, std::string>(
+      ::config::Setting<AppConfigName, std::string>(
           AppConfigName::LogLevel,
           "info",
           std::nullopt,
@@ -142,13 +145,13 @@ public:
     explicit Application(const std::filesystem::path& config_path)
         : config_(config_path, DefaultAppConfig)
     {
-        // Access configuration values in a type-safe way with the new API
+        // Access configuration values in a type-safe way with natural syntax
         auto db_url = config_.GetSetting(AppConfigName::DatabaseUrl).Value<std::string>();
         auto max_conn = config_.GetSetting(AppConfigName::MaxConnections).Value<int>();
         auto logging_enabled = config_.GetSetting(AppConfigName::EnableLogging).Value<bool>();
 
-        // Example of updating a setting
-        config_.UpdateSetting(AppConfigName::RetryCount, 5);
+        // Example of updating a setting with type checking
+        config_.UpdateSettingValue<int>(AppConfigName::RetryCount, 5);
         config_.Save();
     }
 

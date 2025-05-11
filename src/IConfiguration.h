@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <type_traits>
 #include <variant>
 
@@ -36,13 +37,57 @@ public:
 
     /**
      * @brief Get the setting according to configuration name with improved access API
+     * This returns a GenericSetting that performs type checking when Value<T>() is called
      *
      * @param config_name Configuration name
-     * @return GenericSetting<E> A wrapper that provides natural Value<T>() access
+     * @return GenericSetting<E> A wrapper that provides natural Value<T>() access with type checking
      */
-    GenericSetting<E> GetSetting(E config_name)
+    virtual GenericSetting<E> GetSetting(E config_name) = 0;
+
+    /**
+     * @brief Type-safe getter that infers the correct type from default settings
+     *
+     * @tparam EnumValue The enum value to get (known at compile time)
+     * @tparam T The type to retrieve
+     * @return const T& The value with the correct type
+     */
+    template <E EnumValue, typename T>
+    const T& GetAs() const
     {
-        return GenericSetting<E>(GetSettingVariant(config_name));
+        auto setting_var = const_cast<IConfiguration*>(this)->GetSettingVariant(EnumValue);
+        return std::get<Setting<E, T>>(setting_var).Value();
+    }
+
+    /**
+     * @brief Type-safe update method
+     *
+     * @tparam EnumValue Enum value to update (known at compile time)
+     * @tparam T Type of the value
+     * @param value New value
+     * @return true if update was successful
+     */
+    template <E EnumValue, typename T>
+    bool UpdateTypedSetting(T value)
+    {
+        if constexpr (std::is_same_v<T, int>) {
+            return UpdateSettingInt(EnumValue, value);
+        }
+        else if constexpr (std::is_same_v<T, float>) {
+            return UpdateSettingFloat(EnumValue, value);
+        }
+        else if constexpr (std::is_same_v<T, double>) {
+            return UpdateSettingDouble(EnumValue, value);
+        }
+        else if constexpr (std::is_same_v<T, std::string>) {
+            return UpdateSettingString(EnumValue, value);
+        }
+        else if constexpr (std::is_same_v<T, bool>) {
+            return UpdateSettingBool(EnumValue, value);
+        }
+        else {
+            static_assert(!sizeof(T), "Unsupported type for UpdateTypedSetting");
+            return false;
+        }
     }
 
     /**
@@ -63,7 +108,6 @@ public:
 
     /**
      * @brief Non-templated interface for updating settings
-     * We use overloaded methods instead of a template virtual function
      */
     virtual bool UpdateSettingInt(E config_name, int value) = 0;
     virtual bool UpdateSettingFloat(E config_name, float value) = 0;
@@ -72,7 +116,7 @@ public:
     virtual bool UpdateSettingBool(E config_name, bool value) = 0;
 
     /**
-     * @brief Template method that routes to the correct update method
+     * @brief Update setting with automatic type routing
      */
     template <typename T>
     bool UpdateSetting(E config_name, T value)

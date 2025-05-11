@@ -9,43 +9,37 @@ int main()
         std::cout << "Configuration Library Example" << '\n';
         std::cout << "----------------------------" << '\n';
 
-        // Initialize the configuration with a file path
+        // Initialize configuration
         std::filesystem::path config_path = "config.json";
         example::Application app(config_path);
 
-        // Access the configuration object
+        // Get config instance
         auto& config = app.GetConfig();
 
-        // Demonstrate retrieving values with the new, more natural syntax
-        std::cout << "Database URL: "
-                  << config.GetSetting(example::AppConfigName::DatabaseUrl).Value<std::string>()
-                  << '\n';
+        // Type-safe value retrieval
+        std::string db_url = config.GetSetting(example::AppConfigName::DatabaseUrl).Value<std::string>();
+        std::cout << "Database URL: " << db_url << '\n';
 
-        std::cout << "Max Connections: "
-                  << config.GetSetting(example::AppConfigName::MaxConnections).Value<int>()
-                  << '\n';
+        int max_conn = config.GetSetting(example::AppConfigName::MaxConnections).Value<int>();
+        std::cout << "Max Connections: " << max_conn << '\n';
 
-        std::cout << "Logging Enabled: "
-                  << (config.GetSetting(example::AppConfigName::EnableLogging).Value<bool>() ? "Yes" : "No")
-                  << '\n';
+        bool logging_enabled = config.GetSetting(example::AppConfigName::EnableLogging).Value<bool>();
+        std::cout << "Logging Enabled: " << (logging_enabled ? "Yes" : "No") << '\n';
 
-        std::cout << "Retry Count: "
-                  << config.GetSetting(example::AppConfigName::RetryCount).Value<int>()
-                  << '\n';
+        int retry_count = config.GetSetting(example::AppConfigName::RetryCount).Value<int>();
+        std::cout << "Retry Count: " << retry_count << '\n';
 
-        std::cout << "Log Level: "
-                  << config.GetSetting(example::AppConfigName::LogLevel).Value<std::string>()
-                  << '\n';
+        std::string log_level = config.GetSetting(example::AppConfigName::LogLevel).Value<std::string>();
+        std::cout << "Log Level: " << log_level << '\n';
 
-        // Demonstrate updating a setting
+        // Update a setting
         std::cout << "\nUpdating max connections to 200..." << '\n';
-        config.UpdateSetting(example::AppConfigName::MaxConnections, 200);
+        config.UpdateSettingValue<int>(example::AppConfigName::MaxConnections, 200);
 
-        std::cout << "New Max Connections: "
-                  << config.GetSetting(example::AppConfigName::MaxConnections).Value<int>()
-                  << '\n';
+        int new_max_conn = config.GetSetting(example::AppConfigName::MaxConnections).Value<int>();
+        std::cout << "New Max Connections: " << new_max_conn << '\n';
 
-        // Save changes
+        // Save to file
         if (config.Save()) {
             std::cout << "\nChanges saved successfully to \"" << config_path.string() << "\"" << '\n';
         }

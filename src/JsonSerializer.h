@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <iomanip>
+#include <iostream>
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 #include <optional>
@@ -118,10 +119,7 @@ public:
     }
 
 private:
-    // Reference to the configuration object
     GenericConfiguration<E, JsonSerializer<E>>& config_;
-
-    // Helper methods for JSON serialization
 
     /**
      * @brief Convert a setting variant to JSON
@@ -134,7 +132,6 @@ private:
             nlohmann::json j;
             j["name"] = ToString(setting.Name());
             j["value"] = setting.Value();
-            j["type"] = GetTypeName<ValueType>();
 
             if (setting.MaxValue()) {
                 j["max_value"] = *setting.MaxValue();
@@ -162,32 +159,21 @@ private:
      */
     SettingVariant JsonToSetting(const nlohmann::json& j) const
     {
-        // Get the setting name
         std::string name_str = j.at("name").get<std::string>();
         E name = FromString(name_str);
 
-        // Get the value type
-        std::string type = j.at("type").get<std::string>();
-
-        // Create the appropriate setting based on the type
-        if (type == "int") {
-            return CreateSetting<int>(j, name);
-        }
-        if (type == "float") {
-            return CreateSetting<float>(j, name);
-        }
-        if (type == "double") {
-            return CreateSetting<double>(j, name);
-        }
-        if (type == "string" || type == "std::string") {
-            return CreateSetting<std::string>(j, name);
-        }
-        if (type == "bool") {
-            return CreateSetting<bool>(j, name);
+        auto& defaults = config_.GetDefaults();
+        auto it = defaults.find(name);
+        if (it == defaults.end()) {
+            throw std::runtime_error("No default setting found for: " + name_str);
         }
 
-        // Default to string if type is unknown
-        return CreateSetting<std::string>(j, name);
+        // Get the type from the default setting
+        return std::visit([this, &j, name](const auto& default_setting) -> SettingVariant {
+            using ValueType = std::decay_t<decltype(default_setting.Value())>;
+            return CreateSetting<ValueType>(j, name);
+        },
+                          it->second);
     }
 
     /**
@@ -196,55 +182,63 @@ private:
     template <typename T>
     Setting<E, T> CreateSetting(const nlohmann::json& j, E name) const
     {
-        T value = j.at("value").get<T>();
+        auto& defaults = config_.GetDefaults();
+        auto it = defaults.find(name);
 
-        std::optional<T> max_value;
+        if (it == defaults.end()) {
+            throw std::runtime_error("Default setting not found for: " + ToString(name));
+        }
+
+        auto default_setting = std::get<Setting<E, T>>(it->second);
+
+        T value;
+        if (j.contains("value") && !j.at("value").is_null()) {
+            try {
+                value = j.at("value").get<T>();
+            }
+            catch (const nlohmann::json::exception& e) {
+                std::cerr << "Warning: Type mismatch for setting '" << ToString(name)
+                          << "'. Expected type matching default. Using default value instead. Error: "
+                          << e.what() << std::endl;
+                value = default_setting.Value();
+            }
+        }
+        else {
+            value = default_setting.Value();
+        }
+
+        std::optional<T> max_value = default_setting.MaxValue();
         if (j.contains("max_value") && !j.at("max_value").is_null()) {
-            max_value = j.at("max_value").get<T>();
+            try {
+                max_value = j.at("max_value").get<T>();
+            }
+            catch (const nlohmann::json::exception& e) {
+                std::cerr << "Warning: Failed to parse max_value for setting '" << ToString(name)
+                          << "'. Using default max value. Error: " << e.what() << std::endl;
+            }
         }
-
-        std::optional<T> min_value;
+        std::optional<T> min_value = default_setting.MinValue();
         if (j.contains("min_value") && !j.at("min_value").is_null()) {
-            min_value = j.at("min_value").get<T>();
+            try {
+                min_value = j.at("min_value").get<T>();
+            }
+            catch (const nlohmann::json::exception& e) {
+                std::cerr << "Warning: Failed to parse min_value for setting '" << ToString(name)
+                          << "'. Using default min value. Error: " << e.what() << std::endl;
+            }
         }
 
-        std::optional<std::string> unit;
+        std::optional<std::string> unit = default_setting.Unit();
         if (j.contains("unit") && !j.at("unit").is_null()) {
             unit = j.at("unit").get<std::string>();
         }
 
-        std::optional<std::string> description;
+        std::optional<std::string> description = default_setting.Description();
         if (j.contains("description") && !j.at("description").is_null()) {
             description = j.at("description").get<std::string>();
         }
 
         return Setting<E, T>(name, value, max_value, min_value, unit, description);
-    }
-
-    /**
-     * @brief Get the name of a type as a string
-     */
-    template <typename T>
-    static std::string GetTypeName()
-    {
-        if constexpr (std::is_same_v<T, int>) {
-            return "int";
-        }
-        else if constexpr (std::is_same_v<T, float>) {
-            return "float";
-        }
-        else if constexpr (std::is_same_v<T, double>) {
-            return "double";
-        }
-        else if constexpr (std::is_same_v<T, std::string>) {
-            return "string";
-        }
-        else if constexpr (std::is_same_v<T, bool>) {
-            return "bool";
-        }
-        else {
-            return "unknown";
-        }
     }
 };
 
