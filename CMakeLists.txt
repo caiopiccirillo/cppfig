@@ -3,6 +3,13 @@ project(cppfig VERSION 0.1.0)
 
 set(CMAKE_CXX_STANDARD 17)
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+include(CompileCommands)
+
+# Enable copying of compile_commands.json to project root
+copy_compile_commands()
+
 find_package(GTest CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
