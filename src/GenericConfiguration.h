@@ -12,6 +12,7 @@
 #include "IConfiguration.h"
 #include "IConfigurationSerializer.h"
 #include "Setting.h"
+#include "TypedSetting.h"
 
 namespace config {
 
@@ -19,10 +20,14 @@ namespace config {
  * @brief Type trait to check if a serializer derives from IConfigurationSerializer
  */
 template <typename E, typename Serializer>
-struct is_valid_serializer : std::is_base_of<IConfigurationSerializer<E>, Serializer> { }; // NOLINT(readability-identifier-naming)
+struct is_valid_serializer : std::is_base_of<IConfigurationSerializer<E>, Serializer> { };
 
 /**
- * @brief Generic configuration implementation
+ * @brief Modern configuration implementation with compile-time type safety
+ *
+ * This class provides a configuration system where all type checking happens
+ * at compile time, ensuring zero runtime overhead and catching type errors
+ * during compilation.
  *
  * @tparam E Enum type for configuration keys
  * @tparam Serializer The serializer to use for file operations
@@ -38,107 +43,6 @@ public:
     using DefaultConfigMap = std::unordered_map<E, SettingVariant>;
 
     /**
-     * @brief Get the default type for a specific enum value
-     *
-     * @param enum_value The enum value to get the type for
-     * @return std::string A string representation of the type
-     */
-    std::string GetDefaultValueType(E enum_value) const
-    {
-        auto it = defaults_.find(enum_value);
-        if (it == defaults_.end()) {
-            throw std::runtime_error("No default setting found for this enum value");
-        }
-
-        return std::visit([](const auto& setting) -> std::string {
-            using ValueType = std::decay_t<decltype(setting.Value())>;
-
-            if constexpr (std::is_same_v<ValueType, int>) {
-                return "int";
-            }
-            else if constexpr (std::is_same_v<ValueType, float>) {
-                return "float";
-            }
-            else if constexpr (std::is_same_v<ValueType, double>) {
-                return "double";
-            }
-            else if constexpr (std::is_same_v<ValueType, std::string>) {
-                return "string";
-            }
-            else if constexpr (std::is_same_v<ValueType, bool>) {
-                return "bool";
-            }
-            else {
-                return "unknown";
-            }
-        },
-                          it->second);
-    }
-
-    /**
-     * @brief Function to check if a type matches the default type
-     *
-     * @param enum_value The enum value to check
-     * @return The expected type as a string
-     */
-    std::function<std::string(E)> GetTypeChecker() const
-    {
-        return [this](E enum_value) -> std::string {
-            return this->GetDefaultValueType(enum_value);
-        };
-    }
-
-    /**
-     * @brief Check if the given type matches the default type for the enum value
-     *
-     * @tparam T The type to check
-     * @param enum_value The enum value to check against
-     * @return true if the types match
-     * @return false if the types don't match
-     */
-    template <typename T>
-    bool IsCorrectType(E enum_value) const
-    {
-        std::string type_name;
-
-        if constexpr (std::is_same_v<T, int>) {
-            type_name = "int";
-        }
-        else if constexpr (std::is_same_v<T, float>) {
-            type_name = "float";
-        }
-        else if constexpr (std::is_same_v<T, double>) {
-            type_name = "double";
-        }
-        else if constexpr (std::is_same_v<T, std::string>) {
-            type_name = "string";
-        }
-        else if constexpr (std::is_same_v<T, bool>) {
-            type_name = "bool";
-        }
-        else {
-            type_name = "unknown";
-        }
-
-        return type_name == GetDefaultValueType(enum_value);
-    }
-
-    /**
-     * @brief Type-safe getter with runtime type checking against defaults
-     * This method is provided for backward compatibility or advanced use cases
-     *
-     * @tparam EnumValue The enum value to retrieve
-     * @tparam T The requested type
-     * @return The setting value with the correct type
-     * @throws std::runtime_error if the type doesn't match the default type
-     */
-    template <E EnumValue, typename T>
-    const T& GetTypedValue() const
-    {
-        return GetSetting(EnumValue).template Value<T>();
-    }
-
-    /**
      * @brief Constructor with filepath and default configurations
      *
      * @param filepath Path to the configuration file
@@ -147,111 +51,125 @@ public:
     GenericConfiguration(std::filesystem::path filepath, const DefaultConfigMap& defaults)
         : filepath_(std::move(filepath))
         , defaults_(defaults)
+        , settings_(defaults)
         , serializer_(std::make_unique<Serializer>(*this))
     {
-        if (!std::filesystem::exists(filepath_)) {
-            // Use defaults if file doesn't exist
-            settings_ = defaults_;
-            Save();
-        }
-        else {
+        if (std::filesystem::exists(filepath_)) {
             Load();
         }
+        else {
+            // Create file with defaults
+            Save();
+        }
     }
 
     /**
-     * @brief Get a setting variant from the configuration
+     * @brief Clean, ergonomic setting access with automatic type deduction (const version)
      *
-     * @param config_name Configuration name
-     * @return SettingVariant The setting as a variant
-     * @throws std::runtime_error if configuration doesn't exist
-     */
-    SettingVariant GetSettingVariant(E config_name) override
-    {
-        // Check if setting exists in active settings
-        auto it = settings_.find(config_name);
-        if (it != settings_.end()) {
-            return it->second;
-        }
-
-        // Fall back to defaults if not in active settings
-        auto default_it = defaults_.find(config_name);
-        if (default_it != defaults_.end()) {
-            return default_it->second;
-        }
-
-        throw std::runtime_error("Configuration not found");
-    }
-
-    /**
-     * @brief Const version of GetSettingVariant
-     */
-    SettingVariant GetSettingVariant(E config_name) const
-    {
-        // Check if setting exists in active settings
-        auto it = settings_.find(config_name);
-        if (it != settings_.end()) {
-            return it->second;
-        }
-
-        // Fall back to defaults if not in active settings
-        auto default_it = defaults_.find(config_name);
-        if (default_it != defaults_.end()) {
-            return default_it->second;
-        }
-
-        throw std::runtime_error("Configuration not found");
-    }
-
-    /**
-     * @brief Implementation of UpdateSettingInt from IConfiguration
-     */
-    bool UpdateSettingInt(E config_name, int value) override
-    {
-        return UpdateSettingImpl<int>(config_name, value);
-    }
-
-    /**
-     * @brief Implementation of UpdateSettingFloat from IConfiguration
-     */
-    bool UpdateSettingFloat(E config_name, float value) override
-    {
-        return UpdateSettingImpl<float>(config_name, value);
-    }
-
-    /**
-     * @brief Implementation of UpdateSettingDouble from IConfiguration
-     */
-    bool UpdateSettingDouble(E config_name, double value) override
-    {
-        return UpdateSettingImpl<double>(config_name, value);
-    }
-
-    /**
-     * @brief Implementation of UpdateSettingString from IConfiguration
-     */
-    bool UpdateSettingString(E config_name, const std::string& value) override
-    {
-        return UpdateSettingImpl<std::string>(config_name, value);
-    }
-
-    /**
-     * @brief Implementation of UpdateSettingBool from IConfiguration
-     */
-    bool UpdateSettingBool(E config_name, bool value) override
-    {
-        return UpdateSettingImpl<bool>(config_name, value);
-    }
-
-    /**
-     * @brief Get a setting with type checking based on defaults
+     * This is the main user-facing API. The type is automatically deduced from
+     * the enum value using the config_type_map, providing a clean interface:
      *
-     * @param config_name The configuration name
-     * @return GenericSetting<E> A type-safe wrapper for the setting
+     * Usage:
+     *   auto setting = config.GetSetting<MyEnum::SomeValue>();
+     *   auto value = setting.Value();           // Type automatically deduced
+     *   auto max = setting.MaxValue();          // Access metadata
+     *
+     * @tparam EnumValue The enum value to get (specified as template parameter)
+     * @return TypedSetting wrapper with clean API
      */
-    GenericSetting<E> GetSetting(E config_name) override
+    template <E EnumValue>
+    auto GetSetting() const
     {
-        return GenericSetting<E>(GetSettingVariant(config_name), config_name, GetTypeChecker());
+        using ValueType = config_type_t<E, EnumValue>;
+        using SettingType = Setting<E, ValueType>;
+
+        auto setting_it = settings_.find(EnumValue);
+        if (setting_it != settings_.end()) {
+            const auto& setting = std::get<SettingType>(setting_it->second);
+            return TypedSetting<E, EnumValue>(setting);
+        }
+
+        auto default_it = defaults_.find(EnumValue);
+        if (default_it != defaults_.end()) {
+            const auto& setting = std::get<SettingType>(default_it->second);
+            return TypedSetting<E, EnumValue>(setting);
+        }
+
+        throw std::runtime_error("Configuration setting not found");
+    }
+
+    /**
+     * @brief Clean, ergonomic setting access (non-const version)
+     *
+     * @tparam EnumValue The enum value to get (specified as template parameter)
+     * @return TypedSetting wrapper with clean API
+     */
+    template <E EnumValue>
+    auto GetSetting()
+    {
+        using ValueType = config_type_t<E, EnumValue>;
+        using SettingType = Setting<E, ValueType>;
+
+        // Ensure the setting exists in settings_ (not just defaults)
+        auto setting_it = settings_.find(EnumValue);
+        if (setting_it == settings_.end()) {
+            // Copy from defaults if not present
+            auto default_it = defaults_.find(EnumValue);
+            if (default_it != defaults_.end()) {
+                settings_[EnumValue] = default_it->second;
+                setting_it = settings_.find(EnumValue);
+            }
+            else {
+                throw std::runtime_error("Configuration setting not found in defaults");
+            }
+        }
+
+        auto& setting = std::get<SettingType>(setting_it->second);
+        return TypedSetting<E, EnumValue>(setting);
+    }
+
+    /**
+     * @brief Validate all current configuration values
+     *
+     * @return true if all values are valid according to their constraints
+     */
+    bool ValidateAll() const override
+    {
+        for (const auto& [key, setting_var] : settings_) {
+            bool is_valid = std::visit([](const auto& setting) {
+                return setting.IsValid();
+            },
+                                       setting_var);
+
+            if (!is_valid) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @brief Get validation errors for all settings
+     *
+     * @return Vector of error messages for invalid settings
+     */
+    std::vector<std::string> GetValidationErrors() const override
+    {
+        std::vector<std::string> errors;
+
+        for (const auto& [key, setting_var] : settings_) {
+            std::visit([&errors](const auto& setting) {
+                if (!setting.IsValid()) {
+                    std::string error_msg = setting.GetValidationError();
+                    if (!error_msg.empty()) {
+                        errors.push_back(error_msg);
+                    }
+                }
+            },
+                       setting_var);
+        }
+
+        return errors;
     }
 
     /**
@@ -275,9 +193,9 @@ public:
     }
 
     /**
-     * @brief Get all settings
+     * @brief Get all settings (for serializer access)
      *
-     * @return const std::unordered_map<E, SettingVariant>& All settings
+     * @return const reference to all settings
      */
     const std::unordered_map<E, SettingVariant>& GetAllSettings() const
     {
@@ -285,9 +203,9 @@ public:
     }
 
     /**
-     * @brief Get the default settings map
+     * @brief Get the default settings map (for serializer access)
      *
-     * @return const DefaultConfigMap& The default settings
+     * @return const reference to default settings
      */
     const DefaultConfigMap& GetDefaults() const
     {
@@ -295,7 +213,7 @@ public:
     }
 
     /**
-     * @brief Update settings directly (useful for serializers)
+     * @brief Update settings directly (for serializer use)
      *
      * @param new_settings New settings map
      */
@@ -305,74 +223,80 @@ public:
     }
 
     /**
-     * @brief Type-safe update method that checks at runtime if the type matches the default
+     * @brief Reset a setting to its default value
      *
-     * @tparam EnumValue Enum value to update
-     * @tparam T Type of the value
-     * @param value New value
-     * @return true if update was successful
-     * @throws std::runtime_error if the type doesn't match the default type
+     * @tparam EnumValue The setting to reset
      */
-    template <E EnumValue, typename T>
-    bool UpdateTypedSetting(T value)
+    template <E EnumValue>
+    void ResetToDefault()
     {
-        if (!IsCorrectType<T>(EnumValue)) {
-            throw std::runtime_error("Type mismatch: The provided type doesn't match the type in default configuration");
+        auto default_it = defaults_.find(EnumValue);
+        if (default_it != defaults_.end()) {
+            settings_[EnumValue] = default_it->second;
         }
-
-        return UpdateSettingImpl<T>(EnumValue, value);
     }
 
     /**
-     * @brief Update a setting with a more natural syntax
-     *
-     * @tparam T Type of the value
-     * @param config_name The configuration name
-     * @param value The new value
-     * @return true if successful
+     * @brief Reset all settings to their default values
      */
-    template <typename T>
-    bool UpdateSettingValue(E config_name, T value)
+    void ResetAllToDefaults() override
     {
-        if (!IsCorrectType<T>(config_name)) {
-            throw std::runtime_error("Type mismatch: The provided type doesn't match the type in default configuration");
+        settings_ = defaults_;
+    }
+
+    /**
+     * @brief Check if a setting has been modified from its default
+     *
+     * @tparam EnumValue The setting to check
+     * @return true if the setting differs from its default value
+     */
+    template <E EnumValue>
+    bool IsModified() const
+    {
+        auto setting_it = settings_.find(EnumValue);
+        auto default_it = defaults_.find(EnumValue);
+
+        if (setting_it == settings_.end() || default_it == defaults_.end()) {
+            return false;
         }
 
-        return UpdateSettingImpl<T>(config_name, value);
+        // Compare the setting variants
+        return setting_it->second != default_it->second;
+    }
+
+    /**
+     * @brief Get the file path of this configuration
+     */
+    const std::filesystem::path& GetFilePath() const
+    {
+        return filepath_;
+    }
+
+    /**
+     * @brief Legacy API for backward compatibility - Get value with explicit types
+     *
+     * @deprecated Use GetSetting(enumValue).Value() instead
+     */
+    template <E EnumValue, typename T>
+    std::enable_if_t<is_valid_config_type_v<E, EnumValue, T>, const T&>
+    GetValue() const
+    {
+        return GetSetting<EnumValue>().Value();
+    }
+
+    /**
+     * @brief Legacy API for backward compatibility - Set value with explicit types
+     *
+     * @deprecated Use GetSetting(enumValue).SetValue(value) instead
+     */
+    template <E EnumValue, typename T>
+    std::enable_if_t<is_valid_config_type_v<E, EnumValue, T>, void>
+    SetValue(T value)
+    {
+        GetSetting<EnumValue>().SetValue(value);
     }
 
 private:
-    /**
-     * @brief Implementation of setting update logic
-     */
-    template <typename T>
-    bool UpdateSettingImpl(E config_name, T value)
-    {
-        auto setting_var = GetSettingVariant(config_name);
-
-        try {
-            // Try to get the setting as the specified type
-            auto setting = std::get<Setting<E, T>>(setting_var);
-
-            // Create a new setting with the updated value
-            Setting<E, T> updated_setting(
-                setting.Name(),
-                value,
-                setting.MaxValue(),
-                setting.MinValue(),
-                setting.Unit(),
-                setting.Description());
-
-            // Update the settings map
-            settings_[config_name] = updated_setting;
-            return true;
-        }
-        catch (const std::bad_variant_access&) {
-            // Type mismatch
-            return false;
-        }
-    }
-
     std::filesystem::path filepath_;
     DefaultConfigMap defaults_;
     std::unordered_map<E, SettingVariant> settings_;

@@ -1,83 +1,49 @@
 #pragma once
 
-#include <functional>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <type_traits>
-#include <typeinfo>
 #include <utility>
-#include <variant>
 
 namespace config {
 
-using SettingValueType = std::variant<int, float, double, std::string, bool>;
-
-// Forward declaration of Setting
-template <typename E, typename T>
-class Setting;
-
 /**
- * @brief Utility to extract Setting type from variant
- */
-template <typename E, typename SettingVariant, E EnumValue>
-struct default_setting_type;
-
-// Partial specialization for std::variant
-template <typename E, E EnumValue, typename... Ts>
-struct default_setting_type<E, std::variant<Ts...>, EnumValue> {
-    // Default type is void if not found (will cause a compile error)
-    using type = void;
-};
-
-// Helper type alias to extract the type
-template <typename E, typename SettingVariant, E EnumValue>
-using default_setting_type_t = typename default_setting_type<E, SettingVariant, EnumValue>::type;
-
-/**
- * @brief Compile-time check if a type is valid for an enum value based on defaults
- */
-template <typename E, typename SettingVariant, E EnumValue, typename T>
-inline constexpr bool is_valid_type_v = std::is_same_v<default_setting_type_t<E, SettingVariant, EnumValue>, T>; // NOLINT(readability-identifier-naming)
-
-/**
- * @brief Type trait to associate enum values with their types at compile time
- * This must be specialized by users for their configuration enum types
- *
- * @tparam E Enum type that defines the configuration keys
- * @tparam EnumValue The specific enum value
- * @tparam Enable SFINAE enabler
- */
-template <typename E, E EnumValue, typename Enable = void>
-struct setting_type_trait { // NOLINT(readability-identifier-naming)
-    // Default implementation provides a compile error
-    static_assert(sizeof(E) == 0,
-                  "You must specialize setting_type_trait for your enum values");
-
-    using type = void; // This won't be used due to static_assert
-};
-
-/**
- * @brief Helper type to extract the associated type for an enum value
- *
- * @tparam E Enum type that defines the configuration keys
- * @tparam EnumValue The specific enum value
+ * @brief Compile-time type mapping for configuration settings
+ * This provides stronger type safety by associating enum values with their expected types
  */
 template <typename E, E EnumValue>
-using setting_type = typename setting_type_trait<E, EnumValue>::type;
+struct config_type_map {
+    // By default, no type is associated - users must specialize this
+    // This will cause a compile error if not specialized, ensuring type safety
+    static_assert(sizeof(E) == 0,
+                  "config_type_map must be specialized for each enum value. "
+                  "Use template specialization to define type mappings.");
+};
 
 /**
- * @brief Compile-time check if a given type matches the expected type for an enum value
- *
- * @tparam E Enum type that defines the configuration keys
- * @tparam EnumValue The specific enum value
- * @tparam T The type to check against
+ * @brief Helper to extract the type associated with an enum value
+ */
+template <typename E, E EnumValue>
+using config_type_t = typename config_type_map<E, EnumValue>::type;
+
+/**
+ * @brief Compile-time check if a type matches the expected type for an enum value
  */
 template <typename E, E EnumValue, typename T>
-inline constexpr bool is_correct_type_v = std::is_same_v<setting_type<E, EnumValue>, T>; // NOLINT(readability-identifier-naming)
+inline constexpr bool is_valid_config_type_v = std::is_same_v<config_type_t<E, EnumValue>, T>;
 
 /**
- * @brief Generic Setting class that is strongly typed
+ * @brief Macro to easily declare type mappings for configuration enum values
+ * Usage: DECLARE_CONFIG_TYPE(MyEnum, MyEnum::SomeValue, int)
+ */
+#define DECLARE_CONFIG_TYPE(EnumType, EnumValue, Type) \
+    template <>                                        \
+    struct config_type_map<EnumType, EnumValue> {      \
+        using type = Type;                             \
+    }
+
+/**
+ * @brief Strongly typed Setting class
  *
  * @tparam E Enum type that defines the configuration keys
  * @tparam T Type of the setting value
@@ -87,14 +53,14 @@ class Setting {
 public:
     Setting(E name,
             T value,
-            std::optional<T> max_value = std::nullopt,
-            std::optional<T> min_value = std::nullopt,
+            std::optional<T> maximum_value = std::nullopt,
+            std::optional<T> minimum_value = std::nullopt,
             std::optional<std::string> unit = std::nullopt,
             std::optional<std::string> description = std::nullopt)
         : name_(name)
         , value_(std::move(value))
-        , max_value_(std::move(max_value))
-        , min_value_(std::move(min_value))
+        , max_value_(std::move(maximum_value))
+        , min_value_(std::move(minimum_value))
         , unit_(std::move(unit))
         , description_(std::move(description))
     {
@@ -109,6 +75,82 @@ public:
     [[nodiscard]] std::optional<std::string> Unit() const { return unit_; }
     [[nodiscard]] std::optional<std::string> Description() const { return description_; }
 
+    /**
+     * @brief Update the value with type safety
+     */
+    void SetValue(const T& new_value)
+    {
+        value_ = new_value;
+    }
+
+    /**
+     * @brief Compile-time type-safe value access
+     * Only callable if T matches the expected type for this enum value
+     */
+    template <E EnumValue>
+    [[nodiscard]] std::enable_if_t<is_valid_config_type_v<E, EnumValue, T>, const T&>
+    GetTypedValue() const
+    {
+        static_assert(EnumValue == name_, "Enum value must match setting name");
+        return value_;
+    }
+
+    /**
+     * @brief Compile-time type-safe value update
+     * Only callable if T matches the expected type for this enum value
+     */
+    template <E EnumValue>
+    std::enable_if_t<is_valid_config_type_v<E, EnumValue, T>, void>
+    SetTypedValue(const T& new_value)
+    {
+        static_assert(EnumValue == name_, "Enum value must match setting name");
+        value_ = new_value;
+    }
+
+    /**
+     * @brief Validate value against constraints
+     */
+    bool IsValid() const
+    {
+        if (min_value_ && value_ < *min_value_)
+            return false;
+        if (max_value_ && value_ > *max_value_)
+            return false;
+        return true;
+    }
+
+    /**
+     * @brief Get validation error message if value is invalid
+     */
+    std::string GetValidationError() const
+    {
+        if (!IsValid()) {
+            if (min_value_ && value_ < *min_value_) {
+                return "Value below minimum: " + std::to_string(value_) + " < " + std::to_string(*min_value_);
+            }
+            if (max_value_ && value_ > *max_value_) {
+                return "Value above maximum: " + std::to_string(value_) + " > " + std::to_string(*max_value_);
+            }
+        }
+        return "";
+    }
+
+    /**
+     * @brief Equality comparison operator
+     */
+    bool operator==(const Setting& other) const
+    {
+        return name_ == other.name_ && value_ == other.value_ && max_value_ == other.max_value_ && min_value_ == other.min_value_ && unit_ == other.unit_ && description_ == other.description_;
+    }
+
+    /**
+     * @brief Inequality comparison operator
+     */
+    bool operator!=(const Setting& other) const
+    {
+        return !(*this == other);
+    }
+
 private:
     E name_;
     T value_;
@@ -119,145 +161,90 @@ private:
 };
 
 /**
- * @brief A generic Setting wrapper that contains a variant of typed settings
- * and provides a more natural Value<T>() access method
- *
- * @tparam E Enum type that defines the configuration keys
+ * @brief Template specialization for string validation error messages
  */
 template <typename E>
-class GenericSetting {
+class Setting<E, std::string> {
 public:
-    using SettingVariant = std::variant<
-        Setting<E, int>,
-        Setting<E, float>,
-        Setting<E, double>,
-        Setting<E, std::string>,
-        Setting<E, bool>>;
-
-    explicit GenericSetting(SettingVariant setting, E name = E {}, std::function<std::string(E)> type_checker = nullptr)
-        : setting_(std::move(setting))
-        , name_(name)
-        , type_checker_(type_checker)
+    Setting(E name,
+            std::string value,
+            std::optional<std::string> maximum_value = std::nullopt,
+            std::optional<std::string> minimum_value = std::nullopt,
+            std::optional<std::string> unit = std::nullopt,
+            std::optional<std::string> description = std::nullopt)
+        : name_(name)
+        , value_(std::move(value))
+        , max_value_(std::move(maximum_value))
+        , min_value_(std::move(minimum_value))
+        , unit_(std::move(unit))
+        , description_(std::move(description))
     {
     }
 
-    /**
-     * @brief Get the value of the setting as the specified type with type checking
-     *
-     * @tparam T Type to retrieve the value as
-     * @return const T& The value
-     * @throws std::runtime_error if T doesn't match the expected type
-     * @throws std::bad_variant_access if T doesn't match the stored type
-     */
-    template <typename T>
-    [[nodiscard]] const T& Value() const
+    Setting() = default;
+
+    [[nodiscard]] E Name() const { return name_; }
+    [[nodiscard]] const std::string& Value() const { return value_; }
+    [[nodiscard]] std::optional<std::string> MaxValue() const { return max_value_; }
+    [[nodiscard]] std::optional<std::string> MinValue() const { return min_value_; }
+    [[nodiscard]] std::optional<std::string> Unit() const { return unit_; }
+    [[nodiscard]] std::optional<std::string> Description() const { return description_; }
+
+    void SetValue(const std::string& new_value)
     {
-        if (type_checker_) {
-            std::string expected_type = type_checker_(name_);
+        value_ = new_value;
+    }
 
-            std::string requested_type;
-            if constexpr (std::is_same_v<T, int>) {
-                requested_type = "int";
-            }
-            else if constexpr (std::is_same_v<T, float>) {
-                requested_type = "float";
-            }
-            else if constexpr (std::is_same_v<T, double>) {
-                requested_type = "double";
-            }
-            else if constexpr (std::is_same_v<T, std::string>) {
-                requested_type = "string";
-            }
-            else if constexpr (std::is_same_v<T, bool>) {
-                requested_type = "bool";
-            }
-            else {
-                requested_type = "unknown";
-            }
+    template <E EnumValue>
+    [[nodiscard]] std::enable_if_t<is_valid_config_type_v<E, EnumValue, std::string>, const std::string&>
+    GetTypedValue() const
+    {
+        static_assert(EnumValue == name_, "Enum value must match setting name");
+        return value_;
+    }
 
-            if (expected_type != requested_type) {
-                throw std::runtime_error("Type mismatch: Requested type '" + requested_type + "' doesn't match expected type '" + expected_type + "' for this setting");
-            }
-        }
+    template <E EnumValue>
+    std::enable_if_t<is_valid_config_type_v<E, EnumValue, std::string>, void>
+    SetTypedValue(const std::string& new_value)
+    {
+        static_assert(EnumValue == name_, "Enum value must match setting name");
+        value_ = new_value;
+    }
 
-        return std::get<Setting<E, T>>(setting_).Value();
+    bool IsValid() const
+    {
+        // For strings, we can check length constraints if min/max are set as length limits
+        return true; // Basic implementation - can be extended for string validation
+    }
+
+    std::string GetValidationError() const
+    {
+        return ""; // No validation errors for basic string settings
     }
 
     /**
-     * @brief Get the actual type of this setting
-     *
-     * @return std::type_info The runtime type information
+     * @brief Equality comparison operator
      */
-    [[nodiscard]] const std::type_info& ValueType() const
+    bool operator==(const Setting& other) const
     {
-        return std::visit([](const auto& s) -> const std::type_info& {
-            return typeid(s.Value());
-        },
-                          setting_);
+        return name_ == other.name_ && value_ == other.value_ && max_value_ == other.max_value_ && min_value_ == other.min_value_ && unit_ == other.unit_ && description_ == other.description_;
     }
 
     /**
-     * @brief Get the name of the setting
+     * @brief Inequality comparison operator
      */
-    [[nodiscard]] E Name() const
+    bool operator!=(const Setting& other) const
     {
-        return std::visit([](const auto& s) { return s.Name(); }, setting_);
-    }
-
-    /**
-     * @brief Get maximum value if defined
-     *
-     * @tparam T Type of the maximum value
-     * @return std::optional<T> The maximum value if defined
-     * @throws std::bad_variant_access if T doesn't match the stored type
-     */
-    template <typename T>
-    [[nodiscard]] std::optional<T> MaxValue() const
-    {
-        return std::get<Setting<E, T>>(setting_).MaxValue();
-    }
-
-    /**
-     * @brief Get minimum value if defined
-     *
-     * @tparam T Type of the minimum value
-     * @return std::optional<T> The minimum value if defined
-     * @throws std::bad_variant_access if T doesn't match the stored type
-     */
-    template <typename T>
-    [[nodiscard]] std::optional<T> MinValue() const
-    {
-        return std::get<Setting<E, T>>(setting_).MinValue();
-    }
-
-    /**
-     * @brief Get the unit of the setting
-     */
-    [[nodiscard]] std::optional<std::string> Unit() const
-    {
-        return std::visit([](const auto& s) { return s.Unit(); }, setting_);
-    }
-
-    /**
-     * @brief Get the description of the setting
-     */
-    [[nodiscard]] std::optional<std::string> Description() const
-    {
-        return std::visit([](const auto& s) { return s.Description(); }, setting_);
-    }
-
-    /**
-     * @brief Get the underlying setting variant
-     */
-    [[nodiscard]] const SettingVariant& GetVariant() const
-    {
-        return setting_;
+        return !(*this == other);
     }
 
 private:
-    SettingVariant setting_;
     E name_;
-    std::function<std::string(E)> type_checker_;
+    std::string value_;
+    std::optional<std::string> max_value_; // Could represent max length as string
+    std::optional<std::string> min_value_; // Could represent min length as string
+    std::optional<std::string> unit_;
+    std::optional<std::string> description_;
 };
 
 } // namespace config

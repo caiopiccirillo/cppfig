@@ -3,13 +3,17 @@
 #include <string>
 #include <type_traits>
 #include <variant>
+#include <vector>
 
 #include "Setting.h"
 
 namespace config {
 
 /**
- * @brief Interface for the configuration class.
+ * @brief Interface for modern compile-time type-safe configuration
+ *
+ * This interface defines the contract for configuration classes that provide
+ * compile-time type safety and zero runtime overhead for type checking.
  *
  * @tparam E Enum type for configuration keys (must be an enum)
  */
@@ -28,118 +32,92 @@ public:
     virtual ~IConfiguration() = default;
 
     /**
-     * @brief Get the setting as a variant according to configuration name
+     * @brief Compile-time type-safe value getter
      *
-     * @param config_name Configuration name
-     * @return A variant containing the setting of the appropriate type
-     */
-    virtual SettingVariant GetSettingVariant(E config_name) = 0;
-
-    /**
-     * @brief Get the setting according to configuration name with improved access API
-     * This returns a GenericSetting that performs type checking when Value<T>() is called
+     * This method provides the strongest type safety by checking types at compile time.
+     * Type mismatches will result in compilation errors.
      *
-     * @param config_name Configuration name
-     * @return GenericSetting<E> A wrapper that provides natural Value<T>() access with type checking
-     */
-    virtual GenericSetting<E> GetSetting(E config_name) = 0;
-
-    /**
-     * @brief Type-safe getter that infers the correct type from default settings
-     *
-     * @tparam EnumValue The enum value to get (known at compile time)
-     * @tparam T The type to retrieve
-     * @return const T& The value with the correct type
+     * @tparam EnumValue The enum value to retrieve (known at compile time)
+     * @tparam T The requested type (must match config_type_map)
+     * @return The setting value with the correct type
      */
     template <E EnumValue, typename T>
-    const T& GetAs() const
+    std::enable_if_t<is_valid_config_type_v<E, EnumValue, T>, const T&>
+    GetValue() const
     {
-        auto setting_var = const_cast<IConfiguration*>(this)->GetSettingVariant(EnumValue);
-        return std::get<Setting<E, T>>(setting_var).Value();
+        return static_cast<const IConfiguration*>(this)->template GetValue<EnumValue, T>();
     }
 
     /**
-     * @brief Type-safe update method
+     * @brief Compile-time type-safe value setter
+     *
+     * This method provides compile-time type checking for setting updates.
      *
      * @tparam EnumValue Enum value to update (known at compile time)
-     * @tparam T Type of the value
+     * @tparam T Type of the value (must match config_type_map)
      * @param value New value
-     * @return true if update was successful
      */
     template <E EnumValue, typename T>
-    bool UpdateTypedSetting(T value)
+    std::enable_if_t<is_valid_config_type_v<E, EnumValue, T>, void>
+    SetValue(T value)
     {
-        if constexpr (std::is_same_v<T, int>) {
-            return UpdateSettingInt(EnumValue, value);
-        }
-        else if constexpr (std::is_same_v<T, float>) {
-            return UpdateSettingFloat(EnumValue, value);
-        }
-        else if constexpr (std::is_same_v<T, double>) {
-            return UpdateSettingDouble(EnumValue, value);
-        }
-        else if constexpr (std::is_same_v<T, std::string>) {
-            return UpdateSettingString(EnumValue, value);
-        }
-        else if constexpr (std::is_same_v<T, bool>) {
-            return UpdateSettingBool(EnumValue, value);
-        }
-        else {
-            static_assert(!sizeof(T), "Unsupported type for UpdateTypedSetting");
-            return false;
-        }
+        static_cast<IConfiguration*>(this)->template SetValue<EnumValue, T>(value);
     }
 
     /**
-     * @brief Template method to get the setting with a specific type (legacy API)
+     * @brief Get a setting object for metadata access
      *
-     * @tparam T The expected type of the setting
-     * @param config_name Configuration name
-     * @return SettingT<E, T> The setting with the specified type
-     * @throws std::bad_variant_access if the setting is not of type T
-     * @deprecated Use GetSetting(name).Value<T>() instead
+     * @tparam EnumValue The enum value to get
+     * @tparam T The type of the setting
+     * @return The complete setting object
      */
-    template <typename T>
-    Setting<E, T> GetSettingAs(E config_name)
+    template <E EnumValue, typename T>
+    std::enable_if_t<is_valid_config_type_v<E, EnumValue, T>, const Setting<E, T>&>
+    GetSetting() const
     {
-        auto setting = GetSettingVariant(config_name);
-        return std::get<Setting<E, T>>(setting);
+        return static_cast<const IConfiguration*>(this)->template GetSetting<EnumValue, T>();
     }
 
     /**
-     * @brief Non-templated interface for updating settings
+     * @brief Validate all current configuration values
+     *
+     * @return true if all values are valid according to their constraints
      */
-    virtual bool UpdateSettingInt(E config_name, int value) = 0;
-    virtual bool UpdateSettingFloat(E config_name, float value) = 0;
-    virtual bool UpdateSettingDouble(E config_name, double value) = 0;
-    virtual bool UpdateSettingString(E config_name, const std::string& value) = 0;
-    virtual bool UpdateSettingBool(E config_name, bool value) = 0;
+    virtual bool ValidateAll() const = 0;
 
     /**
-     * @brief Update setting with automatic type routing
+     * @brief Get validation errors for all settings
+     *
+     * @return Vector of error messages for invalid settings
      */
-    template <typename T>
-    bool UpdateSetting(E config_name, T value)
+    virtual std::vector<std::string> GetValidationErrors() const = 0;
+
+    /**
+     * @brief Reset a setting to its default value
+     *
+     * @tparam EnumValue The setting to reset
+     */
+    template <E EnumValue>
+    void ResetToDefault()
     {
-        if constexpr (std::is_same_v<T, int>) {
-            return UpdateSettingInt(config_name, value);
-        }
-        else if constexpr (std::is_same_v<T, float>) {
-            return UpdateSettingFloat(config_name, value);
-        }
-        else if constexpr (std::is_same_v<T, double>) {
-            return UpdateSettingDouble(config_name, value);
-        }
-        else if constexpr (std::is_same_v<T, std::string>) {
-            return UpdateSettingString(config_name, value);
-        }
-        else if constexpr (std::is_same_v<T, bool>) {
-            return UpdateSettingBool(config_name, value);
-        }
-        else {
-            static_assert(!sizeof(T), "Unsupported type for UpdateSetting");
-            return false;
-        }
+        static_cast<IConfiguration*>(this)->template ResetToDefault<EnumValue>();
+    }
+
+    /**
+     * @brief Reset all settings to their default values
+     */
+    virtual void ResetAllToDefaults() = 0;
+
+    /**
+     * @brief Check if a setting has been modified from its default
+     *
+     * @tparam EnumValue The setting to check
+     * @return true if the setting differs from its default value
+     */
+    template <E EnumValue>
+    bool IsModified() const
+    {
+        return static_cast<const IConfiguration*>(this)->template IsModified<EnumValue>();
     }
 
     /**
