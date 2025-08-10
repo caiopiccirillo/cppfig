@@ -2,14 +2,15 @@
 
 #include <cstdint>
 #include <filesystem>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <variant>
 
+#include "ConfigHelpers.h"
 #include "GenericConfiguration.h"
 #include "JsonSerializer.h"
 #include "Setting.h"
+#include "TypedSetting.h"
 
 namespace example {
 
@@ -23,6 +24,35 @@ enum class AppConfigName : uint8_t {
 };
 
 } // namespace example
+
+// Declare compile-time type mappings for each configuration setting
+// This enables strong compile-time type checking
+namespace config {
+template <>
+struct config_type_map<example::AppConfigName, example::AppConfigName::DatabaseUrl> {
+    using type = std::string;
+};
+
+template <>
+struct config_type_map<example::AppConfigName, example::AppConfigName::MaxConnections> {
+    using type = int;
+};
+
+template <>
+struct config_type_map<example::AppConfigName, example::AppConfigName::EnableLogging> {
+    using type = bool;
+};
+
+template <>
+struct config_type_map<example::AppConfigName, example::AppConfigName::RetryCount> {
+    using type = int;
+};
+
+template <>
+struct config_type_map<example::AppConfigName, example::AppConfigName::LogLevel> {
+    using type = std::string;
+};
+} // namespace config
 
 namespace example {
 
@@ -87,6 +117,7 @@ namespace example {
 
 // Define the configuration type
 using AppConfig = ::config::GenericConfiguration<AppConfigName, ::config::JsonSerializer<AppConfigName>>;
+
 // Define the variant type for AppConfig settings
 using AppSettingVariant = std::variant<
     ::config::Setting<AppConfigName, int>,
@@ -95,68 +126,154 @@ using AppSettingVariant = std::variant<
     ::config::Setting<AppConfigName, std::string>,
     ::config::Setting<AppConfigName, bool>>;
 
-// Define default configuration values
+// Define default configuration values using the helper functions
 inline const AppConfig::DefaultConfigMap DefaultAppConfig = {
     { AppConfigName::DatabaseUrl,
-      ::config::Setting<AppConfigName, std::string>(
-          AppConfigName::DatabaseUrl,
+      ::config::ConfigHelpers<AppConfigName>::CreateStringSetting<AppConfigName::DatabaseUrl>(
           "mongodb://localhost:27017",
-          std::nullopt,
-          std::nullopt,
-          std::nullopt,
           "URL for database connection") },
     { AppConfigName::MaxConnections,
-      ::config::Setting<AppConfigName, int>(
-          AppConfigName::MaxConnections,
-          100,
-          1000,
-          1,
-          "connections",
-          "Maximum number of database connections") },
+      ::config::ConfigHelpers<AppConfigName>::CreateIntSetting<AppConfigName::MaxConnections>(
+          100, 1, 1000, "Maximum number of database connections", "connections") },
     { AppConfigName::EnableLogging,
-      ::config::Setting<AppConfigName, bool>(
-          AppConfigName::EnableLogging,
-          true,
-          std::nullopt,
-          std::nullopt,
-          std::nullopt,
-          "Enable application logging") },
+      ::config::ConfigHelpers<AppConfigName>::CreateBoolSetting<AppConfigName::EnableLogging>(
+          true, "Enable application logging") },
     { AppConfigName::RetryCount,
-      ::config::Setting<AppConfigName, int>(
-          AppConfigName::RetryCount,
-          3,
-          10,
-          0,
-          "retries",
-          "Number of retry attempts for operations") },
+      ::config::ConfigHelpers<AppConfigName>::CreateIntSetting<AppConfigName::RetryCount>(
+          3, 0, 10, "Number of retry attempts for operations", "retries") },
     { AppConfigName::LogLevel,
-      ::config::Setting<AppConfigName, std::string>(
-          AppConfigName::LogLevel,
-          "info",
-          std::nullopt,
-          std::nullopt,
-          std::nullopt,
-          "Logging level (debug, info, warning, error)") }
+      ::config::ConfigHelpers<AppConfigName>::CreateStringSetting<AppConfigName::LogLevel>(
+          "info", "Logging level (debug, info, warning, error)") }
 };
 
-// Example of how to use the configuration
+// Example of how to use the configuration with compile-time type safety
 class Application {
 public:
     explicit Application(const std::filesystem::path& config_path)
         : config_(config_path, DefaultAppConfig)
     {
-        // Access configuration values in a type-safe way with natural syntax
-        auto db_url = config_.GetSetting(AppConfigName::DatabaseUrl).Value<std::string>();
-        auto max_conn = config_.GetSetting(AppConfigName::MaxConnections).Value<int>();
-        auto logging_enabled = config_.GetSetting(AppConfigName::EnableLogging).Value<bool>();
+        // Access configuration values with compile-time type safety
+        // These calls will fail at compile-time if types don't match
+        auto db_url = config_.GetValue<AppConfigName::DatabaseUrl, std::string>();
+        auto max_conn = config_.GetValue<AppConfigName::MaxConnections, int>();
+        auto logging_enabled = config_.GetValue<AppConfigName::EnableLogging, bool>();
 
-        // Example of updating a setting with type checking
-        config_.UpdateSettingValue<int>(AppConfigName::RetryCount, 5);
+        // Example of updating a setting with compile-time type checking
+        config_.SetValue<AppConfigName::RetryCount, int>(5);
         config_.Save();
     }
 
     // Get the underlying config object
     AppConfig& GetConfig() { return config_; }
+    const AppConfig& GetConfig() const { return config_; }
+
+    /**
+     * @brief Clean, ergonomic configuration access with automatic type deduction
+     *
+     * This provides the cleanest API where types are automatically inferred:
+     * - auto setting = app.GetSetting(AppConfigName::DatabaseUrl);
+     * - auto value = setting.Value();  // Type automatically deduced
+     * - setting.SetValue(newValue);    // Type automatically deduced
+     */
+    template <AppConfigName EnumValue>
+    auto GetSetting() const
+    {
+        return config_.template GetSetting<EnumValue>();
+    }
+
+    template <AppConfigName EnumValue>
+    auto GetSetting()
+    {
+        return config_.template GetSetting<EnumValue>();
+    }
+
+    /**
+     * @brief Legacy API for backward compatibility
+     * @deprecated Use GetSetting(enumValue).Value() instead
+     */
+    template <AppConfigName EnumValue, typename T>
+    const T& GetConfigValue() const
+    {
+        return config_.template GetValue<EnumValue, T>();
+    }
+
+    /**
+     * @brief Legacy API for backward compatibility
+     * @deprecated Use GetSetting(enumValue).SetValue(value) instead
+     */
+    template <AppConfigName EnumValue, typename T>
+    void SetConfigValue(const T& value)
+    {
+        config_.template SetValue<EnumValue, T>(value);
+    }
+
+    /**
+     * @brief Validate current configuration values
+     * @return true if all values are valid, false otherwise
+     */
+    bool ValidateConfiguration() const
+    {
+        // Use the built-in validation
+        if (!config_.ValidateAll()) {
+            return false;
+        }
+
+        // Additional custom validation using the clean API
+        try {
+            // Clean API - types automatically deduced!
+            auto max_conn_setting = config_.GetSetting<AppConfigName::MaxConnections>();
+            auto retry_setting = config_.GetSetting<AppConfigName::RetryCount>();
+            auto log_level_setting = config_.GetSetting<AppConfigName::LogLevel>();
+
+            auto max_conn = max_conn_setting.Value(); // int automatically deduced
+            auto retry_count = retry_setting.Value(); // int automatically deduced
+            auto log_level = log_level_setting.Value(); // string automatically deduced
+
+            // Basic validation using simple validators
+            auto conn_validator = ::config::SimpleValidators<int>::Range(1, 1000);
+            auto retry_validator = ::config::SimpleValidators<int>::Range(0, 10);
+            auto log_level_validator = ::config::SimpleValidators<std::string>::OneOf(
+                { "debug", "info", "warning", "error" });
+
+            return conn_validator(max_conn) && retry_validator(retry_count) && log_level_validator(log_level);
+        }
+        catch (...) {
+            return false;
+        }
+    }
+
+    /**
+     * @brief Get validation errors as strings
+     */
+    std::vector<std::string> GetValidationErrors() const
+    {
+        auto errors = config_.GetValidationErrors();
+
+        // Add custom validation errors using the clean API
+        try {
+            // Clean API - no type specifications needed!
+            auto max_conn = config_.GetSetting<AppConfigName::MaxConnections>().Value();
+            auto retry_count = config_.GetSetting<AppConfigName::RetryCount>().Value();
+            auto log_level = config_.GetSetting<AppConfigName::LogLevel>().Value();
+
+            if (max_conn < 1 || max_conn > 1000) {
+                errors.push_back("MaxConnections must be between 1 and 1000");
+            }
+            if (retry_count < 0 || retry_count > 10) {
+                errors.push_back("RetryCount must be between 0 and 10");
+            }
+
+            std::vector<std::string> valid_levels = { "debug", "info", "warning", "error" };
+            if (std::find(valid_levels.begin(), valid_levels.end(), log_level) == valid_levels.end()) {
+                errors.push_back("LogLevel must be one of: debug, info, warning, error");
+            }
+        }
+        catch (...) {
+            errors.push_back("Failed to validate configuration values");
+        }
+
+        return errors;
+    }
 
 private:
     AppConfig config_;

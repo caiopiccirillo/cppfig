@@ -1,14 +1,15 @@
 enable_testing()
 
 add_executable(
-  hello_test
-  hello_test.cpp
+  unit_test
+  unit_test.cpp
 )
 
 target_link_libraries(
-  hello_test
+  unit_test
   GTest::gtest_main
+  cppfig
 )
 
 include(GoogleTest)
-gtest_discover_tests(hello_test)
+gtest_discover_tests(unit_test)
