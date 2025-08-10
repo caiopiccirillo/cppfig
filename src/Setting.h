@@ -43,6 +43,22 @@ inline constexpr bool is_valid_config_type_v = std::is_same_v<config_type_t<E, E
     }
 
 /**
+ * @brief Example usage to reduce boilerplate when declaring config types
+ *
+ * Instead of writing verbose template specializations:
+ *
+ * template <> struct config_type_map<MyEnum, MyEnum::Value1> { using type = int; };
+ * template <> struct config_type_map<MyEnum, MyEnum::Value2> { using type = std::string; };
+ * template <> struct config_type_map<MyEnum, MyEnum::Value3> { using type = bool; };
+ *
+ * Simply use the macro:
+ *
+ * DECLARE_CONFIG_TYPE(MyEnum, MyEnum::Value1, int);
+ * DECLARE_CONFIG_TYPE(MyEnum, MyEnum::Value2, std::string);
+ * DECLARE_CONFIG_TYPE(MyEnum, MyEnum::Value3, bool);
+ */
+
+/**
  * @brief Strongly typed Setting class
  *
  * @tparam E Enum type that defines the configuration keys

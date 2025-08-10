@@ -1,12 +1,13 @@
 #include <gtest/gtest.h>
+
 #include <filesystem>
 #include <string>
 #include <type_traits>
 
-#include "Setting.h"
+#include "ConfigHelpers.h"
 #include "GenericConfiguration.h"
 #include "JsonSerializer.h"
-#include "ConfigHelpers.h"
+#include "Setting.h"
 #include "TypedSetting.h"
 
 namespace cppfig_unit_test {
@@ -26,33 +27,56 @@ enum class ConfigKey : uint8_t {
 };
 
 // Implement string conversion functions for JSON serialization
-inline std::string ToString(ConfigKey key) {
+inline std::string ToString(ConfigKey key)
+{
     switch (key) {
-    case ConfigKey::DatabaseUrl: return "database_url";
-    case ConfigKey::MaxConnections: return "max_connections";
-    case ConfigKey::EnableLogging: return "enable_logging";
-    case ConfigKey::LogLevel: return "log_level";
-    case ConfigKey::ApiTimeout: return "api_timeout";
-    case ConfigKey::ServerPort: return "server_port";
-    case ConfigKey::DebugMode: return "debug_mode";
-    case ConfigKey::CacheSize: return "cache_size";
-    case ConfigKey::RetryCount: return "retry_count";
-    case ConfigKey::CompressionRatio: return "compression_ratio";
-    default: return "unknown";
+    case ConfigKey::DatabaseUrl:
+        return "database_url";
+    case ConfigKey::MaxConnections:
+        return "max_connections";
+    case ConfigKey::EnableLogging:
+        return "enable_logging";
+    case ConfigKey::LogLevel:
+        return "log_level";
+    case ConfigKey::ApiTimeout:
+        return "api_timeout";
+    case ConfigKey::ServerPort:
+        return "server_port";
+    case ConfigKey::DebugMode:
+        return "debug_mode";
+    case ConfigKey::CacheSize:
+        return "cache_size";
+    case ConfigKey::RetryCount:
+        return "retry_count";
+    case ConfigKey::CompressionRatio:
+        return "compression_ratio";
+    default:
+        return "unknown";
     }
 }
 
-inline ConfigKey FromString(const std::string& str) {
-    if (str == "database_url") return ConfigKey::DatabaseUrl;
-    if (str == "max_connections") return ConfigKey::MaxConnections;
-    if (str == "enable_logging") return ConfigKey::EnableLogging;
-    if (str == "log_level") return ConfigKey::LogLevel;
-    if (str == "api_timeout") return ConfigKey::ApiTimeout;
-    if (str == "server_port") return ConfigKey::ServerPort;
-    if (str == "debug_mode") return ConfigKey::DebugMode;
-    if (str == "cache_size") return ConfigKey::CacheSize;
-    if (str == "retry_count") return ConfigKey::RetryCount;
-    if (str == "compression_ratio") return ConfigKey::CompressionRatio;
+inline ConfigKey FromString(const std::string& str)
+{
+    if (str == "database_url")
+        return ConfigKey::DatabaseUrl;
+    if (str == "max_connections")
+        return ConfigKey::MaxConnections;
+    if (str == "enable_logging")
+        return ConfigKey::EnableLogging;
+    if (str == "log_level")
+        return ConfigKey::LogLevel;
+    if (str == "api_timeout")
+        return ConfigKey::ApiTimeout;
+    if (str == "server_port")
+        return ConfigKey::ServerPort;
+    if (str == "debug_mode")
+        return ConfigKey::DebugMode;
+    if (str == "cache_size")
+        return ConfigKey::CacheSize;
+    if (str == "retry_count")
+        return ConfigKey::RetryCount;
+    if (str == "compression_ratio")
+        return ConfigKey::CompressionRatio;
     throw std::runtime_error("Invalid configuration key: " + str);
 }
 
@@ -60,66 +84,29 @@ inline ConfigKey FromString(const std::string& str) {
 
 // Declare compile-time type mappings for strong type safety
 namespace config {
-template <>
-struct config_type_map<cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::DatabaseUrl> {
-    using type = std::string;
-};
-
-template <>
-struct config_type_map<cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::MaxConnections> {
-    using type = int;
-};
-
-template <>
-struct config_type_map<cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::EnableLogging> {
-    using type = bool;
-};
-
-template <>
-struct config_type_map<cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::LogLevel> {
-    using type = std::string;
-};
-
-template <>
-struct config_type_map<cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::ApiTimeout> {
-    using type = double;
-};
-
-template <>
-struct config_type_map<cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::ServerPort> {
-    using type = int;
-};
-
-template <>
-struct config_type_map<cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::DebugMode> {
-    using type = bool;
-};
-
-template <>
-struct config_type_map<cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::CacheSize> {
-    using type = int;
-};
-
-template <>
-struct config_type_map<cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::RetryCount> {
-    using type = int;
-};
-
-template <>
-struct config_type_map<cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::CompressionRatio> {
-    using type = float;
-};
+DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::DatabaseUrl, std::string);
+DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::MaxConnections, int);
+DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::EnableLogging, bool);
+DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::LogLevel, std::string);
+DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::ApiTimeout, double);
+DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::ServerPort, int);
+DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::DebugMode, bool);
+DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::CacheSize, int);
+DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::RetryCount, int);
+DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::CompressionRatio, float);
 } // namespace config
 
 // Template specializations for JSON serializer
 namespace config {
 template <>
-inline std::string JsonSerializer<cppfig_unit_test::ConfigKey>::ToString(cppfig_unit_test::ConfigKey enumValue) {
+inline std::string JsonSerializer<cppfig_unit_test::ConfigKey>::ToString(cppfig_unit_test::ConfigKey enumValue)
+{
     return cppfig_unit_test::ToString(enumValue);
 }
 
 template <>
-inline cppfig_unit_test::ConfigKey JsonSerializer<cppfig_unit_test::ConfigKey>::FromString(const std::string& str) {
+inline cppfig_unit_test::ConfigKey JsonSerializer<cppfig_unit_test::ConfigKey>::FromString(const std::string& str)
+{
     return cppfig_unit_test::FromString(str);
 }
 } // namespace config
@@ -130,21 +117,24 @@ using TestConfig = ::config::GenericConfiguration<ConfigKey, ::config::JsonSeria
 
 class CppfigUnitTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void SetUp() override
+    {
         test_config_path_ = std::filesystem::temp_directory_path() / "cppfig_unit_test.json";
-        
+
         if (std::filesystem::exists(test_config_path_)) {
             std::filesystem::remove(test_config_path_);
         }
     }
 
-    void TearDown() override {
+    void TearDown() override
+    {
         if (std::filesystem::exists(test_config_path_)) {
             std::filesystem::remove(test_config_path_);
         }
     }
 
-    TestConfig::DefaultConfigMap CreateDefaultConfig() {
+    TestConfig::DefaultConfigMap CreateDefaultConfig()
+    {
         return {
             { ConfigKey::DatabaseUrl,
               ::config::ConfigHelpers<ConfigKey>::CreateStringSetting<ConfigKey::DatabaseUrl>(
@@ -186,12 +176,14 @@ protected:
 // BASIC FUNCTIONALITY TESTS
 // ============================================================================
 
-TEST_F(CppfigUnitTest, BasicConfigurationCreation) {
+TEST_F(CppfigUnitTest, BasicConfigurationCreation)
+{
     auto defaults = CreateDefaultConfig();
     EXPECT_NO_THROW(TestConfig config(test_config_path_, defaults));
 }
 
-TEST_F(CppfigUnitTest, DefaultValueAccess) {
+TEST_F(CppfigUnitTest, DefaultValueAccess)
+{
     auto defaults = CreateDefaultConfig();
     TestConfig config(test_config_path_, defaults);
 
@@ -213,7 +205,8 @@ TEST_F(CppfigUnitTest, DefaultValueAccess) {
 // ERGONOMIC API TESTS
 // ============================================================================
 
-TEST_F(CppfigUnitTest, ErgonomicAPIBasics) {
+TEST_F(CppfigUnitTest, ErgonomicAPIBasics)
+{
     auto defaults = CreateDefaultConfig();
     TestConfig config(test_config_path_, defaults);
 
@@ -225,11 +218,11 @@ TEST_F(CppfigUnitTest, ErgonomicAPIBasics) {
     auto compression_setting = config.GetSetting<ConfigKey::CompressionRatio>();
 
     // Values should be correctly typed and accessible
-    auto db_url = db_setting.Value();                    // std::string
-    auto max_conn = connections_setting.Value();         // int
-    auto log_enabled = logging_setting.Value();          // bool
-    auto timeout = timeout_setting.Value();              // double
-    auto compression = compression_setting.Value();      // float
+    auto db_url = db_setting.Value(); // std::string
+    auto max_conn = connections_setting.Value(); // int
+    auto log_enabled = logging_setting.Value(); // bool
+    auto timeout = timeout_setting.Value(); // double
+    auto compression = compression_setting.Value(); // float
 
     EXPECT_EQ(db_url, "postgresql://localhost:5432/app");
     EXPECT_EQ(max_conn, 100);
@@ -238,7 +231,8 @@ TEST_F(CppfigUnitTest, ErgonomicAPIBasics) {
     EXPECT_FLOAT_EQ(compression, 0.8f);
 }
 
-TEST_F(CppfigUnitTest, ErgonomicAPITypeInformation) {
+TEST_F(CppfigUnitTest, ErgonomicAPITypeInformation)
+{
     auto defaults = CreateDefaultConfig();
     TestConfig config(test_config_path_, defaults);
 
@@ -256,7 +250,8 @@ TEST_F(CppfigUnitTest, ErgonomicAPITypeInformation) {
     EXPECT_EQ(compression_setting.GetTypeName(), "float");
 }
 
-TEST_F(CppfigUnitTest, ErgonomicAPIValueModification) {
+TEST_F(CppfigUnitTest, ErgonomicAPIValueModification)
+{
     auto defaults = CreateDefaultConfig();
     TestConfig config(test_config_path_, defaults);
 
@@ -286,7 +281,8 @@ TEST_F(CppfigUnitTest, ErgonomicAPIValueModification) {
 // METADATA TESTS
 // ============================================================================
 
-TEST_F(CppfigUnitTest, MetadataAccess) {
+TEST_F(CppfigUnitTest, MetadataAccess)
+{
     auto defaults = CreateDefaultConfig();
     TestConfig config(test_config_path_, defaults);
 
@@ -315,7 +311,8 @@ TEST_F(CppfigUnitTest, MetadataAccess) {
     EXPECT_EQ(timeout_setting.Unit().value(), "seconds");
 }
 
-TEST_F(CppfigUnitTest, ToStringFunctionality) {
+TEST_F(CppfigUnitTest, ToStringFunctionality)
+{
     auto defaults = CreateDefaultConfig();
     TestConfig config(test_config_path_, defaults);
 
@@ -344,7 +341,8 @@ TEST_F(CppfigUnitTest, ToStringFunctionality) {
 // VALIDATION TESTS
 // ============================================================================
 
-TEST_F(CppfigUnitTest, ValidationSuccess) {
+TEST_F(CppfigUnitTest, ValidationSuccess)
+{
     auto defaults = CreateDefaultConfig();
     TestConfig config(test_config_path_, defaults);
 
@@ -356,19 +354,20 @@ TEST_F(CppfigUnitTest, ValidationSuccess) {
     auto compression_setting = config.GetSetting<ConfigKey::CompressionRatio>();
 
     // Test valid values within constraints
-    port_setting.SetValue(8443);  // Valid port
+    port_setting.SetValue(8443); // Valid port
     EXPECT_TRUE(port_setting.IsValid());
 
-    connections_setting.SetValue(500);  // Valid connection count
+    connections_setting.SetValue(500); // Valid connection count
     EXPECT_TRUE(connections_setting.IsValid());
 
-    compression_setting.SetValue(0.5f);  // Valid compression ratio
+    compression_setting.SetValue(0.5f); // Valid compression ratio
     EXPECT_TRUE(compression_setting.IsValid());
 
     EXPECT_TRUE(config.ValidateAll());
 }
 
-TEST_F(CppfigUnitTest, ValidationFailures) {
+TEST_F(CppfigUnitTest, ValidationFailures)
+{
     auto defaults = CreateDefaultConfig();
     TestConfig config(test_config_path_, defaults);
 
@@ -378,11 +377,11 @@ TEST_F(CppfigUnitTest, ValidationFailures) {
     auto retry_setting = config.GetSetting<ConfigKey::RetryCount>();
 
     // Test values outside valid ranges
-    port_setting.SetValue(100);  // Below minimum (1024)
+    port_setting.SetValue(100); // Below minimum (1024)
     EXPECT_FALSE(port_setting.IsValid());
     EXPECT_FALSE(config.ValidateAll());
 
-    port_setting.SetValue(70000);  // Above maximum (65535)
+    port_setting.SetValue(70000); // Above maximum (65535)
     EXPECT_FALSE(port_setting.IsValid());
     EXPECT_FALSE(config.ValidateAll());
 
@@ -391,11 +390,11 @@ TEST_F(CppfigUnitTest, ValidationFailures) {
     EXPECT_TRUE(port_setting.IsValid());
 
     // Test other constraints
-    connections_setting.SetValue(0);  // Below minimum (1)
+    connections_setting.SetValue(0); // Below minimum (1)
     EXPECT_FALSE(connections_setting.IsValid());
     EXPECT_FALSE(config.ValidateAll());
 
-    connections_setting.SetValue(2000);  // Above maximum (1000)
+    connections_setting.SetValue(2000); // Above maximum (1000)
     EXPECT_FALSE(connections_setting.IsValid());
     EXPECT_FALSE(config.ValidateAll());
 
@@ -404,11 +403,11 @@ TEST_F(CppfigUnitTest, ValidationFailures) {
     EXPECT_TRUE(connections_setting.IsValid());
 
     // Test float constraints
-    compression_setting.SetValue(0.05f);  // Below minimum (0.1)
+    compression_setting.SetValue(0.05f); // Below minimum (0.1)
     EXPECT_FALSE(compression_setting.IsValid());
     EXPECT_FALSE(config.ValidateAll());
 
-    compression_setting.SetValue(1.5f);  // Above maximum (1.0)
+    compression_setting.SetValue(1.5f); // Above maximum (1.0)
     EXPECT_FALSE(compression_setting.IsValid());
     EXPECT_FALSE(config.ValidateAll());
 
@@ -417,11 +416,11 @@ TEST_F(CppfigUnitTest, ValidationFailures) {
     EXPECT_TRUE(compression_setting.IsValid());
 
     // Test retry count
-    retry_setting.SetValue(-1);  // Below minimum (0)
+    retry_setting.SetValue(-1); // Below minimum (0)
     EXPECT_FALSE(retry_setting.IsValid());
     EXPECT_FALSE(config.ValidateAll());
 
-    retry_setting.SetValue(15);  // Above maximum (10)
+    retry_setting.SetValue(15); // Above maximum (10)
     EXPECT_FALSE(retry_setting.IsValid());
     EXPECT_FALSE(config.ValidateAll());
 
@@ -431,7 +430,8 @@ TEST_F(CppfigUnitTest, ValidationFailures) {
     EXPECT_TRUE(config.ValidateAll());
 }
 
-TEST_F(CppfigUnitTest, ValidationErrorMessages) {
+TEST_F(CppfigUnitTest, ValidationErrorMessages)
+{
     auto defaults = CreateDefaultConfig();
     TestConfig config(test_config_path_, defaults);
 
@@ -442,17 +442,16 @@ TEST_F(CppfigUnitTest, ValidationErrorMessages) {
     port_setting.SetValue(100);
     EXPECT_FALSE(port_setting.IsValid());
     auto error_msg = port_setting.GetValidationError();
-    EXPECT_TRUE(error_msg.find("minimum") != std::string::npos || 
-                error_msg.find("range") != std::string::npos);
+    EXPECT_TRUE(error_msg.find("minimum") != std::string::npos || error_msg.find("range") != std::string::npos);
 
     connections_setting.SetValue(2000);
     EXPECT_FALSE(connections_setting.IsValid());
     error_msg = connections_setting.GetValidationError();
-    EXPECT_TRUE(error_msg.find("maximum") != std::string::npos || 
-                error_msg.find("range") != std::string::npos);
+    EXPECT_TRUE(error_msg.find("maximum") != std::string::npos || error_msg.find("range") != std::string::npos);
 }
 
-TEST_F(CppfigUnitTest, BoundaryValues) {
+TEST_F(CppfigUnitTest, BoundaryValues)
+{
     auto defaults = CreateDefaultConfig();
     TestConfig config(test_config_path_, defaults);
 
@@ -462,28 +461,28 @@ TEST_F(CppfigUnitTest, BoundaryValues) {
     auto retry_setting = config.GetSetting<ConfigKey::RetryCount>();
 
     // Test exact boundary values - should be valid
-    port_setting.SetValue(1024);  // Minimum
+    port_setting.SetValue(1024); // Minimum
     EXPECT_TRUE(port_setting.IsValid());
 
-    port_setting.SetValue(65535);  // Maximum
+    port_setting.SetValue(65535); // Maximum
     EXPECT_TRUE(port_setting.IsValid());
 
-    connections_setting.SetValue(1);  // Minimum
+    connections_setting.SetValue(1); // Minimum
     EXPECT_TRUE(connections_setting.IsValid());
 
-    connections_setting.SetValue(1000);  // Maximum
+    connections_setting.SetValue(1000); // Maximum
     EXPECT_TRUE(connections_setting.IsValid());
 
-    compression_setting.SetValue(0.1f);  // Minimum
+    compression_setting.SetValue(0.1f); // Minimum
     EXPECT_TRUE(compression_setting.IsValid());
 
-    compression_setting.SetValue(1.0f);  // Maximum
+    compression_setting.SetValue(1.0f); // Maximum
     EXPECT_TRUE(compression_setting.IsValid());
 
-    retry_setting.SetValue(0);  // Minimum
+    retry_setting.SetValue(0); // Minimum
     EXPECT_TRUE(retry_setting.IsValid());
 
-    retry_setting.SetValue(10);  // Maximum
+    retry_setting.SetValue(10); // Maximum
     EXPECT_TRUE(retry_setting.IsValid());
 
     EXPECT_TRUE(config.ValidateAll());
@@ -493,7 +492,8 @@ TEST_F(CppfigUnitTest, BoundaryValues) {
 // SERIALIZATION TESTS
 // ============================================================================
 
-TEST_F(CppfigUnitTest, SerializationRoundTrip) {
+TEST_F(CppfigUnitTest, SerializationRoundTrip)
+{
     auto defaults = CreateDefaultConfig();
     TestConfig config1(test_config_path_, defaults);
 
@@ -535,7 +535,8 @@ TEST_F(CppfigUnitTest, SerializationRoundTrip) {
 // MODIFICATION TRACKING TESTS
 // ============================================================================
 
-TEST_F(CppfigUnitTest, ModificationTracking) {
+TEST_F(CppfigUnitTest, ModificationTracking)
+{
     auto defaults = CreateDefaultConfig();
     TestConfig config(test_config_path_, defaults);
 
@@ -555,7 +556,8 @@ TEST_F(CppfigUnitTest, ModificationTracking) {
     EXPECT_FALSE(config.IsModified<ConfigKey::DatabaseUrl>());
 }
 
-TEST_F(CppfigUnitTest, ResetFunctionality) {
+TEST_F(CppfigUnitTest, ResetFunctionality)
+{
     auto defaults = CreateDefaultConfig();
     TestConfig config(test_config_path_, defaults);
 
@@ -573,7 +575,8 @@ TEST_F(CppfigUnitTest, ResetFunctionality) {
     EXPECT_FALSE(config.IsModified<ConfigKey::ServerPort>());
 }
 
-TEST_F(CppfigUnitTest, ResetAfterInvalidValues) {
+TEST_F(CppfigUnitTest, ResetAfterInvalidValues)
+{
     auto defaults = CreateDefaultConfig();
     TestConfig config(test_config_path_, defaults);
 
@@ -595,7 +598,8 @@ TEST_F(CppfigUnitTest, ResetAfterInvalidValues) {
 // COMPILE-TIME SAFETY TESTS
 // ============================================================================
 
-TEST_F(CppfigUnitTest, CompileTimeSafetyVerification) {
+TEST_F(CppfigUnitTest, CompileTimeSafetyVerification)
+{
     auto defaults = CreateDefaultConfig();
     TestConfig config(test_config_path_, defaults);
 
@@ -632,7 +636,8 @@ TEST_F(CppfigUnitTest, CompileTimeSafetyVerification) {
 // LEGACY API COMPATIBILITY TESTS
 // ============================================================================
 
-TEST_F(CppfigUnitTest, LegacyAPICompatibility) {
+TEST_F(CppfigUnitTest, LegacyAPICompatibility)
+{
     auto defaults = CreateDefaultConfig();
     TestConfig config(test_config_path_, defaults);
 
@@ -655,31 +660,33 @@ TEST_F(CppfigUnitTest, LegacyAPICompatibility) {
 // ERROR HANDLING TESTS
 // ============================================================================
 
-TEST_F(CppfigUnitTest, FileHandlingErrors) {
+TEST_F(CppfigUnitTest, FileHandlingErrors)
+{
     auto defaults = CreateDefaultConfig();
-    
+
     // Test with invalid file path
     std::filesystem::path invalid_path = "/invalid/path/config.json";
     EXPECT_NO_THROW(TestConfig config(invalid_path, defaults));
-    
+
     TestConfig config(invalid_path, defaults);
     // Save should fail gracefully
     EXPECT_FALSE(config.Save());
 }
 
-TEST_F(CppfigUnitTest, ValidationErrorCollection) {
+TEST_F(CppfigUnitTest, ValidationErrorCollection)
+{
     auto defaults = CreateDefaultConfig();
     TestConfig config(test_config_path_, defaults);
 
     // Set multiple invalid values
     auto port_setting = config.GetSetting<ConfigKey::ServerPort>();
     auto connections_setting = config.GetSetting<ConfigKey::MaxConnections>();
-    
-    port_setting.SetValue(100);  // Invalid
-    connections_setting.SetValue(2000);  // Invalid
-    
+
+    port_setting.SetValue(100); // Invalid
+    connections_setting.SetValue(2000); // Invalid
+
     EXPECT_FALSE(config.ValidateAll());
-    
+
     auto errors = config.GetValidationErrors();
     EXPECT_GT(errors.size(), 0);
 }

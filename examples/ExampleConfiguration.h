@@ -28,30 +28,11 @@ enum class AppConfigName : uint8_t {
 // Declare compile-time type mappings for each configuration setting
 // This enables strong compile-time type checking
 namespace config {
-template <>
-struct config_type_map<example::AppConfigName, example::AppConfigName::DatabaseUrl> {
-    using type = std::string;
-};
-
-template <>
-struct config_type_map<example::AppConfigName, example::AppConfigName::MaxConnections> {
-    using type = int;
-};
-
-template <>
-struct config_type_map<example::AppConfigName, example::AppConfigName::EnableLogging> {
-    using type = bool;
-};
-
-template <>
-struct config_type_map<example::AppConfigName, example::AppConfigName::RetryCount> {
-    using type = int;
-};
-
-template <>
-struct config_type_map<example::AppConfigName, example::AppConfigName::LogLevel> {
-    using type = std::string;
-};
+DECLARE_CONFIG_TYPE(example::AppConfigName, example::AppConfigName::DatabaseUrl, std::string);
+DECLARE_CONFIG_TYPE(example::AppConfigName, example::AppConfigName::MaxConnections, int);
+DECLARE_CONFIG_TYPE(example::AppConfigName, example::AppConfigName::EnableLogging, bool);
+DECLARE_CONFIG_TYPE(example::AppConfigName, example::AppConfigName::RetryCount, int);
+DECLARE_CONFIG_TYPE(example::AppConfigName, example::AppConfigName::LogLevel, std::string);
 } // namespace config
 
 namespace example {
