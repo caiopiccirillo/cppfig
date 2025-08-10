@@ -8,12 +8,13 @@
 // 3. This proves the library catches type mismatches at compile time
 
 #include <gtest/gtest.h>
+
 #include <string>
 
-#include "Setting.h"
+#include "ConfigHelpers.h"
 #include "GenericConfiguration.h"
 #include "JsonSerializer.h"
-#include "ConfigHelpers.h"
+#include "Setting.h"
 #include "TypedSetting.h"
 
 namespace compile_time_safety_demo {
@@ -27,21 +28,32 @@ enum class DemoConfigKey : uint8_t {
 };
 
 // String conversion functions
-inline std::string ToString(DemoConfigKey key) {
+inline std::string ToString(DemoConfigKey key)
+{
     switch (key) {
-    case DemoConfigKey::StringSetting: return "string_setting";
-    case DemoConfigKey::IntSetting: return "int_setting";
-    case DemoConfigKey::BoolSetting: return "bool_setting";
-    case DemoConfigKey::FloatSetting: return "float_setting";
-    default: return "unknown";
+    case DemoConfigKey::StringSetting:
+        return "string_setting";
+    case DemoConfigKey::IntSetting:
+        return "int_setting";
+    case DemoConfigKey::BoolSetting:
+        return "bool_setting";
+    case DemoConfigKey::FloatSetting:
+        return "float_setting";
+    default:
+        return "unknown";
     }
 }
 
-inline DemoConfigKey FromString(const std::string& str) {
-    if (str == "string_setting") return DemoConfigKey::StringSetting;
-    if (str == "int_setting") return DemoConfigKey::IntSetting;
-    if (str == "bool_setting") return DemoConfigKey::BoolSetting;
-    if (str == "float_setting") return DemoConfigKey::FloatSetting;
+inline DemoConfigKey FromString(const std::string& str)
+{
+    if (str == "string_setting")
+        return DemoConfigKey::StringSetting;
+    if (str == "int_setting")
+        return DemoConfigKey::IntSetting;
+    if (str == "bool_setting")
+        return DemoConfigKey::BoolSetting;
+    if (str == "float_setting")
+        return DemoConfigKey::FloatSetting;
     throw std::runtime_error("Invalid configuration key: " + str);
 }
 
@@ -49,36 +61,23 @@ inline DemoConfigKey FromString(const std::string& str) {
 
 // Compile-time type mappings
 namespace config {
-template <>
-struct config_type_map<compile_time_safety_demo::DemoConfigKey, compile_time_safety_demo::DemoConfigKey::StringSetting> {
-    using type = std::string;
-};
-
-template <>
-struct config_type_map<compile_time_safety_demo::DemoConfigKey, compile_time_safety_demo::DemoConfigKey::IntSetting> {
-    using type = int;
-};
-
-template <>
-struct config_type_map<compile_time_safety_demo::DemoConfigKey, compile_time_safety_demo::DemoConfigKey::BoolSetting> {
-    using type = bool;
-};
-
-template <>
-struct config_type_map<compile_time_safety_demo::DemoConfigKey, compile_time_safety_demo::DemoConfigKey::FloatSetting> {
-    using type = float;
-};
+DECLARE_CONFIG_TYPE(compile_time_safety_demo::DemoConfigKey, compile_time_safety_demo::DemoConfigKey::StringSetting, std::string);
+DECLARE_CONFIG_TYPE(compile_time_safety_demo::DemoConfigKey, compile_time_safety_demo::DemoConfigKey::IntSetting, int);
+DECLARE_CONFIG_TYPE(compile_time_safety_demo::DemoConfigKey, compile_time_safety_demo::DemoConfigKey::BoolSetting, bool);
+DECLARE_CONFIG_TYPE(compile_time_safety_demo::DemoConfigKey, compile_time_safety_demo::DemoConfigKey::FloatSetting, float);
 } // namespace config
 
 // JSON serializer specializations
 namespace config {
 template <>
-inline std::string JsonSerializer<compile_time_safety_demo::DemoConfigKey>::ToString(compile_time_safety_demo::DemoConfigKey enumValue) {
+inline std::string JsonSerializer<compile_time_safety_demo::DemoConfigKey>::ToString(compile_time_safety_demo::DemoConfigKey enumValue)
+{
     return compile_time_safety_demo::ToString(enumValue);
 }
 
 template <>
-inline compile_time_safety_demo::DemoConfigKey JsonSerializer<compile_time_safety_demo::DemoConfigKey>::FromString(const std::string& str) {
+inline compile_time_safety_demo::DemoConfigKey JsonSerializer<compile_time_safety_demo::DemoConfigKey>::FromString(const std::string& str)
+{
     return compile_time_safety_demo::FromString(str);
 }
 } // namespace config
@@ -88,7 +87,8 @@ namespace compile_time_safety_demo {
 using DemoConfig = ::config::GenericConfiguration<DemoConfigKey, ::config::JsonSerializer<DemoConfigKey>>;
 
 // This test should compile and run successfully - it shows the CORRECT usage
-TEST(CompileTimeSafetyDemo, CorrectUsage) {
+TEST(CompileTimeSafetyDemo, CorrectUsage)
+{
     DemoConfig::DefaultConfigMap defaults = {
         { DemoConfigKey::StringSetting,
           ::config::ConfigHelpers<DemoConfigKey>::CreateStringSetting<DemoConfigKey::StringSetting>(
@@ -113,10 +113,10 @@ TEST(CompileTimeSafetyDemo, CorrectUsage) {
     auto float_setting = config.GetSetting<DemoConfigKey::FloatSetting>();
 
     // These should work - correct types
-    auto str_val = string_setting.Value();      // std::string
-    auto int_val = int_setting.Value();         // int
-    auto bool_val = bool_setting.Value();       // bool
-    auto float_val = float_setting.Value();     // float
+    auto str_val = string_setting.Value(); // std::string
+    auto int_val = int_setting.Value(); // int
+    auto bool_val = bool_setting.Value(); // bool
+    auto float_val = float_setting.Value(); // float
 
     // These should work - setting correct types
     string_setting.SetValue(std::string("new_string"));
@@ -245,14 +245,15 @@ TEST(CompileTimeSafetyDemo, InconsistentTemplateParameters) {
 */
 
 // DEMONSTRATION: Show what the compiler errors look like
-TEST(CompileTimeSafetyDemo, DocumentExpectedErrors) {
+TEST(CompileTimeSafetyDemo, DocumentExpectedErrors)
+{
     // This test documents what kinds of compile-time errors you should expect:
-    
-    EXPECT_TRUE(true);  // Placeholder to make test pass
-    
+
+    EXPECT_TRUE(true); // Placeholder to make test pass
+
     /*
     Expected error types when uncommenting the sections above:
-    
+
     1. "static assertion failed: Template parameter mismatch"
     2. "no matching function for call to 'SetValue'"
     3. "static assertion failed: Explicit type must match the configured type"
@@ -260,7 +261,7 @@ TEST(CompileTimeSafetyDemo, DocumentExpectedErrors) {
     5. "incomplete type 'config_type_map<...>'"
     6. "no member named 'GetSetting' in class"
     7. "static assertion failed: Value type must match the configured type"
-    
+
     These errors prove that type safety is enforced at compile time,
     preventing runtime type errors and making the library much safer to use.
     */
