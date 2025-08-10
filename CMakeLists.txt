@@ -22,6 +22,7 @@ add_subdirectory(src)
 add_subdirectory(examples)
 
 add_subdirectory(test)
+add_subdirectory(benchmark)
 include(CTest)
 
 include(CPackConfig.cmake)
