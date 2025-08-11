@@ -21,7 +21,7 @@ namespace config {
  * @brief Type trait to check if a serializer derives from IConfigurationSerializer
  */
 template <typename E, typename SettingVariant, typename Serializer>
-struct is_valid_serializer : std::is_base_of<IConfigurationSerializer<E, SettingVariant>, Serializer> {};
+struct is_valid_serializer : std::is_base_of<IConfigurationSerializer<E, SettingVariant>, Serializer> { };
 
 /**
  * @brief Modern configuration implementation with fully configurable type support
@@ -194,7 +194,18 @@ public:
      */
     bool Load() override
     {
-        return serializer_->Deserialize(filepath_.string());
+        return Load(true);
+    }
+
+    /**
+     * @brief Load the configuration with optional schema migration
+     *
+     * @param auto_migrate_schema If true, automatically adds missing settings from defaults
+     * @return true if successful, false otherwise
+     */
+    bool Load(bool auto_migrate_schema)
+    {
+        return serializer_->Deserialize(filepath_.string(), auto_migrate_schema);
     }
 
     /**
@@ -283,6 +294,53 @@ public:
     std::string GetSerializerFormat() const
     {
         return serializer_->GetFormatName();
+    }
+
+    /**
+     * @brief Synchronize configuration file with current schema
+     *
+     * This method checks if there are any new settings in the defaults that
+     * are missing from the current configuration, adds them with default values,
+     * and saves the updated configuration to file.
+     *
+     * @return true if synchronization was successful, false otherwise
+     */
+    bool SyncSchemaWithDefaults()
+    {
+        bool schema_updated = false;
+
+        // Check for missing settings
+        for (const auto& [default_key, default_setting] : defaults_) {
+            if (settings_.find(default_key) == settings_.end()) {
+                settings_[default_key] = default_setting;
+                schema_updated = true;
+            }
+        }
+
+        // Save if we made changes
+        if (schema_updated) {
+            return Save();
+        }
+
+        return true; // No changes needed
+    }
+
+    /**
+     * @brief Check which settings are missing from the current configuration
+     *
+     * @return Vector of enum values for settings that exist in defaults but not in current config
+     */
+    std::vector<E> GetMissingSettings() const
+    {
+        std::vector<E> missing;
+
+        for (const auto& [default_key, default_setting] : defaults_) {
+            if (settings_.find(default_key) == settings_.end()) {
+                missing.push_back(default_key);
+            }
+        }
+
+        return missing;
     }
 
     /**

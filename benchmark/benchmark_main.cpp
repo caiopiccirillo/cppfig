@@ -750,6 +750,225 @@ static void BM_RandomAccess(benchmark::State& state)
 }
 BENCHMARK(BM_RandomAccess);
 
+// ============================================================================
+// SCHEMA MIGRATION BENCHMARKS
+// ============================================================================
+
+static void BM_SchemaMigration_Detection(benchmark::State& state)
+{
+    // Create a configuration with only half the settings to simulate missing settings
+    std::filesystem::path partial_config_path = std::filesystem::temp_directory_path() / "partial_benchmark_config.json";
+
+    // Create minimal JSON file with only some settings
+    std::ofstream file(partial_config_path);
+    file << R"([
+    {
+        "description": "Database connection URL",
+        "name": "database_url",
+        "value": "postgresql://localhost:5432/benchmark"
+    },
+    {
+        "description": "Maximum database connections",
+        "max_value": 1000,
+        "min_value": 1,
+        "name": "max_connections",
+        "unit": "connections",
+        "value": 100
+    },
+    {
+        "description": "Enable application logging",
+        "name": "enable_logging",
+        "value": true
+    }
+])";
+    file.close();
+
+    auto defaults = benchmark_test::CreateBenchmarkDefaults();
+    benchmark_test::BenchmarkTestConfig config(partial_config_path, defaults);
+
+    for (auto _ : state) {
+        // Benchmark missing setting detection
+        auto missing = config.GetMissingSettings();
+        benchmark::DoNotOptimize(missing);
+    }
+
+    // Cleanup
+    std::filesystem::remove(partial_config_path);
+}
+BENCHMARK(BM_SchemaMigration_Detection);
+
+static void BM_SchemaMigration_ManualSync(benchmark::State& state)
+{
+    // Create a configuration with missing settings
+    std::filesystem::path partial_config_path = std::filesystem::temp_directory_path() / "sync_benchmark_config.json";
+
+    auto defaults = benchmark_test::CreateBenchmarkDefaults();
+
+    for (auto _ : state) {
+        state.PauseTiming();
+
+        // Create minimal config file for each iteration
+        std::ofstream file(partial_config_path);
+        file << R"([
+    {
+        "description": "Database connection URL",
+        "name": "database_url",
+        "value": "postgresql://localhost:5432/benchmark"
+    },
+    {
+        "description": "Enable application logging",
+        "name": "enable_logging",
+        "value": true
+    }
+])";
+        file.close();
+
+        benchmark_test::BenchmarkTestConfig config(partial_config_path, defaults);
+        config.Load(false); // Load without auto-migration
+
+        state.ResumeTiming();
+
+        // Benchmark manual schema synchronization
+        auto result = config.SyncSchemaWithDefaults();
+        benchmark::DoNotOptimize(result);
+    }
+
+    // Cleanup
+    if (std::filesystem::exists(partial_config_path)) {
+        std::filesystem::remove(partial_config_path);
+    }
+}
+BENCHMARK(BM_SchemaMigration_ManualSync);
+
+static void BM_SchemaMigration_AutomaticLoad(benchmark::State& state)
+{
+    // Benchmark automatic schema migration during load
+    std::filesystem::path migration_config_path = std::filesystem::temp_directory_path() / "auto_migration_benchmark_config.json";
+
+    auto defaults = benchmark_test::CreateBenchmarkDefaults();
+
+    for (auto _ : state) {
+        state.PauseTiming();
+
+        // Create partial config file for each iteration
+        std::ofstream file(migration_config_path);
+        file << R"([
+    {
+        "description": "Database connection URL",
+        "name": "database_url",
+        "value": "postgresql://localhost:5432/benchmark"
+    },
+    {
+        "description": "Server port number",
+        "max_value": 65535,
+        "min_value": 1024,
+        "name": "server_port",
+        "unit": "port",
+        "value": 8080
+    }
+])";
+        file.close();
+
+        state.ResumeTiming();
+
+        // Benchmark automatic migration during construction + load
+        benchmark_test::BenchmarkTestConfig config(migration_config_path, defaults);
+        benchmark::DoNotOptimize(config);
+    }
+
+    // Cleanup
+    if (std::filesystem::exists(migration_config_path)) {
+        std::filesystem::remove(migration_config_path);
+    }
+}
+BENCHMARK(BM_SchemaMigration_AutomaticLoad);
+
+static void BM_SchemaMigration_LoadWithoutMigration(benchmark::State& state)
+{
+    // Benchmark loading without migration (baseline comparison)
+    std::filesystem::path complete_config_path = std::filesystem::temp_directory_path() / "complete_benchmark_config.json";
+
+    auto defaults = benchmark_test::CreateBenchmarkDefaults();
+
+    // Create complete config file once
+    benchmark_test::BenchmarkTestConfig setup_config(complete_config_path, defaults);
+    setup_config.Save();
+
+    for (auto _ : state) {
+        // Benchmark loading when no migration is needed
+        benchmark_test::BenchmarkTestConfig config(complete_config_path, defaults);
+        config.Load(false); // Explicitly disable migration for fair comparison
+        benchmark::DoNotOptimize(config);
+    }
+
+    // Cleanup
+    std::filesystem::remove(complete_config_path);
+}
+BENCHMARK(BM_SchemaMigration_LoadWithoutMigration);
+
+static void BM_SchemaMigration_ScaledMissingSettings(benchmark::State& state)
+{
+    // Benchmark migration performance with varying numbers of missing settings
+    std::filesystem::path scaled_config_path = std::filesystem::temp_directory_path() / "scaled_benchmark_config.json";
+
+    auto defaults = benchmark_test::CreateBenchmarkDefaults();
+    const int missing_count = state.range(0);
+
+    for (auto _ : state) {
+        state.PauseTiming();
+
+        // Create config with specific number of missing settings
+        std::ofstream file(scaled_config_path);
+        file << "[\n";
+
+        // Add only the first few settings, leaving the rest missing
+        int included = std::max(1, 30 - missing_count); // Total of 30 settings in defaults
+
+        if (included >= 1) {
+            file << R"(    {
+        "description": "Database connection URL",
+        "name": "database_url",
+        "value": "postgresql://localhost:5432/benchmark"
+    })";
+        }
+        if (included >= 2) {
+            file << R"(,
+    {
+        "description": "Maximum database connections",
+        "max_value": 1000,
+        "min_value": 1,
+        "name": "max_connections",
+        "unit": "connections",
+        "value": 100
+    })";
+        }
+        if (included >= 3) {
+            file << R"(,
+    {
+        "description": "Enable application logging",
+        "name": "enable_logging",
+        "value": true
+    })";
+        }
+
+        file << "\n]";
+        file.close();
+
+        state.ResumeTiming();
+
+        // Benchmark migration with scaled missing settings
+        benchmark_test::BenchmarkTestConfig config(scaled_config_path, defaults);
+        benchmark::DoNotOptimize(config);
+    }
+
+    // Cleanup
+    if (std::filesystem::exists(scaled_config_path)) {
+        std::filesystem::remove(scaled_config_path);
+    }
+}
+// Test with different numbers of missing settings: 5, 10, 15, 20, 25
+BENCHMARK(BM_SchemaMigration_ScaledMissingSettings)->Arg(5)->Arg(10)->Arg(15)->Arg(20)->Arg(25);
+
 // Custom main to clean up after benchmarks
 int main(int argc, char** argv)
 {
