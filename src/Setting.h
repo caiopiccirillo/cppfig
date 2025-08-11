@@ -5,6 +5,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "ConfigurationTraits.h"
+
 namespace config {
 
 /**
@@ -67,6 +69,7 @@ inline constexpr bool is_valid_config_type_v = std::is_same_v<config_type_t<E, E
 template <typename E, typename T>
 class Setting {
 public:
+    using value_type = T;
     Setting(E name,
             T value,
             std::optional<T> maximum_value = std::nullopt,
@@ -128,29 +131,110 @@ public:
      */
     bool IsValid() const
     {
+        // Only check range constraints for types that support comparison
+        return IsValidImpl();
+    }
+
+private:
+    // Implementation for types that support comparison operators
+    template<typename U = T>
+    typename std::enable_if<
+        std::is_arithmetic<U>::value || std::is_same<U, std::string>::value,
+        bool
+    >::type IsValidImpl() const
+    {
+        // Check range constraints for arithmetic types and strings
         if (min_value_ && value_ < *min_value_)
             return false;
         if (max_value_ && value_ > *max_value_)
             return false;
+        
+        // Use trait-based validation if available
+        if (has_configuration_traits_v<T>) {
+            return ConfigurationTraits<T>::IsValid(value_);
+        }
+        
+        return true;
+    }
+    
+    // Implementation for custom types that may not support comparison
+    template<typename U = T>
+    typename std::enable_if<
+        !std::is_arithmetic<U>::value && !std::is_same<U, std::string>::value,
+        bool
+    >::type IsValidImpl() const
+    {
+        // Skip range constraints for custom types, use only trait-based validation
+        if (has_configuration_traits_v<T>) {
+            return ConfigurationTraits<T>::IsValid(value_);
+        }
+        
         return true;
     }
 
+private:
+
+public:
     /**
      * @brief Get validation error message if value is invalid
      */
     std::string GetValidationError() const
     {
+        return GetValidationErrorImpl();
+    }
+
+private:
+    // Implementation for types that support comparison operators
+    template<typename U = T>
+    typename std::enable_if<
+        std::is_arithmetic<U>::value || std::is_same<U, std::string>::value,
+        std::string
+    >::type GetValidationErrorImpl() const
+    {
         if (!IsValid()) {
+            // Check range constraints first
             if (min_value_ && value_ < *min_value_) {
-                return "Value below minimum: " + std::to_string(value_) + " < " + std::to_string(*min_value_);
+                if (has_configuration_traits_v<T>) {
+                    return "Value below minimum: " + ConfigurationTraits<T>::ToString(value_) + 
+                           " < " + ConfigurationTraits<T>::ToString(*min_value_);
+                } else {
+                    return "Value below minimum";
+                }
             }
             if (max_value_ && value_ > *max_value_) {
-                return "Value above maximum: " + std::to_string(value_) + " > " + std::to_string(*max_value_);
+                if (has_configuration_traits_v<T>) {
+                    return "Value above maximum: " + ConfigurationTraits<T>::ToString(value_) + 
+                           " > " + ConfigurationTraits<T>::ToString(*max_value_);
+                } else {
+                    return "Value above maximum";
+                }
+            }
+            
+            // Use trait-based validation error if available
+            if (has_configuration_traits_v<T>) {
+                return ConfigurationTraits<T>::GetValidationError(value_);
+            }
+        }
+        return "";
+    }
+    
+    // Implementation for custom types that may not support comparison
+    template<typename U = T>
+    typename std::enable_if<
+        !std::is_arithmetic<U>::value && !std::is_same<U, std::string>::value,
+        std::string
+    >::type GetValidationErrorImpl() const
+    {
+        if (!IsValid()) {
+            // Use trait-based validation error if available
+            if (has_configuration_traits_v<T>) {
+                return ConfigurationTraits<T>::GetValidationError(value_);
             }
         }
         return "";
     }
 
+public:
     /**
      * @brief Equality comparison operator
      */
@@ -182,6 +266,7 @@ private:
 template <typename E>
 class Setting<E, std::string> {
 public:
+    using value_type = std::string;
     Setting(E name,
             std::string value,
             std::optional<std::string> maximum_value = std::nullopt,
@@ -230,12 +315,16 @@ public:
     bool IsValid() const
     {
         // For strings, we can check length constraints if min/max are set as length limits
-        return true; // Basic implementation - can be extended for string validation
+        // Use trait-based validation
+        return ConfigurationTraits<std::string>::IsValid(value_);
     }
 
     std::string GetValidationError() const
     {
-        return ""; // No validation errors for basic string settings
+        if (!IsValid()) {
+            return ConfigurationTraits<std::string>::GetValidationError(value_);
+        }
+        return "";
     }
 
     /**

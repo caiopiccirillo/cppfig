@@ -1,10 +1,7 @@
 #include <iostream>
 #include <filesystem>
 
-#include "ConfigHelpers.h"
-#include "GenericConfiguration.h"
-#include "JsonSerializer.h"
-#include "Setting.h"
+#include "cppfig.h"
 
 // Step 1: Define your configuration enum
 enum class GameConfig : uint8_t {
@@ -56,13 +53,13 @@ GameConfig FromString(const std::string& str)
 // Step 4: Specialize JsonSerializer for your enum
 namespace config {
 template <>
-inline std::string JsonSerializer<GameConfig>::ToString(GameConfig enumValue)
+inline std::string JsonSerializer<GameConfig, BasicSettingVariant<GameConfig>>::ToString(GameConfig enumValue)
 {
     return ::ToString(enumValue);
 }
 
 template <>
-inline GameConfig JsonSerializer<GameConfig>::FromString(const std::string& str)
+inline GameConfig JsonSerializer<GameConfig, BasicSettingVariant<GameConfig>>::FromString(const std::string& str)
 {
     return ::FromString(str);
 }
@@ -72,8 +69,8 @@ int main()
 {
     std::cout << "🎮 C++fig Simple Configuration Example\n\n";
 
-    // Step 5: Define your configuration type
-    using Config = config::GenericConfiguration<GameConfig, config::JsonSerializer<GameConfig>>;
+    // Step 5: Define your configuration type using the new architecture
+    using Config = config::BasicJsonConfiguration<GameConfig>;
 
     // Step 6: Create default configuration values
     const Config::DefaultConfigMap defaultConfig = {

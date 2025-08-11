@@ -2,7 +2,6 @@
 
 #include <string>
 #include <type_traits>
-#include <variant>
 #include <vector>
 
 #include "Setting.h"
@@ -14,20 +13,19 @@ namespace config {
  *
  * This interface defines the contract for configuration classes that provide
  * compile-time type safety and zero runtime overhead for type checking.
+ * The SettingVariant is now configurable, allowing external developers to
+ * define their own type sets.
  *
  * @tparam E Enum type for configuration keys (must be an enum)
+ * @tparam SettingVariant The variant type that defines which types are supported
  */
-template <typename E>
+template <typename E, typename SettingVariant>
 class IConfiguration {
 public:
     static_assert(std::is_enum_v<E>, "Template parameter E must be an enum type");
 
-    using SettingVariant = std::variant<
-        Setting<E, int>,
-        Setting<E, float>,
-        Setting<E, double>,
-        Setting<E, std::string>,
-        Setting<E, bool>>;
+    using EnumType = E;
+    using VariantType = SettingVariant;
 
     virtual ~IConfiguration() = default;
 
@@ -121,14 +119,14 @@ public:
     }
 
     /**
-     * @brief Save the current configuration to a file
+     * @brief Save the current configuration using the attached serializer
      *
      * @return true if successful, false otherwise
      */
     virtual bool Save() = 0;
 
     /**
-     * @brief Load configuration from a file
+     * @brief Load configuration using the attached serializer
      *
      * @return true if successful, false otherwise
      */

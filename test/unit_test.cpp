@@ -1,14 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
-#include <string>
-#include <type_traits>
+#include <stdexcept>
 
-#include "ConfigHelpers.h"
-#include "GenericConfiguration.h"
-#include "JsonSerializer.h"
-#include "Setting.h"
-#include "TypedSetting.h"
+#include "cppfig.h"
 
 namespace cppfig_unit_test {
 
@@ -99,13 +94,13 @@ DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::Co
 // Template specializations for JSON serializer
 namespace config {
 template <>
-inline std::string JsonSerializer<cppfig_unit_test::ConfigKey>::ToString(cppfig_unit_test::ConfigKey enumValue)
+inline std::string JsonSerializer<cppfig_unit_test::ConfigKey, BasicSettingVariant<cppfig_unit_test::ConfigKey>>::ToString(cppfig_unit_test::ConfigKey enumValue)
 {
     return cppfig_unit_test::ToString(enumValue);
 }
 
 template <>
-inline cppfig_unit_test::ConfigKey JsonSerializer<cppfig_unit_test::ConfigKey>::FromString(const std::string& str)
+inline cppfig_unit_test::ConfigKey JsonSerializer<cppfig_unit_test::ConfigKey, BasicSettingVariant<cppfig_unit_test::ConfigKey>>::FromString(const std::string& str)
 {
     return cppfig_unit_test::FromString(str);
 }
@@ -113,7 +108,7 @@ inline cppfig_unit_test::ConfigKey JsonSerializer<cppfig_unit_test::ConfigKey>::
 
 namespace cppfig_unit_test {
 
-using TestConfig = ::config::GenericConfiguration<ConfigKey, ::config::JsonSerializer<ConfigKey>>;
+using TestConfig = config::BasicJsonConfiguration<ConfigKey>;
 
 class CppfigUnitTest : public ::testing::Test {
 protected:
@@ -188,11 +183,17 @@ TEST_F(CppfigUnitTest, DefaultValueAccess)
     TestConfig config(test_config_path_, defaults);
 
     // Test access to default values
-    auto db_url = config.GetValue<ConfigKey::DatabaseUrl, std::string>();
-    auto max_conn = config.GetValue<ConfigKey::MaxConnections, int>();
-    auto logging = config.GetValue<ConfigKey::EnableLogging, bool>();
-    auto timeout = config.GetValue<ConfigKey::ApiTimeout, double>();
-    auto compression = config.GetValue<ConfigKey::CompressionRatio, float>();
+    auto db_url_setting = config.template GetSetting<ConfigKey::DatabaseUrl>();
+    auto max_conn_setting = config.template GetSetting<ConfigKey::MaxConnections>();
+    auto logging_setting = config.template GetSetting<ConfigKey::EnableLogging>();
+    auto timeout_setting = config.template GetSetting<ConfigKey::ApiTimeout>();
+
+    auto db_url = db_url_setting.Value();
+    auto max_conn = max_conn_setting.Value();
+    auto logging = logging_setting.Value();
+    auto timeout = timeout_setting.Value();
+    auto compression_setting = config.template GetSetting<ConfigKey::CompressionRatio>();
+    auto compression = compression_setting.Value();
 
     EXPECT_EQ(db_url, "postgresql://localhost:5432/app");
     EXPECT_EQ(max_conn, 100);
@@ -211,10 +212,10 @@ TEST_F(CppfigUnitTest, ErgonomicAPIBasics)
     TestConfig config(test_config_path_, defaults);
 
     // Test ergonomic API - types automatically deduced
-    auto db_setting = config.GetSetting<ConfigKey::DatabaseUrl>();
-    auto connections_setting = config.GetSetting<ConfigKey::MaxConnections>();
-    auto logging_setting = config.GetSetting<ConfigKey::EnableLogging>();
-    auto timeout_setting = config.GetSetting<ConfigKey::ApiTimeout>();
+    auto db_setting = config.template GetSetting<ConfigKey::DatabaseUrl>();
+    auto connections_setting = config.template GetSetting<ConfigKey::MaxConnections>();
+    auto logging_setting = config.template GetSetting<ConfigKey::EnableLogging>();
+    auto timeout_setting = config.template GetSetting<ConfigKey::ApiTimeout>();
     auto compression_setting = config.GetSetting<ConfigKey::CompressionRatio>();
 
     // Values should be correctly typed and accessible
