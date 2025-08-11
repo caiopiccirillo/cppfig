@@ -14,7 +14,7 @@ A modern, high-performance C++ configuration library that provides **compile-tim
 - **IDE-friendly** - Full autocomplete and error detection
 
 ### **Exceptional Performance**
-- **Sub-nanosecond value access** (0.238 ns for integers)
+- **Sub-nanosecond value access** (0.238 ns median for integers)
 - **O(1) setting lookup** with std::unordered_map
 - **Production-ready** for high-frequency applications
 
@@ -34,14 +34,18 @@ A modern, high-performance C++ configuration library that provides **compile-tim
 
 | Operation | Time |
 |-----------|------|
-| Get Setting | 1.39 ns |
+| Get Setting | 1.30 ns |
 | Value Access | 0.238 ns |
-| Combined Access | 1.32 ns |
-| 10 Settings | 30.6 ns |
-| Validation | 0.608 ns |
-| Save to JSON | 41.3 μs |
+| Combined Access | 1.61 ns |
+| Set Value | 0.504 ns |
+| Validation Check | 0.647 ns |
+| Validate All (30 settings) | 45.5 ns |
+| Access 10 Settings | 30.6 ns |
+| Metadata Access | 17.5 ns |
+| Save to JSON | 37.2 μs |
+| Load from JSON | 36.8 μs |
 
-*Benchmarked on Clang 20.1.8 with -O3 optimization*
+*Benchmarked on Clang 20.1.8 with -O3 optimization (Release build)*
 
 ## Installation
 
@@ -195,7 +199,7 @@ config.GetSetting<AppConfig::MaxConnections>().SetValue("42");  // ❌ Compile e
 ```cpp
 // All type resolution happens at compile time
 // Runtime performance identical to raw variable access
-auto setting = config.GetSetting<AppConfig::DatabaseUrl>();  // 1.39 ns
+auto setting = config.GetSetting<AppConfig::DatabaseUrl>();  // 1.30 ns
 auto value = setting.Value();                                // 0.238 ns
 
 // Works with ANY type that has ConfigurationTraits specialized
