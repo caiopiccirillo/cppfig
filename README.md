@@ -9,22 +9,26 @@ A modern, high-performance C++ configuration library that provides **compile-tim
 ## Why C++fig?
 
 ### **Compile-Time Type Safety**
+
 - **No runtime type errors** - All type mismatches caught at compile time
 - **Zero performance overhead** - Types resolved at compile time
 - **IDE-friendly** - Full autocomplete and error detection
 
 ### **Exceptional Performance**
+
 - **Sub-nanosecond value access** (0.238 ns median for integers)
 - **O(1) setting lookup** with std::unordered_map
 - **Production-ready** for high-frequency applications
 
 ### **Extensible Type System**
+
 - **Fully configurable** - Define your own custom types
 - **Trait-based architecture** - Easy to extend with new types
 - **Custom serialization** - Not limited to specific formats
 - **Future-proof** - Pluggable serializers for any format
 
 ### **Developer Experience**
+
 - **Minimal boilerplate** - One-line setting declarations
 - **Clean API** - Intuitive and ergonomic interface
 - **Automatic type deduction** - No need to specify types repeatedly
@@ -32,24 +36,32 @@ A modern, high-performance C++ configuration library that provides **compile-tim
 
 ## Performance Benchmarks
 
-| Operation | Time |
-|-----------|------|
-| Get Setting | 1.30 ns |
-| Value Access | 0.238 ns |
-| Combined Access | 1.61 ns |
-| Set Value | 0.504 ns |
-| Validation Check | 0.647 ns |
-| Validate All (30 settings) | 45.5 ns |
-| Access 10 Settings | 30.6 ns |
-| Metadata Access | 17.5 ns |
-| Save to JSON | 37.2 μs |
-| Load from JSON | 36.8 μs |
+| Operation                  | Time     |
+| -------------------------- | -------- |
+| **Core Operations**        |          |
+| Get Setting                | 1.30 ns  |
+| Value Access               | 0.238 ns |
+| Combined Access            | 1.61 ns  |
+| Set Value                  | 0.504 ns |
+| Validation Check           | 0.647 ns |
+| Validate All (30 settings) | 45.5 ns  |
+| Access 10 Settings         | 30.6 ns  |
+| Metadata Access            | 17.5 ns  |
+| **File I/O Operations**    |          |
+| Save to JSON               | 42.3 μs  |
+| Load from JSON             | 33.3 μs  |
+| **Schema Migration**       |          |
+| Missing Settings Detection | 46.6 ns  |
+| Manual Schema Sync         | 2.13 μs  |
+| Auto Migration (Load)      | 118 μs   |
+| Load Without Migration     | 119 μs   |
 
-*Benchmarked on Clang 20.1.8 with -O3 optimization (Release build)*
+_Benchmarked on Clang 20.1.8 with -O3 optimization (Release build)_
 
 ## Installation
 
 ### Option 1: Single Header (Recommended)
+
 Simply copy `src/cppfig.h` and all header files from the `src/` directory to your project:
 
 ```bash
@@ -58,6 +70,7 @@ cp -r cppfig/src/* your_project/include/
 ```
 
 ### Option 2: CMake Integration
+
 Add C++fig as a subdirectory in your CMakeLists.txt:
 
 ```cmake
@@ -69,9 +82,11 @@ target_link_libraries(your_target PRIVATE cppfig)
 ```
 
 ### Option 3: Package Manager
+
 C++fig can be integrated with vcpkg, Conan, or other package managers (coming soon).
 
 ### Requirements
+
 - C++17 compatible compiler
 - nlohmann/json library
 - CMake 3.22+ (for building examples/tests)
@@ -175,10 +190,11 @@ if (config.ValidateAll()) {
 }
 ```
 
-> **See Complete Examples**: 
+> **See Complete Examples**:
+>
 > - [`examples/simple_config_example.cpp`](examples/simple_config_example.cpp) - Basic configuration with built-in types
 > - [`examples/custom_types_example.cpp`](examples/custom_types_example.cpp) - Advanced configuration with custom types
-> 
+>
 > **Getting Started**: Just `#include "cppfig.h"` - that's all you need!
 
 ## Key Features
@@ -350,6 +366,7 @@ using FullyCustomConfig = config::CustomJsonConfiguration<MyEnum, MyCustomVarian
 ## Contributing
 
 Contributions are welcome! Please ensure:
+
 - Follow the existing code style (`clang-format`)
 - Add tests for new features
 - Run static analysis (`clang-tidy`)
@@ -361,5 +378,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Ready to supercharge your configuration management?** 
+**Ready to supercharge your configuration management?**
 Give C++fig a try and experience the power of compile-time type safety with zero runtime overhead!

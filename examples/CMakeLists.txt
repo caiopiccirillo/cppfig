@@ -5,3 +5,6 @@ target_link_libraries(cppfig_example PRIVATE cppfig)
 
 add_executable(custom_types_example custom_types_example.cpp)
 target_link_libraries(custom_types_example PRIVATE cppfig)
+
+add_executable(schema_migration_example schema_migration_example.cpp)
+target_link_libraries(schema_migration_example PRIVATE cppfig)

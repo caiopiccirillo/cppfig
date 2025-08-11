@@ -692,4 +692,180 @@ TEST_F(CppfigUnitTest, ValidationErrorCollection)
     EXPECT_GT(errors.size(), 0);
 }
 
+// ============================================================================
+// SCHEMA MIGRATION TESTS
+// ============================================================================
+
+TEST_F(CppfigUnitTest, SchemaMigrationAutomatic)
+{
+    auto defaults = CreateDefaultConfig();
+
+    // Create a minimal config file with only some settings
+    std::ofstream file(test_config_path_);
+    file << R"([
+    {
+        "description": "Database connection URL",
+        "name": "database_url",
+        "value": "postgresql://localhost:5432/testdb"
+    },
+    {
+        "description": "Enable application logging",
+        "name": "enable_logging",
+        "value": true
+    }
+])";
+    file.close();
+
+    // Load with auto-migration (default behavior)
+    TestConfig config(test_config_path_, defaults);
+
+    // Verify that all settings are now present
+    auto missing = config.GetMissingSettings();
+    EXPECT_EQ(missing.size(), 0);
+
+    // Verify that original settings preserve their values
+    EXPECT_EQ(config.GetSetting<ConfigKey::DatabaseUrl>().Value(), "postgresql://localhost:5432/testdb");
+    EXPECT_EQ(config.GetSetting<ConfigKey::EnableLogging>().Value(), true);
+
+    // Verify that new settings have default values
+    EXPECT_EQ(config.GetSetting<ConfigKey::MaxConnections>().Value(), 100);
+    EXPECT_EQ(config.GetSetting<ConfigKey::ServerPort>().Value(), 8080);
+}
+
+TEST_F(CppfigUnitTest, SchemaMigrationManual)
+{
+    auto defaults = CreateDefaultConfig();
+
+    // Create a minimal config file
+    std::ofstream file(test_config_path_);
+    file << R"([
+    {
+        "description": "Database connection URL",
+        "name": "database_url",
+        "value": "postgresql://localhost:5432/testdb"
+    }
+])";
+    file.close();
+
+    // Create config with the minimal file first
+    TestConfig config(test_config_path_, defaults);
+
+    // Replace the file with minimal content to simulate missing settings
+    std::filesystem::remove(test_config_path_);
+    std::ofstream minimal_file(test_config_path_);
+    minimal_file << R"([
+    {
+        "description": "Database connection URL",
+        "name": "database_url",
+        "value": "postgresql://localhost:5432/testdb"
+    }
+])";
+    minimal_file.close();
+
+    // Load without auto-migration
+    EXPECT_TRUE(config.Load(false));
+
+    // Check for missing settings
+    auto missing = config.GetMissingSettings();
+    EXPECT_GT(missing.size(), 0);
+
+    // Manually sync schema
+    EXPECT_TRUE(config.SyncSchemaWithDefaults());
+
+    // Verify no more missing settings
+    auto after_sync = config.GetMissingSettings();
+    EXPECT_EQ(after_sync.size(), 0);
+}
+
+TEST_F(CppfigUnitTest, SchemaMigrationPreservesUserValues)
+{
+    auto defaults = CreateDefaultConfig();
+
+    // Create config with user-modified values
+    TestConfig config1(test_config_path_, defaults);
+    config1.GetSetting<ConfigKey::DatabaseUrl>().SetValue(std::string("custom://modified:1234/db"));
+    config1.GetSetting<ConfigKey::MaxConnections>().SetValue(500);
+    config1.Save();
+
+    // Simulate adding new settings by creating a new defaults map with additional settings
+    auto extended_defaults = defaults;
+    // All settings are already in defaults for this test, but we can verify preservation
+
+    // Load again - should preserve user values
+    TestConfig config2(test_config_path_, extended_defaults);
+
+    EXPECT_EQ(config2.GetSetting<ConfigKey::DatabaseUrl>().Value(), "custom://modified:1234/db");
+    EXPECT_EQ(config2.GetSetting<ConfigKey::MaxConnections>().Value(), 500);
+}
+
+TEST_F(CppfigUnitTest, SchemaMigrationMissingSettingsDetection)
+{
+    auto defaults = CreateDefaultConfig();
+
+    // Create config with only half the settings
+    std::ofstream file(test_config_path_);
+    file << R"([
+    {
+        "description": "Database connection URL",
+        "name": "database_url",
+        "value": "postgresql://localhost:5432/testdb"
+    },
+    {
+        "description": "Maximum database connections",
+        "max_value": 500,
+        "min_value": 1,
+        "name": "max_connections",
+        "unit": "connections",
+        "value": 100
+    },
+    {
+        "description": "Enable application logging",
+        "name": "enable_logging",
+        "value": true
+    }
+])";
+    file.close();
+
+    // Create config with the partial file first
+    TestConfig config(test_config_path_, defaults);
+
+    // Replace with even more minimal content to ensure missing settings
+    std::filesystem::remove(test_config_path_);
+    std::ofstream minimal_file(test_config_path_);
+    minimal_file << R"([
+    {
+        "description": "Database connection URL",
+        "name": "database_url",
+        "value": "postgresql://localhost:5432/testdb"
+    },
+    {
+        "description": "Enable application logging",
+        "name": "enable_logging",
+        "value": true
+    }
+])";
+    minimal_file.close();
+
+    // Load without auto-migration
+    EXPECT_TRUE(config.Load(false));
+
+    auto missing = config.GetMissingSettings();
+
+    // Should have several missing settings
+    EXPECT_GT(missing.size(), 0);
+
+    // Check that specific settings are detected as missing
+    bool found_log_level = false;
+    bool found_server_port = false;
+    for (const auto& setting : missing) {
+        if (setting == ConfigKey::LogLevel)
+            found_log_level = true;
+        if (setting == ConfigKey::ServerPort)
+            found_server_port = true;
+    }
+
+    EXPECT_TRUE(found_log_level);
+    EXPECT_TRUE(found_server_port);
+}
+
 } // namespace cppfig_unit_test

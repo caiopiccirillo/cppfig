@@ -88,6 +88,18 @@ public:
      */
     bool Deserialize(const std::string& source) override
     {
+        return Deserialize(source, true);
+    }
+
+    /**
+     * @brief Deserialize the configuration from a JSON file with optional schema migration
+     *
+     * @param source Path to the source file
+     * @param auto_migrate_schema If true, automatically adds missing settings from defaults and saves the file
+     * @return true if successful, false otherwise
+     */
+    bool Deserialize(const std::string& source, bool auto_migrate_schema) override
+    {
         std::ifstream file(source);
         if (!file.is_open()) {
             return false;
@@ -116,8 +128,31 @@ public:
             }
         }
 
+        // Check if we need to add missing settings from defaults
+        bool schema_updated = false;
+        if (auto_migrate_schema) {
+            const auto& defaults = config_.GetDefaults();
+            for (const auto& [default_key, default_setting] : defaults) {
+                if (settings.find(default_key) == settings.end()) {
+                    // Setting is missing in the loaded file, add it from defaults
+                    settings[default_key] = default_setting;
+                    schema_updated = true;
+                }
+            }
+        }
+
         // Update configuration with parsed settings
         config_.UpdateSettings(settings);
+
+        // If we added new settings, save the updated configuration back to file
+        if (schema_updated) {
+            std::cout << "Info: Configuration schema updated with new settings. Saving to " << source << std::endl;
+            if (!Serialize(source)) {
+                std::cerr << "Warning: Failed to save updated configuration schema to " << source << std::endl;
+                // Don't return false here - the loading itself was successful
+            }
+        }
+
         return true;
     }
 
@@ -154,7 +189,7 @@ private:
 
             nlohmann::json j;
             j["name"] = ToString(setting.Name());
-            
+
             // Use ConfigurationTraits for value serialization
             j["value"] = SerializeValue(setting.Value());
 
@@ -175,7 +210,8 @@ private:
             }
 
             return j;
-        }, setting_var);
+        },
+                          setting_var);
     }
 
     /**
@@ -200,7 +236,8 @@ private:
             using SettingType = std::decay_t<decltype(default_setting)>;
             using ValueType = typename SettingType::value_type;
             return CreateSetting<ValueType>(j, name);
-        }, it->second);
+        },
+                          it->second);
     }
 
     /**
@@ -273,7 +310,7 @@ private:
     template <typename T>
     nlohmann::json SerializeValue(const T& value) const
     {
-        return SerializeValueImpl(value, std::bool_constant<has_configuration_traits_v<T>>{});
+        return SerializeValueImpl(value, std::bool_constant<has_configuration_traits_v<T>> {});
     }
 
     /**
@@ -282,7 +319,7 @@ private:
     template <typename T>
     T DeserializeValue(const nlohmann::json& json) const
     {
-        return DeserializeValueImpl<T>(json, std::bool_constant<has_configuration_traits_v<T>>{});
+        return DeserializeValueImpl<T>(json, std::bool_constant<has_configuration_traits_v<T>> {});
     }
 
     // SFINAE helpers for trait-based serialization

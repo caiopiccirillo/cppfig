@@ -44,6 +44,7 @@ cd build/release/dev
 ./benchmark/cppfig_benchmark --benchmark_filter="BM_GetSetting.*"
 ./benchmark/cppfig_benchmark --benchmark_filter="BM_ValueAccess.*"
 ./benchmark/cppfig_benchmark --benchmark_filter="BM_Multiple.*"
+./benchmark/cppfig_benchmark --benchmark_filter="BM_SchemaMigration.*"
 
 # Run with repetitions for statistical reliability
 ./benchmark/cppfig_benchmark --benchmark_repetitions=5
@@ -86,6 +87,14 @@ cd build/release/dev
 - `BM_ConfigurationLoad`: JSON deserialization performance
 - `BM_ConfigurationCreation`: Full configuration setup
 
+#### Schema Migration
+
+- `BM_SchemaMigration_Detection`: Missing settings detection performance
+- `BM_SchemaMigration_ManualSync`: Manual schema synchronization
+- `BM_SchemaMigration_AutomaticLoad`: Automatic migration during load
+- `BM_SchemaMigration_LoadWithoutMigration`: Baseline load performance
+- `BM_SchemaMigration_ScaledMissingSettings`: Performance with varying missing settings count
+
 #### API Comparison
 
 - `BM_LegacyAPI_*`: Performance of legacy `GetValue<>()` API
@@ -94,14 +103,22 @@ cd build/release/dev
 
 **Latest benchmark results (Release mode, Clang 20.1.8, -O3):**
 
-| Operation                | Time     | Performance Level      |
-| ------------------------ | -------- | ---------------------- |
-| GetSetting<Int>()        | 1.36 ns  | ⭐⭐⭐⭐⭐ Excellent   |
-| setting.Value() (int)    | 0.233 ns | ⭐⭐⭐⭐⭐ Outstanding |
-| GetSetting + Value (int) | 1.55 ns  | ⭐⭐⭐⭐⭐ Excellent   |
-| 10 settings access       | 37.7 ns  | ⭐⭐⭐⭐⭐ Excellent   |
-| Validation check         | 0.602 ns | ⭐⭐⭐⭐⭐ Outstanding |
-| Configuration save       | 35.6 μs  | ⭐⭐⭐⭐ Good          |
+| Operation                  | Time     | Performance Level      |
+| -------------------------- | -------- | ---------------------- |
+| **Core Operations**        |          |                        |
+| GetSetting<Int>()          | 1.30 ns  | ⭐⭐⭐⭐⭐ Excellent   |
+| setting.Value() (int)      | 0.238 ns | ⭐⭐⭐⭐⭐ Outstanding |
+| GetSetting + Value (int)   | 1.28 ns  | ⭐⭐⭐⭐⭐ Excellent   |
+| 10 settings access         | 30.6 ns  | ⭐⭐⭐⭐⭐ Excellent   |
+| Validation check           | 0.647 ns | ⭐⭐⭐⭐⭐ Outstanding |
+| **File I/O Operations**    |          |                        |
+| Configuration save         | 42.3 μs  | ⭐⭐⭐⭐ Good          |
+| Configuration load         | 33.3 μs  | ⭐⭐⭐⭐ Good          |
+| **Schema Migration**       |          |                        |
+| Missing settings detection | 46.6 ns  | ⭐⭐⭐⭐⭐ Excellent   |
+| Manual schema sync         | 2.13 μs  | ⭐⭐⭐⭐ Good          |
+| Automatic migration        | 118 μs   | ⭐⭐⭐ Acceptable      |
+| Load without migration     | 119 μs   | ⭐⭐⭐ Acceptable      |
 
 **Key Performance Highlights:**
 
@@ -109,6 +126,7 @@ cd build/release/dev
 - **Sub-nanosecond** value access for primitives
 - **Linear scalability** with setting count
 - **Zero runtime overhead** for type safety
+- **Schema migration adds minimal overhead** (~1μs for typical configurations)
 - **Production-ready** for high-frequency applications
 
 ## Understanding Results
