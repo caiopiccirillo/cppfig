@@ -7,7 +7,7 @@ ARG REINSTALL_LLVM_VERSION="20"
 COPY ./reinstall-cmake.sh /tmp/
 
 RUN if [ "${REINSTALL_CMAKE_VERSION_FROM_SOURCE}" != "none" ]; then \
-        chmod +x /tmp/reinstall-cmake.sh && /tmp/reinstall-cmake.sh ${REINSTALL_CMAKE_VERSION_FROM_SOURCE}; \
+    chmod +x /tmp/reinstall-cmake.sh && /tmp/reinstall-cmake.sh ${REINSTALL_CMAKE_VERSION_FROM_SOURCE}; \
     fi \
     && rm -f /tmp/reinstall-cmake.sh
 
@@ -18,6 +18,6 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
 COPY ./reinstall-llvm.sh /tmp/
 
 RUN if [ "${REINSTALL_LLVM_VERSION}" != "none" ]; then \
-        chmod +x /tmp/reinstall-llvm.sh && /tmp/reinstall-llvm.sh ${REINSTALL_LLVM_VERSION}; \
+    chmod +x /tmp/reinstall-llvm.sh && /tmp/reinstall-llvm.sh ${REINSTALL_LLVM_VERSION}; \
     fi \
     && rm -f /tmp/reinstall-llvm.sh
