@@ -1,5 +1,5 @@
-#include <iostream>
 #include <filesystem>
+#include <iostream>
 
 #include "cppfig.h"
 
@@ -42,11 +42,16 @@ std::string ToString(GameConfig config)
 
 GameConfig FromString(const std::string& str)
 {
-    if (str == "player_name") return GameConfig::PlayerName;
-    if (str == "max_level") return GameConfig::MaxLevel;
-    if (str == "sound_enabled") return GameConfig::SoundEnabled;
-    if (str == "difficulty") return GameConfig::Difficulty;
-    if (str == "graphics_quality") return GameConfig::GraphicsQuality;
+    if (str == "player_name")
+        return GameConfig::PlayerName;
+    if (str == "max_level")
+        return GameConfig::MaxLevel;
+    if (str == "sound_enabled")
+        return GameConfig::SoundEnabled;
+    if (str == "difficulty")
+        return GameConfig::Difficulty;
+    if (str == "graphics_quality")
+        return GameConfig::GraphicsQuality;
     throw std::runtime_error("Invalid config name: " + str);
 }
 
@@ -149,7 +154,7 @@ int main()
     // Custom validation example
     auto customValidation = [&]() -> bool {
         auto graphics = gameConfig.GetSetting<GameConfig::GraphicsQuality>().Value();
-        std::vector<std::string> validQualities = {"low", "medium", "high", "ultra"};
+        std::vector<std::string> validQualities = { "low", "medium", "high", "ultra" };
         return std::find(validQualities.begin(), validQualities.end(), graphics) != validQualities.end();
     };
 
