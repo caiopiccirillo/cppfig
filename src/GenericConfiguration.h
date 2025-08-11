@@ -9,6 +9,7 @@
 #include <utility>
 #include <variant>
 
+#include "ConfigurationTraits.h"
 #include "IConfiguration.h"
 #include "IConfigurationSerializer.h"
 #include "Setting.h"
@@ -19,27 +20,31 @@ namespace config {
 /**
  * @brief Type trait to check if a serializer derives from IConfigurationSerializer
  */
-template <typename E, typename Serializer>
-struct is_valid_serializer : std::is_base_of<IConfigurationSerializer<E>, Serializer> { };
+template <typename E, typename SettingVariant, typename Serializer>
+struct is_valid_serializer : std::is_base_of<IConfigurationSerializer<E, SettingVariant>, Serializer> {};
 
 /**
- * @brief Modern configuration implementation with compile-time type safety
+ * @brief Modern configuration implementation with fully configurable type support
  *
- * This class provides a configuration system where all type checking happens
- * at compile time, ensuring zero runtime overhead and catching type errors
- * during compilation.
+ * This class provides a configuration system where:
+ * 1. All type checking happens at compile time
+ * 2. The SettingVariant is fully configurable by external developers
+ * 3. The serialization format is pluggable and not tied to JSON
+ * 4. Custom types are supported through ConfigurationTraits
  *
  * @tparam E Enum type for configuration keys
- * @tparam Serializer The serializer to use for file operations
+ * @tparam SettingVariant std::variant containing all supported Setting types
+ * @tparam Serializer The serializer to use for persistence operations
  */
-template <typename E, typename Serializer>
-class GenericConfiguration : public IConfiguration<E> {
+template <typename E, typename SettingVariant, typename Serializer>
+class GenericConfiguration : public IConfiguration<E, SettingVariant> {
 public:
     static_assert(std::is_enum_v<E>, "Template parameter E must be an enum type");
-    static_assert(is_valid_serializer<E, Serializer>::value,
-                  "Serializer must inherit from IConfigurationSerializer<E>");
+    static_assert(is_valid_serializer<E, SettingVariant, Serializer>::value,
+                  "Serializer must inherit from IConfigurationSerializer<E, SettingVariant>");
 
-    using SettingVariant = typename IConfiguration<E>::SettingVariant;
+    using EnumType = E;
+    using VariantType = SettingVariant;
     using DefaultConfigMap = std::unordered_map<E, SettingVariant>;
 
     /**
@@ -173,7 +178,7 @@ public:
     }
 
     /**
-     * @brief Save the configuration to file
+     * @brief Save the configuration using the attached serializer
      *
      * @return true if successful, false otherwise
      */
@@ -183,7 +188,7 @@ public:
     }
 
     /**
-     * @brief Load the configuration from file
+     * @brief Load the configuration using the attached serializer
      *
      * @return true if successful, false otherwise
      */
@@ -270,6 +275,14 @@ public:
     const std::filesystem::path& GetFilePath() const
     {
         return filepath_;
+    }
+
+    /**
+     * @brief Get the serializer format name
+     */
+    std::string GetSerializerFormat() const
+    {
+        return serializer_->GetFormatName();
     }
 
     /**

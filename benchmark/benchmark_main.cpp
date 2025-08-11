@@ -5,11 +5,7 @@
 #include <random>
 #include <string>
 
-#include "ConfigHelpers.h"
-#include "GenericConfiguration.h"
-#include "JsonSerializer.h"
-#include "Setting.h"
-#include "TypedSetting.h"
+#include "cppfig.h"
 
 // Define benchmark configuration enum
 namespace benchmark_test {
@@ -184,6 +180,47 @@ inline BenchmarkConfig FromString(const std::string& str)
 
 } // namespace benchmark_test
 
+// Specialize ConfigurationTraits for BenchmarkConfig
+namespace config {
+
+template <>
+struct ConfigurationTraits<benchmark_test::BenchmarkConfig> {
+    static nlohmann::json ToJson(const benchmark_test::BenchmarkConfig& value)
+    {
+        return benchmark_test::ToString(value);
+    }
+
+    static benchmark_test::BenchmarkConfig FromJson(const nlohmann::json& json)
+    {
+        return benchmark_test::FromString(json.get<std::string>());
+    }
+
+    static std::string ToString(const benchmark_test::BenchmarkConfig& value)
+    {
+        return benchmark_test::ToString(value);
+    }
+
+    static bool IsValid(const benchmark_test::BenchmarkConfig& value)
+    {
+        return true; // All enum values are valid
+    }
+};
+
+// Template specializations for JsonSerializer
+template <>
+std::string JsonSerializer<benchmark_test::BenchmarkConfig, BasicSettingVariant<benchmark_test::BenchmarkConfig>>::ToString(benchmark_test::BenchmarkConfig enumValue)
+{
+    return benchmark_test::ToString(enumValue);
+}
+
+template <>
+benchmark_test::BenchmarkConfig JsonSerializer<benchmark_test::BenchmarkConfig, BasicSettingVariant<benchmark_test::BenchmarkConfig>>::FromString(const std::string& str)
+{
+    return benchmark_test::FromString(str);
+}
+
+} // namespace config
+
 // Declare compile-time type mappings
 namespace config {
 DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::DatabaseUrl, std::string);
@@ -195,47 +232,32 @@ DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkCo
 DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::DebugMode, bool);
 DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::CacheSize, int);
 DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::RetryCount, int);
-DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::CompressionRatio, float);
-DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting1, int);
-DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting2, int);
-DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting3, int);
-DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting4, int);
-DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting5, int);
-DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting6, bool);
-DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting7, bool);
-DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting8, bool);
-DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting9, bool);
-DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting10, bool);
+DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::CompressionRatio, double);
+DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting1, std::string);
+DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting2, std::string);
+DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting3, std::string);
+DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting4, std::string);
+DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting5, std::string);
+DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting6, std::string);
+DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting7, std::string);
+DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting8, std::string);
+DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting9, std::string);
+DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting10, std::string);
 DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting11, std::string);
 DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting12, std::string);
 DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting13, std::string);
 DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting14, std::string);
 DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting15, std::string);
-DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting16, double);
-DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting17, double);
-DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting18, double);
-DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting19, double);
-DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting20, double);
-} // namespace config
-
-// Template specializations for JSON serializer
-namespace config {
-template <>
-inline std::string JsonSerializer<benchmark_test::BenchmarkConfig>::ToString(benchmark_test::BenchmarkConfig enumValue)
-{
-    return benchmark_test::ToString(enumValue);
-}
-
-template <>
-inline benchmark_test::BenchmarkConfig JsonSerializer<benchmark_test::BenchmarkConfig>::FromString(const std::string& str)
-{
-    return benchmark_test::FromString(str);
-}
+DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting16, std::string);
+DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting17, std::string);
+DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting18, std::string);
+DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting19, std::string);
+DECLARE_CONFIG_TYPE(benchmark_test::BenchmarkConfig, benchmark_test::BenchmarkConfig::Setting20, std::string);
 } // namespace config
 
 namespace benchmark_test {
 
-using BenchmarkTestConfig = ::config::GenericConfiguration<BenchmarkConfig, ::config::JsonSerializer<BenchmarkConfig>>;
+using BenchmarkTestConfig = ::config::BasicJsonConfiguration<BenchmarkConfig>;
 
 // Create default configuration
 BenchmarkTestConfig::DefaultConfigMap CreateBenchmarkDefaults()
@@ -246,7 +268,7 @@ BenchmarkTestConfig::DefaultConfigMap CreateBenchmarkDefaults()
               "postgresql://localhost:5432/benchmark", "Database connection URL") },
         { BenchmarkConfig::MaxConnections,
           ::config::ConfigHelpers<BenchmarkConfig>::CreateIntSetting<BenchmarkConfig::MaxConnections>(
-              100, 1, 1000, "Maximum database connections", "connections") },
+              100, 1, 1000, "Maximum database connections") },
         { BenchmarkConfig::EnableLogging,
           ::config::ConfigHelpers<BenchmarkConfig>::CreateBoolSetting<BenchmarkConfig::EnableLogging>(
               true, "Enable application logging") },
@@ -255,43 +277,43 @@ BenchmarkTestConfig::DefaultConfigMap CreateBenchmarkDefaults()
               "info", "Logging level") },
         { BenchmarkConfig::ApiTimeout,
           ::config::ConfigHelpers<BenchmarkConfig>::CreateDoubleSetting<BenchmarkConfig::ApiTimeout>(
-              30.0, 0.1, 300.0, "API request timeout", "seconds") },
+              30.0, 0.1, 300.0, "API request timeout") },
         { BenchmarkConfig::ServerPort,
           ::config::ConfigHelpers<BenchmarkConfig>::CreateIntSetting<BenchmarkConfig::ServerPort>(
-              8080, 1024, 65535, "Server port number", "port") },
+              8080, 1024, 65535, "Server port number") },
         { BenchmarkConfig::DebugMode,
           ::config::ConfigHelpers<BenchmarkConfig>::CreateBoolSetting<BenchmarkConfig::DebugMode>(
               false, "Enable debug mode") },
         { BenchmarkConfig::CacheSize,
           ::config::ConfigHelpers<BenchmarkConfig>::CreateIntSetting<BenchmarkConfig::CacheSize>(
-              1024, 16, 65536, "Cache size", "MB") },
+              256, 1, 10000, "Cache size") },
         { BenchmarkConfig::RetryCount,
           ::config::ConfigHelpers<BenchmarkConfig>::CreateIntSetting<BenchmarkConfig::RetryCount>(
-              3, 0, 10, "Number of retry attempts", "attempts") },
+              3, 0, 10, "Number of retry attempts") },
         { BenchmarkConfig::CompressionRatio,
-          ::config::ConfigHelpers<BenchmarkConfig>::CreateFloatSetting<BenchmarkConfig::CompressionRatio>(
-              0.8f, 0.1f, 1.0f, "Compression ratio", "ratio") },
+          ::config::ConfigHelpers<BenchmarkConfig>::CreateDoubleSetting<BenchmarkConfig::CompressionRatio>(
+              0.8, 0.0, 1.0, "Compression ratio") },
         // Additional settings for larger scale benchmarks
         { BenchmarkConfig::Setting1,
-          ::config::ConfigHelpers<BenchmarkConfig>::CreateIntSetting<BenchmarkConfig::Setting1>(1) },
+          ::config::ConfigHelpers<BenchmarkConfig>::CreateStringSetting<BenchmarkConfig::Setting1>("value1") },
         { BenchmarkConfig::Setting2,
-          ::config::ConfigHelpers<BenchmarkConfig>::CreateIntSetting<BenchmarkConfig::Setting2>(2) },
+          ::config::ConfigHelpers<BenchmarkConfig>::CreateStringSetting<BenchmarkConfig::Setting2>("value2") },
         { BenchmarkConfig::Setting3,
-          ::config::ConfigHelpers<BenchmarkConfig>::CreateIntSetting<BenchmarkConfig::Setting3>(3) },
+          ::config::ConfigHelpers<BenchmarkConfig>::CreateStringSetting<BenchmarkConfig::Setting3>("value3") },
         { BenchmarkConfig::Setting4,
-          ::config::ConfigHelpers<BenchmarkConfig>::CreateIntSetting<BenchmarkConfig::Setting4>(4) },
+          ::config::ConfigHelpers<BenchmarkConfig>::CreateStringSetting<BenchmarkConfig::Setting4>("value4") },
         { BenchmarkConfig::Setting5,
-          ::config::ConfigHelpers<BenchmarkConfig>::CreateIntSetting<BenchmarkConfig::Setting5>(5) },
+          ::config::ConfigHelpers<BenchmarkConfig>::CreateStringSetting<BenchmarkConfig::Setting5>("value5") },
         { BenchmarkConfig::Setting6,
-          ::config::ConfigHelpers<BenchmarkConfig>::CreateBoolSetting<BenchmarkConfig::Setting6>(true) },
+          ::config::ConfigHelpers<BenchmarkConfig>::CreateStringSetting<BenchmarkConfig::Setting6>("value6") },
         { BenchmarkConfig::Setting7,
-          ::config::ConfigHelpers<BenchmarkConfig>::CreateBoolSetting<BenchmarkConfig::Setting7>(false) },
+          ::config::ConfigHelpers<BenchmarkConfig>::CreateStringSetting<BenchmarkConfig::Setting7>("value7") },
         { BenchmarkConfig::Setting8,
-          ::config::ConfigHelpers<BenchmarkConfig>::CreateBoolSetting<BenchmarkConfig::Setting8>(true) },
+          ::config::ConfigHelpers<BenchmarkConfig>::CreateStringSetting<BenchmarkConfig::Setting8>("value8") },
         { BenchmarkConfig::Setting9,
-          ::config::ConfigHelpers<BenchmarkConfig>::CreateBoolSetting<BenchmarkConfig::Setting9>(false) },
+          ::config::ConfigHelpers<BenchmarkConfig>::CreateStringSetting<BenchmarkConfig::Setting9>("value9") },
         { BenchmarkConfig::Setting10,
-          ::config::ConfigHelpers<BenchmarkConfig>::CreateBoolSetting<BenchmarkConfig::Setting10>(true) },
+          ::config::ConfigHelpers<BenchmarkConfig>::CreateStringSetting<BenchmarkConfig::Setting10>("value10") },
         { BenchmarkConfig::Setting11,
           ::config::ConfigHelpers<BenchmarkConfig>::CreateStringSetting<BenchmarkConfig::Setting11>("value11") },
         { BenchmarkConfig::Setting12,
@@ -303,15 +325,15 @@ BenchmarkTestConfig::DefaultConfigMap CreateBenchmarkDefaults()
         { BenchmarkConfig::Setting15,
           ::config::ConfigHelpers<BenchmarkConfig>::CreateStringSetting<BenchmarkConfig::Setting15>("value15") },
         { BenchmarkConfig::Setting16,
-          ::config::ConfigHelpers<BenchmarkConfig>::CreateDoubleSetting<BenchmarkConfig::Setting16>(16.0) },
+          ::config::ConfigHelpers<BenchmarkConfig>::CreateStringSetting<BenchmarkConfig::Setting16>("value16") },
         { BenchmarkConfig::Setting17,
-          ::config::ConfigHelpers<BenchmarkConfig>::CreateDoubleSetting<BenchmarkConfig::Setting17>(17.0) },
+          ::config::ConfigHelpers<BenchmarkConfig>::CreateStringSetting<BenchmarkConfig::Setting17>("value17") },
         { BenchmarkConfig::Setting18,
-          ::config::ConfigHelpers<BenchmarkConfig>::CreateDoubleSetting<BenchmarkConfig::Setting18>(18.0) },
+          ::config::ConfigHelpers<BenchmarkConfig>::CreateStringSetting<BenchmarkConfig::Setting18>("value18") },
         { BenchmarkConfig::Setting19,
-          ::config::ConfigHelpers<BenchmarkConfig>::CreateDoubleSetting<BenchmarkConfig::Setting19>(19.0) },
+          ::config::ConfigHelpers<BenchmarkConfig>::CreateStringSetting<BenchmarkConfig::Setting19>("value19") },
         { BenchmarkConfig::Setting20,
-          ::config::ConfigHelpers<BenchmarkConfig>::CreateDoubleSetting<BenchmarkConfig::Setting20>(20.0) }
+          ::config::ConfigHelpers<BenchmarkConfig>::CreateStringSetting<BenchmarkConfig::Setting20>("value20") }
     };
 }
 
@@ -338,7 +360,7 @@ static void BM_GetSetting_Int(benchmark::State& state)
 {
     SetupBenchmark();
     for (auto _ : state) {
-        auto setting = g_config->GetSetting<benchmark_test::BenchmarkConfig::ServerPort>();
+        auto setting = g_config->template GetSetting<benchmark_test::BenchmarkConfig::ServerPort>();
         benchmark::DoNotOptimize(setting);
     }
 }
@@ -348,7 +370,7 @@ static void BM_GetSetting_String(benchmark::State& state)
 {
     SetupBenchmark();
     for (auto _ : state) {
-        auto setting = g_config->GetSetting<benchmark_test::BenchmarkConfig::DatabaseUrl>();
+        auto setting = g_config->template GetSetting<benchmark_test::BenchmarkConfig::DatabaseUrl>();
         benchmark::DoNotOptimize(setting);
     }
 }
@@ -358,7 +380,7 @@ static void BM_GetSetting_Bool(benchmark::State& state)
 {
     SetupBenchmark();
     for (auto _ : state) {
-        auto setting = g_config->GetSetting<benchmark_test::BenchmarkConfig::EnableLogging>();
+        auto setting = g_config->template GetSetting<benchmark_test::BenchmarkConfig::EnableLogging>();
         benchmark::DoNotOptimize(setting);
     }
 }
@@ -368,7 +390,7 @@ static void BM_GetSetting_Double(benchmark::State& state)
 {
     SetupBenchmark();
     for (auto _ : state) {
-        auto setting = g_config->GetSetting<benchmark_test::BenchmarkConfig::ApiTimeout>();
+        auto setting = g_config->template GetSetting<benchmark_test::BenchmarkConfig::ApiTimeout>();
         benchmark::DoNotOptimize(setting);
     }
 }
@@ -378,7 +400,7 @@ static void BM_GetSetting_Float(benchmark::State& state)
 {
     SetupBenchmark();
     for (auto _ : state) {
-        auto setting = g_config->GetSetting<benchmark_test::BenchmarkConfig::CompressionRatio>();
+        auto setting = g_config->template GetSetting<benchmark_test::BenchmarkConfig::CompressionRatio>();
         benchmark::DoNotOptimize(setting);
     }
 }
@@ -391,7 +413,7 @@ BENCHMARK(BM_GetSetting_Float);
 static void BM_ValueAccess_Int(benchmark::State& state)
 {
     SetupBenchmark();
-    auto setting = g_config->GetSetting<benchmark_test::BenchmarkConfig::ServerPort>();
+    auto setting = g_config->template GetSetting<benchmark_test::BenchmarkConfig::ServerPort>();
     for (auto _ : state) {
         auto value = setting.Value();
         benchmark::DoNotOptimize(value);
@@ -402,7 +424,7 @@ BENCHMARK(BM_ValueAccess_Int);
 static void BM_ValueAccess_String(benchmark::State& state)
 {
     SetupBenchmark();
-    auto setting = g_config->GetSetting<benchmark_test::BenchmarkConfig::DatabaseUrl>();
+    auto setting = g_config->template GetSetting<benchmark_test::BenchmarkConfig::DatabaseUrl>();
     for (auto _ : state) {
         auto value = setting.Value();
         benchmark::DoNotOptimize(value);
@@ -413,7 +435,7 @@ BENCHMARK(BM_ValueAccess_String);
 static void BM_ValueAccess_Bool(benchmark::State& state)
 {
     SetupBenchmark();
-    auto setting = g_config->GetSetting<benchmark_test::BenchmarkConfig::EnableLogging>();
+    auto setting = g_config->template GetSetting<benchmark_test::BenchmarkConfig::EnableLogging>();
     for (auto _ : state) {
         auto value = setting.Value();
         benchmark::DoNotOptimize(value);
@@ -429,7 +451,7 @@ static void BM_GetSettingAndValue_Int(benchmark::State& state)
 {
     SetupBenchmark();
     for (auto _ : state) {
-        auto setting = g_config->GetSetting<benchmark_test::BenchmarkConfig::ServerPort>();
+        auto setting = g_config->template GetSetting<benchmark_test::BenchmarkConfig::ServerPort>();
         auto value = setting.Value();
         benchmark::DoNotOptimize(value);
     }
@@ -440,7 +462,7 @@ static void BM_GetSettingAndValue_String(benchmark::State& state)
 {
     SetupBenchmark();
     for (auto _ : state) {
-        auto setting = g_config->GetSetting<benchmark_test::BenchmarkConfig::DatabaseUrl>();
+        auto setting = g_config->template GetSetting<benchmark_test::BenchmarkConfig::DatabaseUrl>();
         auto value = setting.Value();
         benchmark::DoNotOptimize(value);
     }
@@ -454,7 +476,7 @@ BENCHMARK(BM_GetSettingAndValue_String);
 static void BM_MetadataAccess(benchmark::State& state)
 {
     SetupBenchmark();
-    auto setting = g_config->GetSetting<benchmark_test::BenchmarkConfig::ServerPort>();
+    auto setting = g_config->template GetSetting<benchmark_test::BenchmarkConfig::ServerPort>();
     for (auto _ : state) {
         auto desc = setting.Description();
         auto unit = setting.Unit();

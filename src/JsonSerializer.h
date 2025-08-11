@@ -13,41 +13,43 @@
 #include <unordered_map>
 #include <variant>
 
+#include "ConfigurationTraits.h"
 #include "IConfigurationSerializer.h"
 #include "Setting.h"
 
 namespace config {
 
 // Forward declaration for GenericConfiguration
-template <typename E, typename S>
+template <typename E, typename SettingVariant, typename S>
 class GenericConfiguration;
 
 /**
- * @brief JSON serializer for configurations
+ * @brief JSON serializer for configurations with configurable type support
+ *
+ * This serializer uses ConfigurationTraits to serialize/deserialize any type
+ * that has proper trait specializations. It works with any SettingVariant
+ * that the user defines.
  *
  * @tparam E Enum type for configuration keys
+ * @tparam SettingVariant The variant type containing all supported Setting types
  */
-template <typename E>
-class JsonSerializer : public IConfigurationSerializer<E> {
+template <typename E, typename SettingVariant>
+class JsonSerializer : public IConfigurationSerializer<E, SettingVariant> {
 public:
     // Forward declare the enum string conversion functions
     // These must be implemented by the user for their enum type
     static std::string ToString(E enumValue);
     static E FromString(const std::string& str);
 
-    using SettingVariant = std::variant<
-        Setting<E, int>,
-        Setting<E, float>,
-        Setting<E, double>,
-        Setting<E, std::string>,
-        Setting<E, bool>>;
+    using EnumType = E;
+    using VariantType = SettingVariant;
 
     /**
      * @brief Constructor that takes a reference to the configuration
      *
      * @param config Reference to the configuration object
      */
-    explicit JsonSerializer(GenericConfiguration<E, JsonSerializer<E>>& config)
+    explicit JsonSerializer(GenericConfiguration<E, SettingVariant, JsonSerializer<E, SettingVariant>>& config)
         : config_(config)
     {
     }
@@ -55,21 +57,21 @@ public:
     /**
      * @brief Serialize the configuration to a JSON file
      *
-     * @param filepath Path to the file
+     * @param target Path to the target file
      * @return true if successful, false otherwise
      */
-    bool Serialize(const std::string& filepath) override
+    bool Serialize(const std::string& target) override
     {
         nlohmann::json json_config;
 
         for (const auto& [key, setting_var] : config_.GetAllSettings()) {
-            // Convert each setting to JSON
+            // Convert each setting to JSON using std::visit
             nlohmann::json setting_json = SettingToJson(setting_var);
             json_config.push_back(setting_json);
         }
 
         // Write to file
-        std::ofstream file(filepath);
+        std::ofstream file(target);
         if (!file.is_open()) {
             return false;
         }
@@ -81,12 +83,12 @@ public:
     /**
      * @brief Deserialize the configuration from a JSON file
      *
-     * @param filepath Path to the file
+     * @param source Path to the source file
      * @return true if successful, false otherwise
      */
-    bool Deserialize(const std::string& filepath) override
+    bool Deserialize(const std::string& source) override
     {
-        std::ifstream file(filepath);
+        std::ifstream file(source);
         if (!file.is_open()) {
             return false;
         }
@@ -119,27 +121,49 @@ public:
         return true;
     }
 
-private:
-    GenericConfiguration<E, JsonSerializer<E>>& config_;
+    /**
+     * @brief Get the format name
+     */
+    std::string GetFormatName() const override
+    {
+        return "JSON";
+    }
 
     /**
-     * @brief Convert a setting variant to JSON
+     * @brief Check if this serializer supports a specific file extension
+     */
+    bool SupportsExtension(const std::string& extension) const override
+    {
+        return extension == ".json" || extension == ".JSON";
+    }
+
+private:
+    GenericConfiguration<E, SettingVariant, JsonSerializer<E, SettingVariant>>& config_;
+
+    /**
+     * @brief Convert a setting variant to JSON using ConfigurationTraits
+     *
+     * This method works with any Setting type that has ConfigurationTraits specialized.
+     * It uses std::visit to handle the variant and ConfigurationTraits to serialize values.
      */
     nlohmann::json SettingToJson(const SettingVariant& setting_var) const
     {
         return std::visit([this](const auto& setting) -> nlohmann::json {
-            using ValueType = std::decay_t<decltype(setting.Value())>;
+            using SettingType = std::decay_t<decltype(setting)>;
+            using ValueType = typename SettingType::value_type;
 
             nlohmann::json j;
             j["name"] = ToString(setting.Name());
-            j["value"] = setting.Value();
+            
+            // Use ConfigurationTraits for value serialization
+            j["value"] = SerializeValue(setting.Value());
 
             if (setting.MaxValue()) {
-                j["max_value"] = *setting.MaxValue();
+                j["max_value"] = SerializeValue(*setting.MaxValue());
             }
 
             if (setting.MinValue()) {
-                j["min_value"] = *setting.MinValue();
+                j["min_value"] = SerializeValue(*setting.MinValue());
             }
 
             if (setting.Unit()) {
@@ -151,12 +175,14 @@ private:
             }
 
             return j;
-        },
-                          setting_var);
+        }, setting_var);
     }
 
     /**
-     * @brief Convert JSON to a setting variant
+     * @brief Convert JSON to a setting variant using ConfigurationTraits
+     *
+     * This method works with any Setting type by using the default configuration
+     * to determine the expected type, then using ConfigurationTraits to deserialize.
      */
     SettingVariant JsonToSetting(const nlohmann::json& j) const
     {
@@ -169,19 +195,19 @@ private:
             throw std::runtime_error("No default setting found for: " + name_str);
         }
 
-        // Get the type from the default setting
+        // Get the type from the default setting and create the new setting
         return std::visit([this, &j, name](const auto& default_setting) -> SettingVariant {
-            using ValueType = std::decay_t<decltype(default_setting.Value())>;
+            using SettingType = std::decay_t<decltype(default_setting)>;
+            using ValueType = typename SettingType::value_type;
             return CreateSetting<ValueType>(j, name);
-        },
-                          it->second);
+        }, it->second);
     }
 
     /**
-     * @brief Create a setting of a specific type from JSON
+     * @brief Create a setting of a specific type from JSON using ConfigurationTraits
      */
     template <typename T>
-    Setting<E, T> CreateSetting(const nlohmann::json& j, E name) const
+    auto CreateSetting(const nlohmann::json& j, E name) const
     {
         auto& defaults = config_.GetDefaults();
         auto it = defaults.find(name);
@@ -195,12 +221,11 @@ private:
         T value;
         if (j.contains("value") && !j.at("value").is_null()) {
             try {
-                value = j.at("value").get<T>();
+                value = DeserializeValue<T>(j.at("value"));
             }
-            catch (const nlohmann::json::exception& e) {
-                std::cerr << "Warning: Type mismatch for setting '" << ToString(name)
-                          << "'. Expected type matching default. Using default value instead. Error: "
-                          << e.what() << std::endl;
+            catch (const std::exception& e) {
+                std::cerr << "Warning: Failed to deserialize value for setting '" << ToString(name)
+                          << "'. Using default value instead. Error: " << e.what() << std::endl;
                 value = default_setting.Value();
             }
         }
@@ -211,9 +236,9 @@ private:
         std::optional<T> max_value = default_setting.MaxValue();
         if (j.contains("max_value") && !j.at("max_value").is_null()) {
             try {
-                max_value = j.at("max_value").get<T>();
+                max_value = DeserializeValue<T>(j.at("max_value"));
             }
-            catch (const nlohmann::json::exception& e) {
+            catch (const std::exception& e) {
                 std::cerr << "Warning: Failed to parse max_value for setting '" << ToString(name)
                           << "'. Using default max value. Error: " << e.what() << std::endl;
             }
@@ -221,9 +246,9 @@ private:
         std::optional<T> min_value = default_setting.MinValue();
         if (j.contains("min_value") && !j.at("min_value").is_null()) {
             try {
-                min_value = j.at("min_value").get<T>();
+                min_value = DeserializeValue<T>(j.at("min_value"));
             }
-            catch (const nlohmann::json::exception& e) {
+            catch (const std::exception& e) {
                 std::cerr << "Warning: Failed to parse min_value for setting '" << ToString(name)
                           << "'. Using default min value. Error: " << e.what() << std::endl;
             }
@@ -240,6 +265,51 @@ private:
         }
 
         return Setting<E, T>(name, value, max_value, min_value, unit, description);
+    }
+
+    /**
+     * @brief Serialize a value using ConfigurationTraits (with fallback for built-in types)
+     */
+    template <typename T>
+    nlohmann::json SerializeValue(const T& value) const
+    {
+        return SerializeValueImpl(value, std::bool_constant<has_configuration_traits_v<T>>{});
+    }
+
+    /**
+     * @brief Deserialize a value using ConfigurationTraits (with fallback for built-in types)
+     */
+    template <typename T>
+    T DeserializeValue(const nlohmann::json& json) const
+    {
+        return DeserializeValueImpl<T>(json, std::bool_constant<has_configuration_traits_v<T>>{});
+    }
+
+    // SFINAE helpers for trait-based serialization
+    template <typename T>
+    nlohmann::json SerializeValueImpl(const T& value, std::true_type) const
+    {
+        return ConfigurationTraits<T>::ToJson(value);
+    }
+
+    template <typename T>
+    nlohmann::json SerializeValueImpl(const T& value, std::false_type) const
+    {
+        // Fallback to direct JSON conversion for built-in types
+        return nlohmann::json(value);
+    }
+
+    template <typename T>
+    T DeserializeValueImpl(const nlohmann::json& json, std::true_type) const
+    {
+        return ConfigurationTraits<T>::FromJson(json);
+    }
+
+    template <typename T>
+    T DeserializeValueImpl(const nlohmann::json& json, std::false_type) const
+    {
+        // Fallback to direct JSON conversion for built-in types
+        return json.get<T>();
     }
 };
 
