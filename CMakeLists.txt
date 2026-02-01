@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(CompileCommands)
+include(Coverage)
 
 # Enable copying of compile_commands.json to project root
 copy_compile_commands()
@@ -27,6 +28,9 @@ add_subdirectory(examples)
 add_subdirectory(test)
 add_subdirectory(benchmark)
 include(CTest)
+
+# Add coverage targets if coverage is enabled
+add_coverage_target()
 
 include(CPackConfig.cmake)
 include(CPack)

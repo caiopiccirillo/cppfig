@@ -289,6 +289,26 @@ ctest --test-dir build/debug/dev --output-on-failure
 ./build/release/dev/benchmark/cppfig_benchmark
 ```
 
+### Code Coverage
+
+```bash
+# Full workflow: configure, build, test, and generate report
+cmake --workflow --preset=coverage
+
+# Generate HTML report (after running tests)
+ninja -C build/coverage coverage
+
+# Generate text summary
+ninja -C build/coverage coverage-text
+
+# Generate XML report (Cobertura format for CI)
+ninja -C build/coverage coverage-xml
+```
+
+Coverage reports are generated in `build/coverage/coverage/`:
+- `index.html` - Detailed HTML report with line-by-line coverage
+- `coverage.xml` - Cobertura XML for CI integration
+
 ### Project Structure
 
 ```

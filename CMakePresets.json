@@ -60,6 +60,22 @@
                 "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third/vcpkg/scripts/buildsystems/vcpkg.cmake",
                 "STRICT_BUILD": "ON"
             }
+        },
+        {
+            "name": "config-coverage",
+            "displayName": "Coverage",
+            "description": "Configure build with code coverage enabled",
+            "binaryDir": "${sourceDir}/build/coverage",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_C_COMPILER": "/usr/local/bin/clang",
+                "CMAKE_CXX_COMPILER": "/usr/local/bin/clang++",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "STRICT_BUILD": "OFF",
+                "ENABLE_COVERAGE": "ON"
+            }
         }
     ],
     "buildPresets": [
@@ -86,6 +102,12 @@
             "configurePreset": "config-release-prod",
             "displayName": "Release Production",
             "description": "Build release version for production"
+        },
+        {
+            "name": "build-coverage",
+            "configurePreset": "config-coverage",
+            "displayName": "Coverage",
+            "description": "Build with code coverage enabled"
         }
     ],
     "testPresets": [
@@ -112,6 +134,12 @@
             "configurePreset": "config-release-prod",
             "displayName": "Test Release Production",
             "description": "Test release version for production"
+        },
+        {
+            "name": "test-coverage",
+            "configurePreset": "config-coverage",
+            "displayName": "Test Coverage",
+            "description": "Run tests with code coverage"
         }
     ],
     "workflowPresets": [
@@ -164,6 +192,23 @@
                 {
                     "type": "build",
                     "name": "build-release-prod"
+                }
+            ]
+        },
+        {
+            "name": "coverage",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "config-coverage"
+                },
+                {
+                    "type": "build",
+                    "name": "build-coverage"
+                },
+                {
+                    "type": "test",
+                    "name": "test-coverage"
                 }
             ]
         }
