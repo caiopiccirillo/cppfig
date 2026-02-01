@@ -11,6 +11,10 @@
         {
             "name": "benchmark",
             "version>=": "1.8.0"
+        },
+        {
+            "name": "abseil",
+            "version>=": "20240722.0"
         }
     ],
     "builtin-baseline": "ce613c41372b23b1f51333815feb3edd87ef8a8b"

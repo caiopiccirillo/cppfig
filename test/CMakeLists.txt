@@ -8,6 +8,7 @@ add_executable(
 target_link_libraries(
   unit_test
   GTest::gtest_main
+  GTest::gmock
   cppfig
 )
 
@@ -19,6 +20,7 @@ add_executable(
 target_link_libraries(
   integration_test
   GTest::gtest_main
+  GTest::gmock
   cppfig
 )
 
