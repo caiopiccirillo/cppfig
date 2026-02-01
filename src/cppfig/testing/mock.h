@@ -108,6 +108,21 @@ public:
         BuildDefaults();
     }
 
+    /// @brief Sets a raw JSON value for testing parse failure scenarios.
+    ///
+    /// This method allows tests to inject invalid JSON values that will
+    /// cause FromJson to fail, triggering the default value fallback path.
+    /// @param path The setting path (e.g., "app.name").
+    /// @param value The raw JSON value to set.
+    void SetRawJson(std::string_view path, nlohmann::json value) { values_[std::string(path)] = std::move(value); }
+
+    /// @brief Clears a value by path for testing scenarios where key is not found.
+    ///
+    /// This method removes a value from the internal map, allowing tests
+    /// to verify the behavior when a setting key is not present.
+    /// @param path The setting path to clear.
+    void ClearValue(std::string_view path) { values_.erase(std::string(path)); }
+
 private:
     void BuildDefaults()
     {

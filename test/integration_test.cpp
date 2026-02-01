@@ -66,6 +66,14 @@ namespace settings {
         static auto DefaultValue() -> std::string { return "info"; }
     };
 
+    // Setting for testing environment variable parse failure
+    struct PortWithEnv {
+        static constexpr std::string_view kPath = "server.port";
+        static constexpr std::string_view kEnvOverride = "TEST_SERVER_PORT";
+        using ValueType = int;
+        static auto DefaultValue() -> int { return 8080; }
+    };
+
 }  // namespace settings
 
 class ConfigurationIntegrationTest : public ::testing::Test {
@@ -319,6 +327,240 @@ TEST_F(ConfigurationIntegrationTest, CustomTypeInConfig)
     EXPECT_EQ(json["origin"]["y"], 0);
     EXPECT_EQ(json["target"]["x"], 100);
     EXPECT_EQ(json["target"]["y"], 100);
+}
+
+TEST_F(ConfigurationIntegrationTest, InvalidJsonFile)
+{
+    // Create an invalid JSON file
+    {
+        std::ofstream file(file_path_);
+        file << "this is not valid json {{{";
+    }
+
+    using Schema = ConfigSchema<settings::AppName>;
+    Configuration<Schema> config(file_path_);
+
+    auto status = config.Load();
+    EXPECT_FALSE(status.ok());
+    EXPECT_TRUE(absl::IsInvalidArgument(status));
+}
+
+TEST_F(ConfigurationIntegrationTest, EnvironmentVariableParseFailure)
+{
+    // Test when environment variable cannot be parsed
+
+    // Create config file first
+    {
+        std::ofstream file(file_path_);
+        file << R"({"server": {"port": 8080}})";
+    }
+
+    // Set env var to invalid value for int parsing
+    setenv("TEST_SERVER_PORT", "not_a_number", 1);
+
+    using EnvSchema = ConfigSchema<settings::PortWithEnv>;
+    Configuration<EnvSchema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    // Should fall back to file value since env var parse failed
+    // (Logger will warn about it)
+    ::testing::internal::CaptureStderr();
+    int port = config.Get<settings::PortWithEnv>();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    // Verify warning was logged
+    EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
+    EXPECT_NE(stderr_output.find("TEST_SERVER_PORT"), std::string::npos);
+
+    // Should get file value
+    EXPECT_EQ(port, 8080);
+
+    unsetenv("TEST_SERVER_PORT");
+}
+
+TEST_F(ConfigurationIntegrationTest, FileValueParseFailure)
+{
+    // Create config with wrong type in JSON
+    {
+        std::ofstream file(file_path_);
+        file << R"({"app": {"port": "not_an_int"}})";
+    }
+
+    using Schema = ConfigSchema<settings::AppPort>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    // Should fall back to default since file value can't be parsed
+    ::testing::internal::CaptureStderr();
+    int port = config.Get<settings::AppPort>();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    // Verify warning was logged
+    EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
+
+    // Should get default value
+    EXPECT_EQ(port, 8080);
+}
+
+TEST_F(ConfigurationIntegrationTest, GetDiffString)
+{
+    using Schema = ConfigSchema<settings::AppName, settings::AppPort>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    // Modify a setting
+    ASSERT_TRUE(config.Set<settings::AppPort>(9000).ok());
+
+    // Get diff string via virtual interface
+    IConfigurationProviderVirtual& virtual_config = config;
+    auto diff_str = virtual_config.GetDiffString();
+
+    EXPECT_NE(diff_str.find("app.port"), std::string::npos);
+    EXPECT_NE(diff_str.find("MODIFIED"), std::string::npos);
+}
+
+TEST_F(ConfigurationIntegrationTest, GetFileValues)
+{
+    using Schema = ConfigSchema<settings::AppName>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    auto& file_values = config.GetFileValues();
+    EXPECT_EQ(file_values["app"]["name"], "TestApp");
+}
+
+TEST_F(ConfigurationIntegrationTest, GetDefaults)
+{
+    using Schema = ConfigSchema<settings::AppName>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    auto& defaults = config.GetDefaults();
+    EXPECT_EQ(defaults["app"]["name"], "TestApp");
+}
+
+TEST_F(ConfigurationIntegrationTest, SaveCreatesParentDirectories)
+{
+    std::string nested_path = file_path_ + "_nested/subdir/config.json";
+
+    using Schema = ConfigSchema<settings::AppName>;
+    Configuration<Schema> config(nested_path);
+    ASSERT_TRUE(config.Load().ok());
+
+    // Verify nested directories were created
+    EXPECT_TRUE(std::filesystem::exists(nested_path));
+
+    // Cleanup
+    std::filesystem::remove_all(file_path_ + "_nested");
+}
+
+// Test custom type FromString path (ConfigTraitsFromJsonAdl)
+TEST_F(ConfigurationIntegrationTest, CustomTypeToAndFromString)
+{
+    // Test the ToString and FromString methods on ConfigTraitsFromJsonAdl
+    Point p { 10, 20 };
+
+    auto str = ConfigTraits<Point>::ToString(p);
+    EXPECT_NE(str.find("10"), std::string::npos);
+    EXPECT_NE(str.find("20"), std::string::npos);
+
+    auto parsed = ConfigTraits<Point>::FromString(str);
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(parsed->x, 10);
+    EXPECT_EQ(parsed->y, 20);
+}
+
+TEST_F(ConfigurationIntegrationTest, CustomTypeFromStringInvalid)
+{
+    auto parsed = ConfigTraits<Point>::FromString("not valid json");
+    EXPECT_FALSE(parsed.has_value());
+}
+
+TEST_F(ConfigurationIntegrationTest, CustomTypeFromJsonInvalid)
+{
+    // JSON that doesn't match Point structure
+    nlohmann::json invalid = 42;
+    auto parsed = ConfigTraits<Point>::FromJson(invalid);
+    EXPECT_FALSE(parsed.has_value());
+}
+
+TEST_F(ConfigurationIntegrationTest, ReadFileNotFound)
+{
+    // Test ReadFile with non-existent file
+    auto result = ReadFile<JsonSerializer>("/nonexistent/path/to/file.json");
+    EXPECT_FALSE(result.ok());
+    EXPECT_TRUE(absl::IsNotFound(result.status()));
+}
+
+TEST_F(ConfigurationIntegrationTest, WriteFileToInvalidPath)
+{
+    // Test WriteFile to a path that cannot be opened (directory doesn't exist and path is invalid)
+    nlohmann::json data = { { "key", "value" } };
+    auto status = WriteFile<JsonSerializer>("/nonexistent_root_dir/cannot/write/here.json", data);
+    EXPECT_FALSE(status.ok());
+    EXPECT_TRUE(absl::IsInternal(status));
+}
+
+TEST_F(ConfigurationIntegrationTest, EnvironmentVariableSuccessfulParse)
+{
+    // Test when environment variable IS successfully parsed (covers line 96 return path)
+    setenv("TEST_APP_HOST", "env-host.example.com", 1);
+
+    using Schema = ConfigSchema<settings::AppHost>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    // Environment variable should be successfully parsed and returned
+    std::string host = config.Get<settings::AppHost>();
+    EXPECT_EQ(host, "env-host.example.com");
+
+    unsetenv("TEST_APP_HOST");
+}
+
+TEST_F(ConfigurationIntegrationTest, FileValueSuccessfulParse)
+{
+    // Create config with valid value in JSON (covers line 107 return path)
+    {
+        std::ofstream file(file_path_);
+        file << R"({"app": {"name": "FileApp"}})";
+    }
+
+    using Schema = ConfigSchema<settings::AppName>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    // File value should be successfully parsed and returned
+    std::string name = config.Get<settings::AppName>();
+    EXPECT_EQ(name, "FileApp");
+}
+
+TEST_F(ConfigurationIntegrationTest, SchemaMigrationAddsMultipleSettings)
+{
+    // Create a config file with only one setting (covers migration loop lines 164-166)
+    {
+        std::ofstream file(file_path_);
+        file << R"({"app": {"name": "OldApp"}})";
+    }
+
+    // New schema has multiple additional settings
+    using Schema = ConfigSchema<settings::AppName, settings::AppPort, settings::AppVersion>;
+
+    ::testing::internal::CaptureStderr();
+    Configuration<Schema> config(file_path_);
+    auto status = config.Load();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    ASSERT_TRUE(status.ok()) << status.message();
+
+    // Verify migration warnings were logged for each new setting
+    EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
+    EXPECT_NE(stderr_output.find("app.port"), std::string::npos);
+    EXPECT_NE(stderr_output.find("app.version"), std::string::npos);
+
+    // Verify all settings are now available
+    EXPECT_EQ(config.Get<settings::AppName>(), "OldApp");
+    EXPECT_EQ(config.Get<settings::AppPort>(), 8080);
+    EXPECT_EQ(config.Get<settings::AppVersion>(), "1.0.0");
 }
 
 }  // namespace cppfig::test

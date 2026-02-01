@@ -30,7 +30,7 @@ struct DiffEntry {
         case DiffType::kModified:
             return "MODIFIED";
         }
-        return "UNKNOWN";
+        return "UNKNOWN";  // LCOV_EXCL_LINE
     }
 };
 

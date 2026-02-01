@@ -58,6 +58,9 @@ TEST(ConfigTraitsTest, DoubleFromJson)
     auto result = ConfigTraits<double>::FromJson(nlohmann::json(3.14));
     ASSERT_TRUE(result.has_value());
     EXPECT_DOUBLE_EQ(*result, 3.14);
+
+    // Test invalid type returns nullopt
+    EXPECT_EQ(ConfigTraits<double>::FromJson(nlohmann::json("invalid")), std::nullopt);
 }
 
 TEST(ConfigTraitsTest, StringToJson)
@@ -69,6 +72,57 @@ TEST(ConfigTraitsTest, StringFromJson)
 {
     EXPECT_EQ(ConfigTraits<std::string>::FromJson(nlohmann::json("hello")), "hello");
     EXPECT_EQ(ConfigTraits<std::string>::FromJson(nlohmann::json(42)), std::nullopt);
+}
+
+// Additional traits tests for coverage
+TEST(ConfigTraitsTest, DoubleFromString)
+{
+    EXPECT_DOUBLE_EQ(*ConfigTraits<double>::FromString("3.14"), 3.14);
+    EXPECT_DOUBLE_EQ(*ConfigTraits<double>::FromString("-2.5"), -2.5);
+    EXPECT_EQ(ConfigTraits<double>::FromString("abc"), std::nullopt);
+    EXPECT_EQ(ConfigTraits<double>::FromString("3.14abc"), std::nullopt);
+}
+
+TEST(ConfigTraitsTest, DoubleToString)
+{
+    auto str = ConfigTraits<double>::ToString(3.14);
+    EXPECT_FALSE(str.empty());
+}
+
+TEST(ConfigTraitsTest, FloatToJson)
+{
+    EXPECT_FLOAT_EQ(ConfigTraits<float>::ToJson(3.14f).get<float>(), 3.14f);
+}
+
+TEST(ConfigTraitsTest, FloatFromJson)
+{
+    auto result = ConfigTraits<float>::FromJson(nlohmann::json(3.14f));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FLOAT_EQ(*result, 3.14f);
+    EXPECT_EQ(ConfigTraits<float>::FromJson(nlohmann::json("invalid")), std::nullopt);
+}
+
+TEST(ConfigTraitsTest, FloatFromString)
+{
+    EXPECT_FLOAT_EQ(*ConfigTraits<float>::FromString("3.14"), 3.14f);
+    EXPECT_EQ(ConfigTraits<float>::FromString("abc"), std::nullopt);
+    EXPECT_EQ(ConfigTraits<float>::FromString("3.14abc"), std::nullopt);
+}
+
+TEST(ConfigTraitsTest, FloatToString)
+{
+    auto str = ConfigTraits<float>::ToString(3.14f);
+    EXPECT_FALSE(str.empty());
+}
+
+TEST(ConfigTraitsTest, StringToString)
+{
+    EXPECT_EQ(ConfigTraits<std::string>::ToString("hello"), "hello");
+}
+
+TEST(ConfigTraitsTest, StringFromString)
+{
+    EXPECT_EQ(ConfigTraits<std::string>::FromString("hello"), "hello");
 }
 
 TEST(ValidatorTest, MinValidator)
@@ -135,6 +189,57 @@ TEST(ValidatorTest, OrCombinator)
     EXPECT_TRUE(validator(0));
     EXPECT_TRUE(validator(100));
     EXPECT_FALSE(validator(50));
+}
+
+TEST(ValidatorTest, PredicateValidatorSuccess)
+{
+    // Test predicate returning true (covers the success path at line 197)
+    auto validator = Predicate<int>([](int v) { return v > 0; }, "Must be positive");
+    auto result = validator(42);
+    EXPECT_TRUE(result);
+    EXPECT_TRUE(result.error_message.empty());
+}
+
+TEST(ValidatorTest, PredicateValidatorFailure)
+{
+    auto validator = Predicate<int>([](int v) { return v > 0; }, "Must be positive");
+    auto result = validator(-1);
+    EXPECT_FALSE(result);
+    EXPECT_EQ(result.error_message, "Must be positive");
+}
+
+TEST(ValidatorTest, AlwaysValidValidator)
+{
+    auto validator = AlwaysValid<int>();
+    EXPECT_TRUE(validator(0));
+    EXPECT_TRUE(validator(-1000));
+    EXPECT_TRUE(validator(1000));
+}
+
+TEST(ValidatorTest, MinLengthValidator)
+{
+    auto validator = MinLength(3);
+    EXPECT_TRUE(validator("hello"));
+    EXPECT_TRUE(validator("abc"));
+    EXPECT_FALSE(validator("ab"));
+    EXPECT_FALSE(validator(""));
+}
+
+TEST(ValidatorTest, PositiveValidator)
+{
+    auto validator = Positive<int>();
+    EXPECT_TRUE(validator(1));
+    EXPECT_TRUE(validator(100));
+    EXPECT_FALSE(validator(0));
+    EXPECT_FALSE(validator(-1));
+}
+
+TEST(ValidatorTest, NonNegativeValidator)
+{
+    auto validator = NonNegative<int>();
+    EXPECT_TRUE(validator(0));
+    EXPECT_TRUE(validator(100));
+    EXPECT_FALSE(validator(-1));
 }
 
 struct TestStringSetting {
@@ -287,6 +392,56 @@ TEST(JsonSerializerTest, HasPath)
     EXPECT_FALSE(JsonSerializer::HasPath(data, "a.c"));
 }
 
+TEST(JsonSerializerTest, ParseStringSuccess)
+{
+    auto result = JsonSerializer::ParseString(R"({"key": "value"})");
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ((*result)["key"], "value");
+}
+
+TEST(JsonSerializerTest, ParseStringError)
+{
+    auto result = JsonSerializer::ParseString("not valid json {{{");
+    EXPECT_FALSE(result.ok());
+    EXPECT_TRUE(absl::IsInvalidArgument(result.status()));
+}
+
+TEST(JsonSerializerTest, ParseStreamError)
+{
+    std::istringstream stream("invalid json {{{");
+    auto result = JsonSerializer::Parse(stream);
+    EXPECT_FALSE(result.ok());
+    EXPECT_TRUE(absl::IsInvalidArgument(result.status()));
+}
+
+TEST(JsonSerializerTest, MergeNonObject)
+{
+    // When base is not an object, overlay replaces it entirely
+    nlohmann::json base = 42;
+    nlohmann::json overlay = { { "key", "value" } };
+
+    auto merged = JsonSerializer::Merge(base, overlay);
+    EXPECT_EQ(merged["key"], "value");
+}
+
+TEST(JsonSerializerTest, MergeNonObjectOverlay)
+{
+    // When overlay is not an object, it replaces base
+    nlohmann::json base = { { "key", "value" } };
+    nlohmann::json overlay = 42;
+
+    auto merged = JsonSerializer::Merge(base, overlay);
+    EXPECT_EQ(merged, 42);
+}
+
+TEST(JsonSerializerTest, GetAtPathNotAnObject)
+{
+    nlohmann::json data = { { "a", 42 } };
+    auto result = JsonSerializer::GetAtPath(data, "a.b");
+    EXPECT_FALSE(result.ok());
+    EXPECT_TRUE(absl::IsNotFound(result.status()));
+}
+
 TEST(ConfigDiffTest, NoDifferences)
 {
     nlohmann::json a = { { "key", "value" } };
@@ -329,6 +484,101 @@ TEST(ConfigDiffTest, ModifiedEntry)
     EXPECT_EQ(diff.Modified()[0].path, "a");
 }
 
+TEST(ConfigDiffTest, DiffEntryTypeString)
+{
+    DiffEntry added { DiffType::kAdded, "path", "", "value" };
+    EXPECT_EQ(added.TypeString(), "ADDED");
+
+    DiffEntry removed { DiffType::kRemoved, "path", "value", "" };
+    EXPECT_EQ(removed.TypeString(), "REMOVED");
+
+    DiffEntry modified { DiffType::kModified, "path", "old", "new" };
+    EXPECT_EQ(modified.TypeString(), "MODIFIED");
+}
+
+TEST(ConfigDiffTest, DiffSize)
+{
+    nlohmann::json base = { { "a", 1 } };
+    nlohmann::json target = { { "a", 2 }, { "b", 3 } };
+
+    auto diff = DiffJson(base, target);
+    EXPECT_EQ(diff.Size(), 2);  // modified + added
+}
+
+TEST(ConfigDiffTest, ToStringNoDifferences)
+{
+    ConfigDiff diff;
+    auto str = diff.ToString();
+    EXPECT_EQ(str, "No differences found.\n");
+}
+
+TEST(ConfigDiffTest, ToStringWithAdded)
+{
+    ConfigDiff diff;
+    diff.entries.push_back({ DiffType::kAdded, "new.setting", "", "42" });
+
+    auto str = diff.ToString();
+    EXPECT_NE(str.find("ADDED"), std::string::npos);
+    EXPECT_NE(str.find("new.setting"), std::string::npos);
+    EXPECT_NE(str.find("= 42"), std::string::npos);
+}
+
+TEST(ConfigDiffTest, ToStringWithRemoved)
+{
+    ConfigDiff diff;
+    diff.entries.push_back({ DiffType::kRemoved, "old.setting", "\"value\"", "" });
+
+    auto str = diff.ToString();
+    EXPECT_NE(str.find("REMOVED"), std::string::npos);
+    EXPECT_NE(str.find("old.setting"), std::string::npos);
+    EXPECT_NE(str.find("was:"), std::string::npos);
+}
+
+TEST(ConfigDiffTest, ToStringWithModified)
+{
+    ConfigDiff diff;
+    diff.entries.push_back({ DiffType::kModified, "changed.setting", "1", "2" });
+
+    auto str = diff.ToString();
+    EXPECT_NE(str.find("MODIFIED"), std::string::npos);
+    EXPECT_NE(str.find("changed.setting"), std::string::npos);
+    EXPECT_NE(str.find("->"), std::string::npos);
+}
+
+TEST(ConfigDiffTest, FilterByType)
+{
+    ConfigDiff diff;
+    diff.entries.push_back({ DiffType::kAdded, "a", "", "1" });
+    diff.entries.push_back({ DiffType::kRemoved, "b", "2", "" });
+    diff.entries.push_back({ DiffType::kAdded, "c", "", "3" });
+
+    auto added = diff.Filter(DiffType::kAdded);
+    EXPECT_EQ(added.size(), 2);
+
+    auto removed = diff.Filter(DiffType::kRemoved);
+    EXPECT_EQ(removed.size(), 1);
+}
+
+TEST(ConfigDiffTest, DiffDefaultsFromFile)
+{
+    nlohmann::json defaults = { { "a", 1 }, { "b", 2 } };
+    nlohmann::json file_values = { { "a", 1 } };
+
+    auto diff = DiffDefaultsFromFile(defaults, file_values);
+    // "b" is in defaults but not in file - shows as Added from perspective of file->defaults
+    EXPECT_TRUE(diff.HasDifferences());
+}
+
+TEST(ConfigDiffTest, DiffFileFromDefaults)
+{
+    nlohmann::json defaults = { { "a", 1 } };
+    nlohmann::json file_values = { { "a", 1 }, { "b", 2 } };
+
+    auto diff = DiffFileFromDefaults(defaults, file_values);
+    // "b" is in file but not in defaults
+    EXPECT_TRUE(diff.HasDifferences());
+}
+
 struct MockAppName {
     static constexpr std::string_view kPath = "app.name";
     using ValueType = std::string;
@@ -347,8 +597,21 @@ TEST(MockConfigurationTest, GetDefault)
 {
     testing::MockConfiguration<MockSchema> config;
 
+    // These should return defaults since nothing was set
     EXPECT_EQ(config.Get<MockAppName>(), "MyApp");
     EXPECT_EQ(config.Get<MockAppPort>(), 8080);
+}
+
+TEST(MockConfigurationTest, GetAfterSetReturnsSetValue)
+{
+    testing::MockConfiguration<MockSchema> config;
+
+    // First get default
+    EXPECT_EQ(config.Get<MockAppPort>(), 8080);
+
+    // Then set and get
+    config.SetValue<MockAppPort>(9000);
+    EXPECT_EQ(config.Get<MockAppPort>(), 9000);
 }
 
 TEST(MockConfigurationTest, SetValue)
@@ -366,6 +629,142 @@ TEST(MockConfigurationTest, Reset)
     config.Reset();
 
     EXPECT_EQ(config.Get<MockAppPort>(), 8080);
+}
+
+struct MockValidatedPort {
+    static constexpr std::string_view kPath = "app.validated_port";
+    using ValueType = int;
+    static auto DefaultValue() -> int { return 8080; }
+    static auto GetValidator() -> Validator<int> { return Range(1, 65535); }
+};
+
+using MockSchemaWithValidation = ConfigSchema<MockAppName, MockValidatedPort>;
+
+TEST(MockConfigurationTest, SetWithValidationSuccess)
+{
+    testing::MockConfiguration<MockSchemaWithValidation> config;
+
+    auto status = config.Set<MockValidatedPort>(9000);
+    EXPECT_TRUE(status.ok());
+    EXPECT_EQ(config.Get<MockValidatedPort>(), 9000);
+}
+
+// Test for mock Get returning default when value exists but fails to parse
+// This covers line 70 in mock.h
+struct MockPointSetting {
+    static constexpr std::string_view kPath = "mock.point";
+    using ValueType = int;  // We'll store a non-int JSON to trigger parse failure
+    static auto DefaultValue() -> int { return 42; }
+};
+
+TEST(MockConfigurationTest, SetWithValidationFailure)
+{
+    testing::MockConfiguration<MockSchemaWithValidation> config;
+
+    auto status = config.Set<MockValidatedPort>(99999);
+    EXPECT_FALSE(status.ok());
+    EXPECT_TRUE(absl::IsInvalidArgument(status));
+    // Value should not be changed
+    EXPECT_EQ(config.Get<MockValidatedPort>(), 8080);
+}
+
+TEST(MockConfigurationTest, GetReturnsDefaultWhenKeyNotFound)
+{
+    // Test that Get returns default when the key is not in the values map
+    // This covers the fallback path at mock.h line 70
+    testing::MockConfiguration<MockSchema> config;
+
+    // Clear the value to simulate key not found
+    config.ClearValue(MockAppPort::kPath);
+
+    // Get should return the default value
+    EXPECT_EQ(config.Get<MockAppPort>(), 8080);
+}
+
+TEST(MockConfigurationTest, GetReturnsDefaultWhenParseFailsWithInvalidType)
+{
+    // Test that Get returns default when FromJson fails
+    // This covers the parse failure branch at mock.h line 70
+    testing::MockConfiguration<MockSchema> config;
+
+    // Inject a string where an int is expected - FromJson will fail
+    config.SetRawJson(std::string(MockAppPort::kPath), "not_an_integer");
+
+    // Get should return the default value since parsing fails
+    EXPECT_EQ(config.Get<MockAppPort>(), 8080);
+}
+
+TEST(LoggerTest, InfoLog)
+{
+    // Just verify it doesn't crash - output goes to stdout
+    ::testing::internal::CaptureStdout();
+    Logger::Info("test info message");
+    auto output = ::testing::internal::GetCapturedStdout();
+    EXPECT_NE(output.find("INFO"), std::string::npos);
+    EXPECT_NE(output.find("test info message"), std::string::npos);
+}
+
+TEST(LoggerTest, WarnLog)
+{
+    ::testing::internal::CaptureStderr();
+    Logger::Warn("test warn message");
+    auto output = ::testing::internal::GetCapturedStderr();
+    EXPECT_NE(output.find("WARN"), std::string::npos);
+    EXPECT_NE(output.find("test warn message"), std::string::npos);
+}
+
+TEST(LoggerTest, ErrorLog)
+{
+    ::testing::internal::CaptureStderr();
+    Logger::Error("test error message");
+    auto output = ::testing::internal::GetCapturedStderr();
+    EXPECT_NE(output.find("ERROR"), std::string::npos);
+    EXPECT_NE(output.find("test error message"), std::string::npos);
+}
+
+TEST(LoggerTest, LogWithLevel)
+{
+    ::testing::internal::CaptureStdout();
+    Logger::Log(LogLevel::Info, "info via Log");
+    auto stdout_output = ::testing::internal::GetCapturedStdout();
+    EXPECT_NE(stdout_output.find("INFO"), std::string::npos);
+
+    ::testing::internal::CaptureStderr();
+    Logger::Log(LogLevel::Warning, "warn via Log");
+    auto stderr_warn = ::testing::internal::GetCapturedStderr();
+    EXPECT_NE(stderr_warn.find("WARN"), std::string::npos);
+
+    ::testing::internal::CaptureStderr();
+    Logger::Log(LogLevel::Error, "error via Log");
+    auto stderr_error = ::testing::internal::GetCapturedStderr();
+    EXPECT_NE(stderr_error.find("ERROR"), std::string::npos);
+}
+
+TEST(LoggerTest, InfoFFormatted)
+{
+    ::testing::internal::CaptureStdout();
+    Logger::InfoF("Value is %d", 42);
+    auto output = ::testing::internal::GetCapturedStdout();
+    EXPECT_NE(output.find("INFO"), std::string::npos);
+    EXPECT_NE(output.find("Value is 42"), std::string::npos);
+}
+
+TEST(LoggerTest, WarnFFormatted)
+{
+    ::testing::internal::CaptureStderr();
+    Logger::WarnF("Warning: %s", "test");
+    auto output = ::testing::internal::GetCapturedStderr();
+    EXPECT_NE(output.find("WARN"), std::string::npos);
+    EXPECT_NE(output.find("Warning: test"), std::string::npos);
+}
+
+TEST(LoggerTest, ErrorFFormatted)
+{
+    ::testing::internal::CaptureStderr();
+    Logger::ErrorF("Error code: %d", 500);
+    auto output = ::testing::internal::GetCapturedStderr();
+    EXPECT_NE(output.find("ERROR"), std::string::npos);
+    EXPECT_NE(output.find("Error code: 500"), std::string::npos);
 }
 
 }  // namespace cppfig::test
