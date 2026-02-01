@@ -1,21 +1,12 @@
-/// @file interface.h
-/// @brief CRTP interface for configuration providers.
-///
-/// Defines the IConfigurationProvider CRTP base class that enables
-/// polymorphic behavior while maintaining compile-time type safety.
-/// This interface is designed to be mockable with GMock.
-
-#ifndef CPPFIG_INTERFACE_H
-#define CPPFIG_INTERFACE_H
-
-#include <string>
-#include <string_view>
+#pragma once
 
 #include <absl/status/status.h>
 #include <absl/status/statusor.h>
 
+#include <string>
+#include <string_view>
+
 #include "cppfig/diff.h"
-#include "cppfig/schema.h"
 #include "cppfig/setting.h"
 
 namespace cppfig {
@@ -43,7 +34,8 @@ public:
     /// Usage: config.Get<MySettings::ServerPort>()
     template <IsSetting S>
         requires(Schema::template HasSetting<S>)
-    [[nodiscard]] auto Get() const -> typename S::ValueType {
+    [[nodiscard]] auto Get() const -> typename S::ValueType
+    {
         return static_cast<const Derived*>(this)->template GetImpl<S>();
     }
 
@@ -54,7 +46,8 @@ public:
     /// Usage: config.Set<MySettings::ServerPort>(8080)
     template <IsSetting S>
         requires(Schema::template HasSetting<S>)
-    auto Set(typename S::ValueType value) -> absl::Status {
+    auto Set(typename S::ValueType value) -> absl::Status
+    {
         return static_cast<Derived*>(this)->template SetImpl<S>(std::move(value));
     }
 
@@ -71,12 +64,14 @@ public:
     [[nodiscard]] auto Diff() const -> ConfigDiff { return static_cast<const Derived*>(this)->DiffImpl(); }
 
     /// @brief Validates all current values against their validators.
-    [[nodiscard]] auto ValidateAll() const -> absl::Status {
+    [[nodiscard]] auto ValidateAll() const -> absl::Status
+    {
         return static_cast<const Derived*>(this)->ValidateAllImpl();
     }
 
     /// @brief Returns the file path.
-    [[nodiscard]] auto GetFilePath() const -> std::string_view {
+    [[nodiscard]] auto GetFilePath() const -> std::string_view
+    {
         return static_cast<const Derived*>(this)->GetFilePathImpl();
     }
 
@@ -122,5 +117,3 @@ protected:
 };
 
 }  // namespace cppfig
-
-#endif  // CPPFIG_INTERFACE_H

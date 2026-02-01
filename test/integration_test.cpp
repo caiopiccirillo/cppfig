@@ -1,74 +1,70 @@
-/// @file integration_test.cpp
-/// @brief Integration tests for cppfig configuration library.
-
+#include <cppfig/cppfig.h>
+#include <cppfig/testing/mock.h>
 #include <gtest/gtest.h>
 
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 
-#include <cppfig/cppfig.h>
-#include <cppfig/testing/mock.h>
-
 namespace cppfig::test {
 
 namespace settings {
 
-struct AppName {
-    static constexpr std::string_view kPath = "app.name";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "TestApp"; }
-};
+    struct AppName {
+        static constexpr std::string_view kPath = "app.name";
+        using ValueType = std::string;
+        static auto DefaultValue() -> std::string { return "TestApp"; }
+    };
 
-struct AppPort {
-    static constexpr std::string_view kPath = "app.port";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 8080; }
-};
+    struct AppPort {
+        static constexpr std::string_view kPath = "app.port";
+        using ValueType = int;
+        static auto DefaultValue() -> int { return 8080; }
+    };
 
-struct AppVersion {
-    static constexpr std::string_view kPath = "app.version";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "1.0.0"; }
-};
+    struct AppVersion {
+        static constexpr std::string_view kPath = "app.version";
+        using ValueType = std::string;
+        static auto DefaultValue() -> std::string { return "1.0.0"; }
+    };
 
-struct ServerPort {
-    static constexpr std::string_view kPath = "server.port";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 8080; }
-    static auto GetValidator() -> Validator<int> { return Range(1, 65535); }
-};
+    struct ServerPort {
+        static constexpr std::string_view kPath = "server.port";
+        using ValueType = int;
+        static auto DefaultValue() -> int { return 8080; }
+        static auto GetValidator() -> Validator<int> { return Range(1, 65535); }
+    };
 
-struct AppHost {
-    static constexpr std::string_view kPath = "app.host";
-    static constexpr std::string_view kEnvOverride = "TEST_APP_HOST";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "localhost"; }
-};
+    struct AppHost {
+        static constexpr std::string_view kPath = "app.host";
+        static constexpr std::string_view kEnvOverride = "TEST_APP_HOST";
+        using ValueType = std::string;
+        static auto DefaultValue() -> std::string { return "localhost"; }
+    };
 
-struct DatabaseHost {
-    static constexpr std::string_view kPath = "database.connection.host";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "localhost"; }
-};
+    struct DatabaseHost {
+        static constexpr std::string_view kPath = "database.connection.host";
+        using ValueType = std::string;
+        static auto DefaultValue() -> std::string { return "localhost"; }
+    };
 
-struct DatabasePort {
-    static constexpr std::string_view kPath = "database.connection.port";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 5432; }
-};
+    struct DatabasePort {
+        static constexpr std::string_view kPath = "database.connection.port";
+        using ValueType = int;
+        static auto DefaultValue() -> int { return 5432; }
+    };
 
-struct DatabasePoolSize {
-    static constexpr std::string_view kPath = "database.pool.max_size";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 10; }
-};
+    struct DatabasePoolSize {
+        static constexpr std::string_view kPath = "database.pool.max_size";
+        using ValueType = int;
+        static auto DefaultValue() -> int { return 10; }
+    };
 
-struct LoggingLevel {
-    static constexpr std::string_view kPath = "logging.level";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "info"; }
-};
+    struct LoggingLevel {
+        static constexpr std::string_view kPath = "logging.level";
+        using ValueType = std::string;
+        static auto DefaultValue() -> std::string { return "info"; }
+    };
 
 }  // namespace settings
 
@@ -81,7 +77,8 @@ protected:
     std::string file_path_;
 };
 
-TEST_F(ConfigurationIntegrationTest, CreateFileWithDefaults) {
+TEST_F(ConfigurationIntegrationTest, CreateFileWithDefaults)
+{
     using Schema = ConfigSchema<settings::AppName, settings::AppPort>;
     Configuration<Schema> config(file_path_);
 
@@ -98,7 +95,8 @@ TEST_F(ConfigurationIntegrationTest, CreateFileWithDefaults) {
     EXPECT_EQ(json["app"]["port"], 8080);
 }
 
-TEST_F(ConfigurationIntegrationTest, LoadExistingFile) {
+TEST_F(ConfigurationIntegrationTest, LoadExistingFile)
+{
     // Create a config file first
     {
         std::ofstream file(file_path_);
@@ -115,7 +113,8 @@ TEST_F(ConfigurationIntegrationTest, LoadExistingFile) {
     EXPECT_EQ(config.Get<settings::AppPort>(), 9000);
 }
 
-TEST_F(ConfigurationIntegrationTest, SchemaMigration) {
+TEST_F(ConfigurationIntegrationTest, SchemaMigration)
+{
     // Create a config file with old schema (missing new setting)
     {
         std::ofstream file(file_path_);
@@ -143,7 +142,8 @@ TEST_F(ConfigurationIntegrationTest, SchemaMigration) {
     EXPECT_EQ(json["app"]["version"], "1.0.0");
 }
 
-TEST_F(ConfigurationIntegrationTest, SetAndSave) {
+TEST_F(ConfigurationIntegrationTest, SetAndSave)
+{
     using Schema = ConfigSchema<settings::ServerPort>;
     Configuration<Schema> config(file_path_);
 
@@ -164,7 +164,8 @@ TEST_F(ConfigurationIntegrationTest, SetAndSave) {
     EXPECT_EQ(config2.Get<settings::ServerPort>(), 9000);
 }
 
-TEST_F(ConfigurationIntegrationTest, ValidationRejectsInvalidValue) {
+TEST_F(ConfigurationIntegrationTest, ValidationRejectsInvalidValue)
+{
     using Schema = ConfigSchema<settings::ServerPort>;
     Configuration<Schema> config(file_path_);
 
@@ -176,7 +177,8 @@ TEST_F(ConfigurationIntegrationTest, ValidationRejectsInvalidValue) {
     EXPECT_TRUE(absl::IsInvalidArgument(status));
 }
 
-TEST_F(ConfigurationIntegrationTest, EnvironmentVariableOverride) {
+TEST_F(ConfigurationIntegrationTest, EnvironmentVariableOverride)
+{
     using Schema = ConfigSchema<settings::AppHost>;
 
     // Set environment variable
@@ -192,7 +194,8 @@ TEST_F(ConfigurationIntegrationTest, EnvironmentVariableOverride) {
     unsetenv("TEST_APP_HOST");
 }
 
-TEST_F(ConfigurationIntegrationTest, DiffShowsModifications) {
+TEST_F(ConfigurationIntegrationTest, DiffShowsModifications)
+{
     using Schema = ConfigSchema<settings::AppName, settings::AppPort>;
     Configuration<Schema> config(file_path_);
 
@@ -209,7 +212,8 @@ TEST_F(ConfigurationIntegrationTest, DiffShowsModifications) {
     EXPECT_EQ(modified[0].path, "app.port");
 }
 
-TEST_F(ConfigurationIntegrationTest, ValidateAll) {
+TEST_F(ConfigurationIntegrationTest, ValidateAll)
+{
     // Create file with invalid value
     {
         std::ofstream file(file_path_);
@@ -225,7 +229,8 @@ TEST_F(ConfigurationIntegrationTest, ValidateAll) {
     EXPECT_FALSE(status.ok());
 }
 
-TEST_F(ConfigurationIntegrationTest, HierarchicalSettings) {
+TEST_F(ConfigurationIntegrationTest, HierarchicalSettings)
+{
     using Schema = ConfigSchema<settings::DatabaseHost, settings::DatabasePort,
                                 settings::DatabasePoolSize, settings::LoggingLevel>;
     Configuration<Schema> config(file_path_);
@@ -243,7 +248,8 @@ TEST_F(ConfigurationIntegrationTest, HierarchicalSettings) {
     EXPECT_EQ(json["logging"]["level"], "info");
 }
 
-TEST_F(ConfigurationIntegrationTest, VirtualInterfaceWorks) {
+TEST_F(ConfigurationIntegrationTest, VirtualInterfaceWorks)
+{
     using Schema = ConfigSchema<settings::AppName>;
     Configuration<Schema> config(file_path_);
 
@@ -261,9 +267,10 @@ struct Point {
 
     bool operator==(const Point& other) const { return x == other.x && y == other.y; }
 
-    friend void to_json(nlohmann::json& j, const Point& p) { j = nlohmann::json{{"x", p.x}, {"y", p.y}}; }
+    friend void to_json(nlohmann::json& j, const Point& p) { j = nlohmann::json { { "x", p.x }, { "y", p.y } }; }
 
-    friend void from_json(const nlohmann::json& j, Point& p) {
+    friend void from_json(const nlohmann::json& j, Point& p)
+    {
         j.at("x").get_to(p.x);
         j.at("y").get_to(p.y);
     }
@@ -273,34 +280,35 @@ struct Point {
 
 // Specialize ConfigTraits for Point using the ADL helper
 template <>
-struct cppfig::ConfigTraits<cppfig::test::Point> : cppfig::ConfigTraitsFromJsonAdl<cppfig::test::Point> {};
+struct cppfig::ConfigTraits<cppfig::test::Point> : cppfig::ConfigTraitsFromJsonAdl<cppfig::test::Point> { };
 
 namespace cppfig::test {
 
 namespace custom_settings {
 
-struct Origin {
-    static constexpr std::string_view kPath = "origin";
-    using ValueType = Point;
-    static auto DefaultValue() -> Point { return Point{0, 0}; }
-};
+    struct Origin {
+        static constexpr std::string_view kPath = "origin";
+        using ValueType = Point;
+        static auto DefaultValue() -> Point { return Point { 0, 0 }; }
+    };
 
-struct Target {
-    static constexpr std::string_view kPath = "target";
-    using ValueType = Point;
-    static auto DefaultValue() -> Point { return Point{100, 100}; }
-};
+    struct Target {
+        static constexpr std::string_view kPath = "target";
+        using ValueType = Point;
+        static auto DefaultValue() -> Point { return Point { 100, 100 }; }
+    };
 
 }  // namespace custom_settings
 
-TEST_F(ConfigurationIntegrationTest, CustomTypeInConfig) {
+TEST_F(ConfigurationIntegrationTest, CustomTypeInConfig)
+{
     using Schema = ConfigSchema<custom_settings::Origin, custom_settings::Target>;
     Configuration<Schema> config(file_path_);
 
     ASSERT_TRUE(config.Load().ok());
 
-    EXPECT_EQ(config.Get<custom_settings::Origin>(), (Point{0, 0}));
-    EXPECT_EQ(config.Get<custom_settings::Target>(), (Point{100, 100}));
+    EXPECT_EQ(config.Get<custom_settings::Origin>(), (Point { 0, 0 }));
+    EXPECT_EQ(config.Get<custom_settings::Target>(), (Point { 100, 100 }));
 
     // Verify JSON structure
     std::ifstream file(file_path_);

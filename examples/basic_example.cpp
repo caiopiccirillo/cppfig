@@ -67,7 +67,8 @@ using MySchema = cppfig::ConfigSchema<settings::AppName, settings::AppVersion, s
                                       settings::ServerPort, settings::ServerMaxConnections, settings::LoggingEnabled,
                                       settings::LoggingLevel, settings::FeaturesExperimental>;
 
-int main() {
+int main()
+{
     // Create configuration manager
     cppfig::Configuration<MySchema> config("/tmp/cppfig_example.json");
 
@@ -90,7 +91,8 @@ int main() {
               << std::endl;
 
     // Show the diff between file and defaults
-    std::cout << "\n" << config.Diff().ToString();
+    std::cout << "\n"
+              << config.Diff().ToString();
 
     // Modify a setting (with validation)
     status = config.Set<settings::ServerPort>(9000);

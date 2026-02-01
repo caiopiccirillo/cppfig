@@ -1,11 +1,4 @@
-/// @file cppfig.h
-/// @brief Main header for the cppfig configuration library.
-///
-/// Include this header to get access to all cppfig functionality.
-/// For testing utilities, include cppfig/testing/mock.h separately.
-
-#ifndef CPPFIG_CPPFIG_H
-#define CPPFIG_CPPFIG_H
+#pragma once
 
 #include "cppfig/configuration.h"
 #include "cppfig/diff.h"
@@ -187,5 +180,3 @@
 ///
 /// // Access: config.Get<settings::database::Host>()
 /// @endcode
-
-#endif  // CPPFIG_CPPFIG_H

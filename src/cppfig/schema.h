@@ -1,15 +1,7 @@
-/// @file schema.h
-/// @brief Configuration schema registry.
-///
-/// Provides ConfigSchema which holds all setting types and enables
-/// compile-time access with full type safety.
-
-#ifndef CPPFIG_SCHEMA_H
-#define CPPFIG_SCHEMA_H
+#pragma once
 
 #include <array>
 #include <string_view>
-#include <tuple>
 #include <type_traits>
 
 #include "cppfig/setting.h"
@@ -18,23 +10,24 @@ namespace cppfig {
 
 namespace detail {
 
-/// @brief Helper to check if a type is in a parameter pack.
-template <typename T, typename... Types>
-struct IsOneOf : std::disjunction<std::is_same<T, Types>...> {};
+    /// @brief Helper to check if a type is in a parameter pack.
+    template <typename T, typename... Types>
+    struct IsOneOf : std::disjunction<std::is_same<T, Types>...> { };
 
-/// @brief Helper to check if all paths are unique at compile time.
-template <typename... Settings>
-consteval auto AllPathsUnique() -> bool {
-    constexpr std::array<std::string_view, sizeof...(Settings)> paths = {Settings::kPath...};
-    for (std::size_t i = 0; i < paths.size(); ++i) {
-        for (std::size_t j = i + 1; j < paths.size(); ++j) {
-            if (paths[i] == paths[j]) {
-                return false;
+    /// @brief Helper to check if all paths are unique at compile time.
+    template <typename... Settings>
+    consteval auto AllPathsUnique() -> bool
+    {
+        constexpr std::array<std::string_view, sizeof...(Settings)> paths = { Settings::kPath... };
+        for (std::size_t i = 0; i < paths.size(); ++i) {
+            for (std::size_t j = i + 1; j < paths.size(); ++j) {
+                if (paths[i] == paths[j]) {
+                    return false;
+                }
             }
         }
+        return true;
     }
-    return true;
-}
 
 }  // namespace detail
 
@@ -74,8 +67,9 @@ public:
     static constexpr bool HasSetting = detail::IsOneOf<S, Settings...>::value;
 
     /// @brief Returns all paths as a compile-time array.
-    [[nodiscard]] static constexpr auto GetPaths() -> std::array<std::string_view, kSize> {
-        return {Settings::kPath...};
+    [[nodiscard]] static constexpr auto GetPaths() -> std::array<std::string_view, kSize>
+    {
+        return { Settings::kPath... };
     }
 
     /// @brief Returns the number of settings in the schema.
@@ -86,7 +80,8 @@ public:
     /// The callable receives a type wrapper that can be used to access
     /// the setting type information.
     template <typename Fn>
-    static void ForEachSetting(Fn&& fn) {
+    static void ForEachSetting(Fn&& fn)
+    {
         (fn.template operator()<Settings>(), ...);
     }
 };
@@ -96,5 +91,3 @@ template <IsSetting S>
 using SettingValueType = typename S::ValueType;
 
 }  // namespace cppfig
-
-#endif  // CPPFIG_SCHEMA_H

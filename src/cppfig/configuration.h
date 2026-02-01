@@ -1,27 +1,17 @@
-/// @file configuration.h
-/// @brief Main configuration manager.
-///
-/// Provides the Configuration class which manages loading, saving, and
-/// accessing configuration values with compile-time type safety.
-
-#ifndef CPPFIG_CONFIGURATION_H
-#define CPPFIG_CONFIGURATION_H
-
-#include <cstdlib>
-#include <filesystem>
-#include <fstream>
-#include <string>
-#include <string_view>
-#include <unordered_map>
+#pragma once
 
 #include <absl/status/status.h>
 #include <absl/status/statusor.h>
 #include <nlohmann/json.hpp>
 
+#include <cstdlib>
+#include <filesystem>
+#include <string>
+#include <string_view>
+
 #include "cppfig/diff.h"
 #include "cppfig/interface.h"
 #include "cppfig/logging.h"
-#include "cppfig/schema.h"
 #include "cppfig/serializer.h"
 #include "cppfig/setting.h"
 #include "cppfig/traits.h"
@@ -78,7 +68,10 @@ public:
     /// @brief Creates a configuration manager with a file path.
     ///
     /// @param file_path Path to the configuration file.
-    explicit Configuration(std::string file_path) : file_path_(std::move(file_path)), file_values_(DataType::object()) {
+    explicit Configuration(std::string file_path)
+        : file_path_(std::move(file_path))
+        , file_values_(DataType::object())
+    {
         BuildDefaults();
     }
 
@@ -90,7 +83,8 @@ public:
     /// 3. Default value
     template <IsSetting S>
         requires(Schema::template HasSetting<S>)
-    [[nodiscard]] auto GetImpl() const -> typename S::ValueType {
+    [[nodiscard]] auto GetImpl() const -> typename S::ValueType
+    {
         using ValueType = typename S::ValueType;
 
         // 1. Check environment variable
@@ -124,7 +118,8 @@ public:
     /// @brief Sets the value for a setting type.
     template <IsSetting S>
         requires(Schema::template HasSetting<S>)
-    auto SetImpl(typename S::ValueType value) -> absl::Status {
+    auto SetImpl(typename S::ValueType value) -> absl::Status
+    {
         using ValueType = typename S::ValueType;
 
         // Validate the value
@@ -142,7 +137,8 @@ public:
     }
 
     /// @brief Loads configuration from the file.
-    [[nodiscard]] auto LoadImpl() -> absl::Status {
+    [[nodiscard]] auto LoadImpl() -> absl::Status
+    {
         namespace fs = std::filesystem;
 
         if (!fs::exists(file_path_)) {
@@ -184,7 +180,8 @@ public:
     }
 
     /// @brief Saves the current configuration to the file.
-    [[nodiscard]] auto SaveImpl() const -> absl::Status {
+    [[nodiscard]] auto SaveImpl() const -> absl::Status
+    {
         namespace fs = std::filesystem;
 
         // Create parent directories if needed
@@ -204,7 +201,8 @@ public:
     [[nodiscard]] auto DiffImpl() const -> ConfigDiff { return DiffFileFromDefaults(defaults_, file_values_); }
 
     /// @brief Validates all current values against their validators.
-    [[nodiscard]] auto ValidateAllImpl() const -> absl::Status {
+    [[nodiscard]] auto ValidateAllImpl() const -> absl::Status
+    {
         absl::Status status = absl::OkStatus();
 
         Schema::ForEachSetting([this, &status]<typename S>() {
@@ -250,7 +248,8 @@ public:
     [[nodiscard]] auto GetDiffString() const -> std::string override { return DiffImpl().ToString(); }
 
 private:
-    void BuildDefaults() {
+    void BuildDefaults()
+    {
         defaults_ = DataType::object();
 
         Schema::ForEachSetting([this]<typename S>() {
@@ -266,5 +265,3 @@ private:
 };
 
 }  // namespace cppfig
-
-#endif  // CPPFIG_CONFIGURATION_H

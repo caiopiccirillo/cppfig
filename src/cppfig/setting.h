@@ -1,14 +1,5 @@
-/// @file setting.h
-/// @brief Setting definition utilities for configuration entries.
-///
-/// Provides the base infrastructure for defining type-safe configuration
-/// settings using structs. Users define settings as structs with static members.
+#pragma once
 
-#ifndef CPPFIG_SETTING_H
-#define CPPFIG_SETTING_H
-
-#include <optional>
-#include <string>
 #include <string_view>
 
 #include "cppfig/traits.h"
@@ -61,24 +52,26 @@ concept HasValidator = IsSetting<S> && requires {
 
 /// @brief Helper to get environment override for a setting (empty if not defined).
 template <IsSetting S>
-constexpr auto GetEnvOverride() -> std::string_view {
+constexpr auto GetEnvOverride() -> std::string_view
+{
     if constexpr (HasEnvOverride<S>) {
         return S::kEnvOverride;
-    } else {
+    }
+    else {
         return "";
     }
 }
 
 /// @brief Helper to get validator for a setting (always-valid if not defined).
 template <IsSetting S>
-auto GetSettingValidator() -> Validator<typename S::ValueType> {
+auto GetSettingValidator() -> Validator<typename S::ValueType>
+{
     if constexpr (HasValidator<S>) {
         return S::GetValidator();
-    } else {
+    }
+    else {
         return AlwaysValid<typename S::ValueType>();
     }
 }
 
 }  // namespace cppfig
-
-#endif  // CPPFIG_SETTING_H

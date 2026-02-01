@@ -1,20 +1,12 @@
-/// @file traits.h
-/// @brief Type traits and concepts for configuration values.
-///
-/// This header defines the trait-based type system that enables compile-time
-/// type safety for configuration values. Users can specialize ConfigTraits
-/// for custom types to enable serialization and validation.
+#pragma once
 
-#ifndef CPPFIG_TRAITS_H
-#define CPPFIG_TRAITS_H
+#include <nlohmann/json.hpp>
 
 #include <concepts>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
-
-#include <nlohmann/json.hpp>
 
 namespace cppfig {
 
@@ -64,7 +56,8 @@ template <>
 struct ConfigTraits<bool> {
     static auto ToJson(bool value) -> nlohmann::json { return value; }
 
-    static auto FromJson(const nlohmann::json& json) -> std::optional<bool> {
+    static auto FromJson(const nlohmann::json& json) -> std::optional<bool>
+    {
         if (!json.is_boolean()) {
             return std::nullopt;
         }
@@ -73,7 +66,8 @@ struct ConfigTraits<bool> {
 
     static auto ToString(bool value) -> std::string { return value ? "true" : "false"; }
 
-    static auto FromString(std::string_view str) -> std::optional<bool> {
+    static auto FromString(std::string_view str) -> std::optional<bool>
+    {
         if (str == "true" || str == "1" || str == "yes" || str == "on") {
             return true;
         }
@@ -88,7 +82,8 @@ template <>
 struct ConfigTraits<int> {
     static auto ToJson(int value) -> nlohmann::json { return value; }
 
-    static auto FromJson(const nlohmann::json& json) -> std::optional<int> {
+    static auto FromJson(const nlohmann::json& json) -> std::optional<int>
+    {
         if (!json.is_number_integer()) {
             return std::nullopt;
         }
@@ -97,7 +92,8 @@ struct ConfigTraits<int> {
 
     static auto ToString(int value) -> std::string { return std::to_string(value); }
 
-    static auto FromString(std::string_view str) -> std::optional<int> {
+    static auto FromString(std::string_view str) -> std::optional<int>
+    {
         try {
             std::size_t pos = 0;
             int result = std::stoi(std::string(str), &pos);
@@ -105,7 +101,8 @@ struct ConfigTraits<int> {
                 return std::nullopt;
             }
             return result;
-        } catch (...) {
+        }
+        catch (...) {
             return std::nullopt;
         }
     }
@@ -115,7 +112,8 @@ template <>
 struct ConfigTraits<std::int64_t> {
     static auto ToJson(std::int64_t value) -> nlohmann::json { return value; }
 
-    static auto FromJson(const nlohmann::json& json) -> std::optional<std::int64_t> {
+    static auto FromJson(const nlohmann::json& json) -> std::optional<std::int64_t>
+    {
         if (!json.is_number_integer()) {
             return std::nullopt;
         }
@@ -124,7 +122,8 @@ struct ConfigTraits<std::int64_t> {
 
     static auto ToString(std::int64_t value) -> std::string { return std::to_string(value); }
 
-    static auto FromString(std::string_view str) -> std::optional<std::int64_t> {
+    static auto FromString(std::string_view str) -> std::optional<std::int64_t>
+    {
         try {
             std::size_t pos = 0;
             std::int64_t result = std::stoll(std::string(str), &pos);
@@ -132,7 +131,8 @@ struct ConfigTraits<std::int64_t> {
                 return std::nullopt;
             }
             return result;
-        } catch (...) {
+        }
+        catch (...) {
             return std::nullopt;
         }
     }
@@ -142,7 +142,8 @@ template <>
 struct ConfigTraits<double> {
     static auto ToJson(double value) -> nlohmann::json { return value; }
 
-    static auto FromJson(const nlohmann::json& json) -> std::optional<double> {
+    static auto FromJson(const nlohmann::json& json) -> std::optional<double>
+    {
         if (!json.is_number()) {
             return std::nullopt;
         }
@@ -151,7 +152,8 @@ struct ConfigTraits<double> {
 
     static auto ToString(double value) -> std::string { return std::to_string(value); }
 
-    static auto FromString(std::string_view str) -> std::optional<double> {
+    static auto FromString(std::string_view str) -> std::optional<double>
+    {
         try {
             std::size_t pos = 0;
             double result = std::stod(std::string(str), &pos);
@@ -159,7 +161,8 @@ struct ConfigTraits<double> {
                 return std::nullopt;
             }
             return result;
-        } catch (...) {
+        }
+        catch (...) {
             return std::nullopt;
         }
     }
@@ -169,7 +172,8 @@ template <>
 struct ConfigTraits<float> {
     static auto ToJson(float value) -> nlohmann::json { return value; }
 
-    static auto FromJson(const nlohmann::json& json) -> std::optional<float> {
+    static auto FromJson(const nlohmann::json& json) -> std::optional<float>
+    {
         if (!json.is_number()) {
             return std::nullopt;
         }
@@ -178,7 +182,8 @@ struct ConfigTraits<float> {
 
     static auto ToString(float value) -> std::string { return std::to_string(value); }
 
-    static auto FromString(std::string_view str) -> std::optional<float> {
+    static auto FromString(std::string_view str) -> std::optional<float>
+    {
         try {
             std::size_t pos = 0;
             float result = std::stof(std::string(str), &pos);
@@ -186,7 +191,8 @@ struct ConfigTraits<float> {
                 return std::nullopt;
             }
             return result;
-        } catch (...) {
+        }
+        catch (...) {
             return std::nullopt;
         }
     }
@@ -196,7 +202,8 @@ template <>
 struct ConfigTraits<std::string> {
     static auto ToJson(const std::string& value) -> nlohmann::json { return value; }
 
-    static auto FromJson(const nlohmann::json& json) -> std::optional<std::string> {
+    static auto FromJson(const nlohmann::json& json) -> std::optional<std::string>
+    {
         if (!json.is_string()) {
             return std::nullopt;
         }
@@ -225,34 +232,37 @@ concept HasJsonAdl = requires(const T& value, nlohmann::json& json) {
 template <typename T>
     requires HasJsonAdl<T>
 struct ConfigTraitsFromJsonAdl {
-    static auto ToJson(const T& value) -> nlohmann::json {
+    static auto ToJson(const T& value) -> nlohmann::json
+    {
         nlohmann::json json;
         to_json(json, value);
         return json;
     }
 
-    static auto FromJson(const nlohmann::json& json) -> std::optional<T> {
+    static auto FromJson(const nlohmann::json& json) -> std::optional<T>
+    {
         try {
             T value;
             from_json(json, value);
             return value;
-        } catch (...) {
+        }
+        catch (...) {
             return std::nullopt;
         }
     }
 
     static auto ToString(const T& value) -> std::string { return ToJson(value).dump(); }
 
-    static auto FromString(std::string_view str) -> std::optional<T> {
+    static auto FromString(std::string_view str) -> std::optional<T>
+    {
         try {
             auto json = nlohmann::json::parse(str);
             return FromJson(json);
-        } catch (...) {
+        }
+        catch (...) {
             return std::nullopt;
         }
     }
 };
 
 }  // namespace cppfig
-
-#endif  // CPPFIG_TRAITS_H

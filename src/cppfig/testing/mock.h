@@ -1,22 +1,14 @@
-/// @file testing/mock.h
-/// @brief GMock helpers for testing with configuration.
-///
-/// Provides MockConfiguration class that can be used with GMock to
-/// mock configuration access in unit tests.
-
-#ifndef CPPFIG_TESTING_MOCK_H
-#define CPPFIG_TESTING_MOCK_H
-
-#include <string>
-#include <string_view>
-#include <unordered_map>
+#pragma once
 
 #include <absl/status/status.h>
 #include <gmock/gmock.h>
 #include <nlohmann/json.hpp>
 
+#include <string>
+#include <string_view>
+#include <unordered_map>
+
 #include "cppfig/interface.h"
-#include "cppfig/schema.h"
 #include "cppfig/setting.h"
 #include "cppfig/traits.h"
 
@@ -61,7 +53,8 @@ public:
     /// @brief Gets the value for a setting type.
     template <IsSetting S>
         requires(Schema::template HasSetting<S>)
-    [[nodiscard]] auto Get() const -> typename S::ValueType {
+    [[nodiscard]] auto Get() const -> typename S::ValueType
+    {
         using ValueType = typename S::ValueType;
         std::string key(S::kPath);
 
@@ -80,7 +73,8 @@ public:
     /// @brief Sets the value for a setting type (bypasses validation for testing).
     template <IsSetting S>
         requires(Schema::template HasSetting<S>)
-    void SetValue(typename S::ValueType value) {
+    void SetValue(typename S::ValueType value)
+    {
         using ValueType = typename S::ValueType;
         std::string key(S::kPath);
         values_[key] = ConfigTraits<ValueType>::ToJson(value);
@@ -89,7 +83,8 @@ public:
     /// @brief Sets the value with validation.
     template <IsSetting S>
         requires(Schema::template HasSetting<S>)
-    auto Set(typename S::ValueType value) -> absl::Status {
+    auto Set(typename S::ValueType value) -> absl::Status
+    {
         auto validator = GetSettingValidator<S>();
         auto validation = validator(value);
         if (!validation) {
@@ -107,13 +102,15 @@ public:
     [[nodiscard]] auto Save() const -> absl::Status { return absl::OkStatus(); }
 
     /// @brief Resets all values to defaults.
-    void Reset() {
+    void Reset()
+    {
         values_.clear();
         BuildDefaults();
     }
 
 private:
-    void BuildDefaults() {
+    void BuildDefaults()
+    {
         Schema::ForEachSetting([this]<typename S>() {
             using ValueType = typename S::ValueType;
             std::string key(S::kPath);
@@ -151,7 +148,8 @@ public:
 class ConfigurationTestFixture {
 public:
     /// @brief Creates a temporary file path for testing.
-    [[nodiscard]] static auto CreateTempFilePath(std::string_view prefix = "test_config") -> std::string {
+    [[nodiscard]] static auto CreateTempFilePath(std::string_view prefix = "test_config") -> std::string
+    {
         return std::string("/tmp/") + std::string(prefix) + "_" + std::to_string(std::rand()) + ".json";
     }
 
@@ -160,5 +158,3 @@ public:
 };
 
 }  // namespace cppfig::testing
-
-#endif  // CPPFIG_TESTING_MOCK_H

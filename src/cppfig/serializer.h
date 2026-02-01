@@ -1,23 +1,14 @@
-/// @file serializer.h
-/// @brief Serialization abstraction for configuration files.
-///
-/// Defines the Serializer concept and provides JsonSerializer as the default
-/// implementation. Users can implement custom serializers (YAML, TOML, etc.)
-/// by satisfying the Serializer concept.
-
-#ifndef CPPFIG_SERIALIZER_H
-#define CPPFIG_SERIALIZER_H
-
-#include <concepts>
-#include <fstream>
-#include <istream>
-#include <ostream>
-#include <sstream>
-#include <string>
+#pragma once
 
 #include <absl/status/status.h>
 #include <absl/status/statusor.h>
 #include <nlohmann/json.hpp>
+
+#include <concepts>
+#include <fstream>
+#include <istream>
+#include <sstream>
+#include <string>
 
 namespace cppfig {
 
@@ -40,21 +31,25 @@ struct JsonSerializer {
     using DataType = nlohmann::json;
 
     /// @brief Parses JSON from an input stream.
-    static auto Parse(std::istream& is) -> absl::StatusOr<DataType> {
+    static auto Parse(std::istream& is) -> absl::StatusOr<DataType>
+    {
         try {
             DataType data;
             is >> data;
             return data;
-        } catch (const nlohmann::json::parse_error& e) {
+        }
+        catch (const nlohmann::json::parse_error& e) {
             return absl::InvalidArgumentError(std::string("JSON parse error: ") + e.what());
         }
     }
 
     /// @brief Parses JSON from a string.
-    static auto ParseString(std::string_view str) -> absl::StatusOr<DataType> {
+    static auto ParseString(std::string_view str) -> absl::StatusOr<DataType>
+    {
         try {
             return DataType::parse(str);
-        } catch (const nlohmann::json::parse_error& e) {
+        }
+        catch (const nlohmann::json::parse_error& e) {
             return absl::InvalidArgumentError(std::string("JSON parse error: ") + e.what());
         }
     }
@@ -67,7 +62,8 @@ struct JsonSerializer {
     /// This performs a deep merge where:
     /// - Objects are merged recursively
     /// - Arrays and primitives from overlay replace base
-    static auto Merge(const DataType& base, const DataType& overlay) -> DataType {
+    static auto Merge(const DataType& base, const DataType& overlay) -> DataType
+    {
         if (!base.is_object() || !overlay.is_object()) {
             return overlay;
         }
@@ -76,7 +72,8 @@ struct JsonSerializer {
         for (auto& [key, value] : overlay.items()) {
             if (result.contains(key) && result[key].is_object() && value.is_object()) {
                 result[key] = Merge(result[key], value);
-            } else {
+            }
+            else {
                 result[key] = value;
             }
         }
@@ -84,7 +81,8 @@ struct JsonSerializer {
     }
 
     /// @brief Gets a value at a dot-separated path.
-    static auto GetAtPath(const DataType& data, std::string_view path) -> absl::StatusOr<DataType> {
+    static auto GetAtPath(const DataType& data, std::string_view path) -> absl::StatusOr<DataType>
+    {
         const DataType* current = &data;
         std::string path_str(path);
         std::istringstream ss(path_str);
@@ -103,7 +101,8 @@ struct JsonSerializer {
     }
 
     /// @brief Sets a value at a dot-separated path, creating intermediate objects.
-    static void SetAtPath(DataType& data, std::string_view path, const DataType& value) {
+    static void SetAtPath(DataType& data, std::string_view path, const DataType& value)
+    {
         DataType* current = &data;
         std::string path_str(path);
         std::istringstream ss(path_str);
@@ -127,14 +126,16 @@ struct JsonSerializer {
     }
 
     /// @brief Checks if a path exists in the data.
-    static auto HasPath(const DataType& data, std::string_view path) -> bool {
+    static auto HasPath(const DataType& data, std::string_view path) -> bool
+    {
         return GetAtPath(data, path).ok();
     }
 };
 
 /// @brief Helper to read a file into a serializer's data type.
 template <Serializer S>
-auto ReadFile(const std::string& path) -> absl::StatusOr<typename S::DataType> {
+auto ReadFile(const std::string& path) -> absl::StatusOr<typename S::DataType>
+{
     std::ifstream file(path);
     if (!file.is_open()) {
         return absl::NotFoundError("Could not open file: " + path);
@@ -144,7 +145,8 @@ auto ReadFile(const std::string& path) -> absl::StatusOr<typename S::DataType> {
 
 /// @brief Helper to write a serializer's data type to a file.
 template <Serializer S>
-auto WriteFile(const std::string& path, const typename S::DataType& data) -> absl::Status {
+auto WriteFile(const std::string& path, const typename S::DataType& data) -> absl::Status
+{
     std::ofstream file(path);
     if (!file.is_open()) {
         return absl::InternalError("Could not write to file: " + path);
@@ -157,5 +159,3 @@ auto WriteFile(const std::string& path, const typename S::DataType& data) -> abs
 }
 
 }  // namespace cppfig
-
-#endif  // CPPFIG_SERIALIZER_H
