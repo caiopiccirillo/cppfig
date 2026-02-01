@@ -1,285 +1,274 @@
-# C++fig - Extensible Type-Safe Configuration Library
+# cppfig - Modern C++20 Configuration Library
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/caiopiccirillo/cppfig)
-[![C++ Standard](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B17)
+[![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B20)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A modern, high-performance C++ configuration library that provides **compile-time type safety**, **zero-runtime overhead**, **fully extensible custom types**, and **blazing-fast access** to your application settings.
+A modern, header-only C++20 configuration library with **compile-time type safety**, **zero macros**, **IDE autocompletion**, and **pluggable serialization**.
 
-## Why C++fig?
+## Features
 
-### **Compile-Time Type Safety**
-
-- **No runtime type errors** - All type mismatches caught at compile time
-- **Zero performance overhead** - Types resolved at compile time
-- **IDE-friendly** - Full autocomplete and error detection
-
-### **Exceptional Performance**
-
-- **Sub-nanosecond value access** (0.238 ns median for integers)
-- **O(1) setting lookup** with std::unordered_map
-- **Production-ready** for high-frequency applications
-
-### **Extensible Type System**
-
-- **Fully configurable** - Define your own custom types
-- **Trait-based architecture** - Easy to extend with new types
-- **Custom serialization** - Not limited to specific formats
-- **Future-proof** - Pluggable serializers for any format
-
-### **Developer Experience**
-
-- **Minimal boilerplate** - One-line setting declarations
-- **Clean API** - Intuitive and ergonomic interface
-- **Automatic type deduction** - No need to specify types repeatedly
-- **Rich validation** - Built-in validators with custom extensions
-
-## Performance Benchmarks
-
-| Operation                  | Time     |
-| -------------------------- | -------- |
-| **Core Operations**        |          |
-| Get Setting                | 1.30 ns  |
-| Value Access               | 0.238 ns |
-| Combined Access            | 1.61 ns  |
-| Set Value                  | 0.504 ns |
-| Validation Check           | 0.647 ns |
-| Validate All (30 settings) | 45.5 ns  |
-| Access 10 Settings         | 30.6 ns  |
-| Metadata Access            | 17.5 ns  |
-| **File I/O Operations**    |          |
-| Save to JSON               | 42.3 μs  |
-| Load from JSON             | 33.3 μs  |
-| **Schema Migration**       |          |
-| Missing Settings Detection | 46.6 ns  |
-| Manual Schema Sync         | 2.13 μs  |
-| Auto Migration (Load)      | 118 μs   |
-| Load Without Migration     | 119 μs   |
-
-_Benchmarked on Clang 20.1.8 with -O3 optimization (Release build)_
-
-## Installation
-
-### Option 1: Single Header (Recommended)
-
-Simply copy `src/cppfig.h` and all header files from the `src/` directory to your project:
-
-```bash
-# Copy all headers to your project
-cp -r cppfig/src/* your_project/include/
-```
-
-### Option 2: CMake Integration
-
-Add C++fig as a subdirectory in your CMakeLists.txt:
-
-```cmake
-# Add C++fig to your project
-add_subdirectory(cppfig)
-
-# Link to your target
-target_link_libraries(your_target PRIVATE cppfig)
-```
-
-### Option 3: Package Manager
-
-C++fig can be integrated with vcpkg, Conan, or other package managers (coming soon).
-
-### Requirements
-
-- C++17 compatible compiler
-- nlohmann/json library
-- CMake 3.22+ (for building examples/tests)
+- **Compile-time type safety** - All type errors caught at compile time
+- **Zero macros** - Pure C++20 templates and concepts
+- **IDE-friendly** - Full autocompletion: `config.Get<settings::ServerPort>()`
+- **Hierarchical configuration** - Dot-notation paths create nested JSON
+- **Environment variable overrides** - Production-friendly configuration
+- **Validation** - Built-in validators with custom extensions
+- **Schema migration** - Automatically adds new settings to existing files
+- **Mockable** - GMock-compatible interfaces for unit testing
+- **Pluggable serialization** - JSON default, extensible to YAML/TOML
 
 ## Quick Start
 
-### 1. Define Your Configuration
+### 1. Define Settings
 
 ```cpp
-#include "cppfig.h"  // Single header - includes everything you need!
+#include <cppfig/cppfig.h>
 
-// Define your configuration enum
-enum class AppConfig : uint8_t {
-    DatabaseUrl,
-    MaxConnections,
-    EnableLogging,
-    RetryCount
+namespace settings {
+
+struct ServerPort {
+    static constexpr std::string_view kPath = "server.port";
+    static constexpr std::string_view kEnvOverride = "SERVER_PORT";  // Optional
+    using ValueType = int;
+    static auto DefaultValue() -> int { return 8080; }
+    static auto GetValidator() -> cppfig::Validator<int> {  // Optional
+        return cppfig::Range(1, 65535);
+    }
 };
 
-// One-line type declarations (compile-time type safety!)
-DECLARE_CONFIG_TYPE(AppConfig, AppConfig::DatabaseUrl, std::string);
-DECLARE_CONFIG_TYPE(AppConfig, AppConfig::MaxConnections, int);
-DECLARE_CONFIG_TYPE(AppConfig, AppConfig::EnableLogging, bool);
-DECLARE_CONFIG_TYPE(AppConfig, AppConfig::RetryCount, int);
-```
-
-### 1b. Or Define Custom Types (Optional)
-
-```cpp
-// Define custom types
-enum class LogLevel { Debug, Info, Warning, Error };
-struct DatabaseConfig { std::string host; int port; std::string username; };
-
-// Specialize ConfigurationTraits for custom types
-template<>
-struct config::ConfigurationTraits<LogLevel> {
-    static nlohmann::json ToJson(const LogLevel& value) { /* implementation */ }
-    static LogLevel FromJson(const nlohmann::json& json) { /* implementation */ }
-    static std::string ToString(const LogLevel& value) { /* implementation */ }
-    static bool IsValid(const LogLevel& value) { return true; }
+struct ServerHost {
+    static constexpr std::string_view kPath = "server.host";
+    using ValueType = std::string;
+    static auto DefaultValue() -> std::string { return "localhost"; }
 };
 
-// Use custom types in your configuration
-DECLARE_CONFIG_TYPE(AppConfig, AppConfig::LogLevel, LogLevel);
-DECLARE_CONFIG_TYPE(AppConfig, AppConfig::Database, DatabaseConfig);
+struct LogLevel {
+    static constexpr std::string_view kPath = "logging.level";
+    using ValueType = std::string;
+    static auto DefaultValue() -> std::string { return "info"; }
+    static auto GetValidator() -> cppfig::Validator<std::string> {
+        return cppfig::OneOf<std::string>({"debug", "info", "warn", "error"});
+    }
+};
+
+}  // namespace settings
 ```
 
-### 2. Create Configuration Instance
+### 2. Create Schema and Use
 
 ```cpp
-// For basic types - use the simple configuration
-using Config = config::BasicJsonConfiguration<AppConfig>;
-
-// For custom types - define your variant and use custom configuration
-using CustomVariant = std::variant<
-    config::Setting<AppConfig, std::string>,
-    config::Setting<AppConfig, int>,
-    config::Setting<AppConfig, bool>,
-    config::Setting<AppConfig, LogLevel>,     // Custom enum
-    config::Setting<AppConfig, DatabaseConfig> // Custom struct
+// Group settings into a schema
+using MySchema = cppfig::ConfigSchema<
+    settings::ServerPort,
+    settings::ServerHost,
+    settings::LogLevel
 >;
-using CustomConfig = config::CustomJsonConfiguration<AppConfig, CustomVariant>;
 
-// Define default values with validation
-const Config::DefaultConfigMap DefaultConfig = {
-    { AppConfig::DatabaseUrl,
-      config::ConfigHelpers<AppConfig>::CreateStringSetting<AppConfig::DatabaseUrl>(
-          "mongodb://localhost:27017", "Database connection URL") },
-    { AppConfig::MaxConnections,
-      config::ConfigHelpers<AppConfig>::CreateIntSetting<AppConfig::MaxConnections>(
-          100, 1, 1000, "Max database connections", "connections") },
-    { AppConfig::EnableLogging,
-      config::ConfigHelpers<AppConfig>::CreateBoolSetting<AppConfig::EnableLogging>(
-          true, "Enable application logging") },
-    { AppConfig::RetryCount,
-      config::ConfigHelpers<AppConfig>::CreateIntSetting<AppConfig::RetryCount>(
-          3, 0, 10, "Operation retry attempts", "retries") }
-};
+int main() {
+    // Create configuration manager
+    cppfig::Configuration<MySchema> config("config.json");
 
-// Load configuration from file with type safety
-Config config("app_config.json", DefaultConfig);
-```
+    // Load (creates file with defaults if missing)
+    auto status = config.Load();
+    if (!status.ok()) {
+        std::cerr << "Error: " << status.message() << std::endl;
+        return 1;
+    }
 
-### 3. Access Configuration Values
+    // Type-safe access with IDE autocompletion
+    int port = config.Get<settings::ServerPort>();
+    std::string host = config.Get<settings::ServerHost>();
 
-```cpp
-// Clean, type-safe API with automatic type deduction
-auto db_setting = config.GetSetting<AppConfig::DatabaseUrl>();
-auto db_url = db_setting.Value();  // std::string automatically deduced!
+    // Modify with validation
+    status = config.Set<settings::ServerPort>(9000);
+    if (!status.ok()) {
+        std::cerr << "Validation error: " << status.message() << std::endl;
+    }
 
-auto conn_setting = config.GetSetting<AppConfig::MaxConnections>();
-auto max_conn = conn_setting.Value();  // int automatically deduced!
-
-// Update values with compile-time type checking
-conn_setting.SetValue(150);  // ✅ Compiles - correct type
-// conn_setting.SetValue("invalid");  // ❌ Compile error - type mismatch!
-
-// Validate and save
-if (config.ValidateAll()) {
+    // Save changes
     config.Save();
+
+    return 0;
 }
 ```
 
-> **See Complete Examples**:
->
-> - [`examples/simple_config_example.cpp`](examples/simple_config_example.cpp) - Basic configuration with built-in types
-> - [`examples/custom_types_example.cpp`](examples/custom_types_example.cpp) - Advanced configuration with custom types
->
-> **Getting Started**: Just `#include "cppfig.h"` - that's all you need!
+### Generated JSON
 
-## Key Features
-
-### Compile-Time Type Safety
-
-```cpp
-// These will FAIL TO COMPILE if types don't match:
-auto value = config.GetSetting<AppConfig::MaxConnections>().Value();
-// value is guaranteed to be 'int' - no runtime checks needed!
-
-config.GetSetting<AppConfig::MaxConnections>().SetValue(42);    // ✅ Works
-config.GetSetting<AppConfig::MaxConnections>().SetValue("42");  // ❌ Compile error
-```
-
-### Zero Runtime Overhead
-
-```cpp
-// All type resolution happens at compile time
-// Runtime performance identical to raw variable access
-auto setting = config.GetSetting<AppConfig::DatabaseUrl>();  // 1.30 ns
-auto value = setting.Value();                                // 0.238 ns
-
-// Works with ANY type that has ConfigurationTraits specialized
-auto custom_setting = config.GetSetting<AppConfig::LogLevel>();
-auto log_level = custom_setting.Value(); // LogLevel automatically deduced
-```
-
-### Rich Validation
-
-```cpp
-// Built-in validators
-auto validator = SimpleValidators<int>::Range(1, 1000);
-if (!validator(max_connections)) {
-    // Handle validation error
+```json
+{
+    "server": {
+        "port": 8080,
+        "host": "localhost"
+    },
+    "logging": {
+        "level": "info"
+    }
 }
+```
 
-// Custom validators
-auto custom_validator = [](const std::string& url) {
-    return url.starts_with("mongodb://") || url.starts_with("postgresql://");
+## Installation
+
+### Requirements
+
+- C++20 compiler (GCC 11+, Clang 14+, MSVC 2022+)
+- [nlohmann/json](https://github.com/nlohmann/json)
+- [Abseil](https://github.com/abseil/abseil-cpp) (for `absl::Status`)
+
+### Header-Only Integration
+
+```bash
+cp -r cppfig/src/cppfig your_project/include/
+```
+
+### CMake Integration
+
+```cmake
+add_subdirectory(cppfig)
+target_link_libraries(your_target PRIVATE cppfig)
+```
+
+### vcpkg
+
+```bash
+# Dependencies
+vcpkg install nlohmann-json abseil
+```
+
+## Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [Getting Started](docs/getting-started.md) | Installation and first steps |
+| [Defining Settings](docs/defining-settings.md) | Complete setting options |
+| [Custom Types](docs/custom-types.md) | Add support for your own types |
+| [Validators](docs/validators.md) | Built-in and custom validation |
+| [Testing](docs/testing.md) | Mock configuration in unit tests |
+| [Serializers](docs/serializers.md) | Custom serialization formats |
+
+## Key Concepts
+
+### Setting Structure
+
+Every setting is a struct with:
+
+```cpp
+struct MySetting {
+    // Required
+    static constexpr std::string_view kPath = "path.to.setting";
+    using ValueType = int;
+    static auto DefaultValue() -> int { return 42; }
+
+    // Optional
+    static constexpr std::string_view kEnvOverride = "MY_SETTING";
+    static auto GetValidator() -> cppfig::Validator<int> { return cppfig::Min(0); }
 };
 ```
 
-### JSON Serialization
+### Value Resolution Order
+
+1. **Environment variable** (if `kEnvOverride` defined and env var set)
+2. **File value** (if present in configuration file)
+3. **Default value** (from `DefaultValue()`)
+
+### Built-in Validators
 
 ```cpp
-// Automatic JSON save/load
-config.Save("config.json");
-config.Load("config.json");
+// Numeric
+cppfig::Min(0)
+cppfig::Max(100)
+cppfig::Range(1, 65535)
+cppfig::Positive<int>()
+cppfig::NonNegative<int>()
 
-// Configuration automatically serialized as:
-{
-    "database_url": "mongodb://localhost:27017",
-    "max_connections": 100,
-    "enable_logging": true,
-    "retry_count": 3
+// String
+cppfig::NotEmpty()
+cppfig::MinLength(8)
+cppfig::MaxLength(255)
+
+// Generic
+cppfig::OneOf<std::string>({"a", "b", "c"})
+cppfig::Predicate<int>([](int x) { return x % 2 == 0; }, "must be even")
+
+// Combine
+cppfig::Min(1).And(cppfig::Max(100))
+```
+
+### Custom Types
+
+```cpp
+struct Point {
+    int x, y;
+
+    friend void to_json(nlohmann::json& j, const Point& p) {
+        j = {{"x", p.x}, {"y", p.y}};
+    }
+    friend void from_json(const nlohmann::json& j, Point& p) {
+        j.at("x").get_to(p.x);
+        j.at("y").get_to(p.y);
+    }
+};
+
+// Register with cppfig
+template <>
+struct cppfig::ConfigTraits<Point> : cppfig::ConfigTraitsFromJsonAdl<Point> {};
+
+// Use in settings
+struct Origin {
+    static constexpr std::string_view kPath = "origin";
+    using ValueType = Point;
+    static auto DefaultValue() -> Point { return {0, 0}; }
+};
+```
+
+### Testing
+
+```cpp
+#include <cppfig/testing/mock.h>
+
+TEST(MyTest, UsesConfiguration) {
+    cppfig::testing::MockConfiguration<MySchema> config;
+    config.SetValue<settings::ServerPort>(9000);
+
+    MyService service(config.Get<settings::ServerHost>(),
+                      config.Get<settings::ServerPort>());
+
+    EXPECT_EQ(service.GetPort(), 9000);
 }
 ```
 
-## Architecture Highlights
+## API Reference
 
-- **Template-based design** for zero-runtime overhead
-- **Configurable std::variant** for extensible type-safe setting storage
-- **std::unordered_map** for O(1) setting lookup
-- **SFINAE** for compile-time type validation
-- **Trait-based system** for custom type support
-- **Pluggable serializers** (JSON, XML, YAML, custom formats)
-- **Modern C++17** features throughout
+### Configuration Class
 
-## Testing & Quality
+```cpp
+cppfig::Configuration<Schema, Serializer = JsonSerializer>
 
-- **Comprehensive unit tests** covering all APIs
-- **Performance benchmarks** with Google Benchmark
-- **Memory safety** verified with sanitizers
-- **clang-format** and **clang-tidy** integration
-- **Zero warnings** on high warning levels
+// Methods
+auto Load() -> absl::Status;
+auto Save() const -> absl::Status;
+auto Get<Setting>() const -> typename Setting::ValueType;
+auto Set<Setting>(value) -> absl::Status;
+auto Diff() const -> ConfigDiff;
+auto ValidateAll() const -> absl::Status;
+auto GetFilePath() const -> std::string_view;
+```
 
-## Development Setup
+### ConfigSchema
 
-The project uses **devcontainer** for consistent development environments:
+```cpp
+cppfig::ConfigSchema<Settings...>
 
-1. Install [Visual Studio Code](https://code.visualstudio.com/) and [Remote - Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
-2. Clone the repository
-3. Open in VS Code and reopen in container
-4. Build with CMake: `cmake --workflow --preset=debug-dev`
+// Compile-time checks
+static constexpr bool HasSetting<S>;
+static constexpr std::size_t kSize;
+
+// Runtime utilities
+static auto GetPaths() -> std::array<std::string_view, kSize>;
+static void ForEachSetting(auto&& fn);
+```
+
+## Development
 
 ### Building
 
@@ -287,96 +276,48 @@ The project uses **devcontainer** for consistent development environments:
 # Debug build
 cmake --workflow --preset=debug-dev
 
-# Release build (for performance testing)
+# Release build
 cmake --workflow --preset=release-dev
 
 # Run tests
-cd build/debug/dev && ctest
+ctest --test-dir build/debug/dev --output-on-failure
 
-# Run examples
-cd build/debug/dev && ./examples/cppfig_example
-cd build/debug/dev && ./examples/custom_types_example
+# Run example
+./build/debug/dev/examples/cppfig_example
 
 # Run benchmarks
-cd build/release/dev && ./benchmark/cppfig_benchmark
+./build/release/dev/benchmark/cppfig_benchmark
 ```
 
-## Advanced Usage
+### Project Structure
 
-### Custom Types
-
-```cpp
-struct DatabaseConfig {
-    std::string host;
-    int port;
-    std::string username;
-};
-
-// Add support for custom types
-DECLARE_CONFIG_TYPE(AppConfig, AppConfig::DatabaseConfig, DatabaseConfig);
 ```
-
-### Custom Serializers
-
-```cpp
-// Implement your own serializer for any format
-template<typename E, typename SettingVariant>
-class XmlSerializer : public config::IConfigurationSerializer<E, SettingVariant> {
-public:
-    bool Serialize(const std::string& target) override;
-    bool Deserialize(const std::string& source) override;
-    std::string GetFormatName() const override { return "XML"; }
-    bool SupportsExtension(const std::string& extension) const override;
-};
-
-// Use with any configuration
-using XmlConfig = config::GenericConfiguration<AppConfig, MyVariant, XmlSerializer<AppConfig, MyVariant>>;
+cppfig/
+├── src/cppfig/           # Library headers
+│   ├── cppfig.h          # Main include
+│   ├── configuration.h   # Configuration class
+│   ├── schema.h          # ConfigSchema template
+│   ├── setting.h         # Setting concepts
+│   ├── traits.h          # Type traits
+│   ├── validator.h       # Validators
+│   ├── serializer.h      # Serialization
+│   ├── interface.h       # Mockable interfaces
+│   ├── diff.h            # Configuration diff
+│   ├── logging.h         # Logging utilities
+│   └── testing/mock.h    # Testing helpers
+├── examples/             # Example code
+├── test/                 # Unit & integration tests
+├── benchmark/            # Performance benchmarks
+└── docs/                 # Documentation
 ```
-
-### Validation Chains
-
-```cpp
-auto validator = [](const int& value) {
-    return SimpleValidators<int>::Range(1, 1000)(value) &&
-           SimpleValidators<int>::NonZero()(value);
-};
-```
-
-### Type System Flexibility
-
-```cpp
-// Use pre-defined configurations for common needs
-using SimpleConfig = config::BasicJsonConfiguration<MyEnum>;        // int, float, double, string, bool
-using ExtendedConfig = config::ExtendedJsonConfiguration<MyEnum>;    // + long, uint32_t, int64_t
-
-// Or define completely custom type sets
-using MyCustomVariant = std::variant<
-    config::Setting<MyEnum, MyCustomType1>,
-    config::Setting<MyEnum, MyCustomType2>,
-    config::Setting<MyEnum, std::vector<std::string>>
->;
-using FullyCustomConfig = config::CustomJsonConfiguration<MyEnum, MyCustomVariant>;
-```
-
-## Examples
-
-- **[Simple Configuration Example](examples/simple_config_example.cpp)** - Complete walkthrough of defining and using a game configuration with built-in types
-- **[Custom Types Example](examples/custom_types_example.cpp)** - Advanced example showing how to define and use custom enums and structs in configuration
 
 ## Contributing
 
-Contributions are welcome! Please ensure:
-
-- Follow the existing code style (`clang-format`)
-- Add tests for new features
-- Run static analysis (`clang-tidy`)
-- Update documentation as needed
+1. Follow existing code style (`clang-format`)
+2. Run static analysis (`clang-tidy`)
+3. Add tests for new features
+4. Update documentation
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-**Ready to supercharge your configuration management?**
-Give C++fig a try and experience the power of compile-time type safety with zero runtime overhead!
+MIT License - see [LICENSE](LICENSE) for details.
