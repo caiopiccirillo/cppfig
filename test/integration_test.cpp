@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <string>
 
 namespace cppfig::test {
 
@@ -72,6 +73,38 @@ namespace settings {
         static constexpr std::string_view kEnvOverride = "TEST_SERVER_PORT";
         using ValueType = int;
         static auto DefaultValue() -> int { return 8080; }
+    };
+
+    // Bool setting with environment variable override
+    struct DebugMode {
+        static constexpr std::string_view kPath = "app.debug";
+        static constexpr std::string_view kEnvOverride = "TEST_DEBUG_MODE";
+        using ValueType = bool;
+        static auto DefaultValue() -> bool { return false; }
+    };
+
+    // Double setting with environment variable override
+    struct Ratio {
+        static constexpr std::string_view kPath = "app.ratio";
+        static constexpr std::string_view kEnvOverride = "TEST_APP_RATIO";
+        using ValueType = double;
+        static auto DefaultValue() -> double { return 1.0; }
+    };
+
+    // Float setting with environment variable override
+    struct Scale {
+        static constexpr std::string_view kPath = "app.scale";
+        static constexpr std::string_view kEnvOverride = "TEST_APP_SCALE";
+        using ValueType = float;
+        static auto DefaultValue() -> float { return 1.0f; }
+    };
+
+    // Int64 setting with environment variable override
+    struct BigNumber {
+        static constexpr std::string_view kPath = "app.big_number";
+        static constexpr std::string_view kEnvOverride = "TEST_BIG_NUMBER";
+        using ValueType = std::int64_t;
+        static auto DefaultValue() -> std::int64_t { return 0; }
     };
 
 }  // namespace settings
@@ -561,6 +594,761 @@ TEST_F(ConfigurationIntegrationTest, SchemaMigrationAddsMultipleSettings)
     EXPECT_EQ(config.Get<settings::AppName>(), "OldApp");
     EXPECT_EQ(config.Get<settings::AppPort>(), 8080);
     EXPECT_EQ(config.Get<settings::AppVersion>(), "1.0.0");
+}
+
+// Alias for thread-safe configuration with the same schemas used above.
+using MTSchemaBasic = ConfigSchema<settings::AppName, settings::AppPort>;
+using MTConfig = Configuration<MTSchemaBasic, JsonSerializer, MultiThreadedPolicy>;
+
+using MTSchemaWithVersion = ConfigSchema<settings::AppName, settings::AppPort, settings::AppVersion>;
+using MTConfigWithVersion = Configuration<MTSchemaWithVersion, JsonSerializer, MultiThreadedPolicy>;
+
+using MTSchemaWithValidator = ConfigSchema<settings::ServerPort>;
+using MTConfigValidated = Configuration<MTSchemaWithValidator, JsonSerializer, MultiThreadedPolicy>;
+
+using MTSchemaWithEnv = ConfigSchema<settings::AppHost>;
+using MTConfigEnv = Configuration<MTSchemaWithEnv, JsonSerializer, MultiThreadedPolicy>;
+
+using MTSchemaPortEnv = ConfigSchema<settings::PortWithEnv>;
+using MTConfigPortEnv = Configuration<MTSchemaPortEnv, JsonSerializer, MultiThreadedPolicy>;
+
+TEST_F(ConfigurationIntegrationTest, MT_CreateFileWithDefaults)
+{
+    MTConfig config(file_path_);
+
+    auto status = config.Load();
+    ASSERT_TRUE(status.ok()) << status.message();
+    EXPECT_TRUE(std::filesystem::exists(file_path_));
+
+    std::ifstream file(file_path_);
+    nlohmann::json json;
+    file >> json;
+    EXPECT_EQ(json["app"]["name"], "TestApp");
+    EXPECT_EQ(json["app"]["port"], 8080);
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_LoadExistingFile)
+{
+    {
+        std::ofstream file(file_path_);
+        file << R"({"app": {"name": "Loaded", "port": 9090}})";
+    }
+
+    MTConfig config(file_path_);
+    auto status = config.Load();
+    ASSERT_TRUE(status.ok()) << status.message();
+
+    EXPECT_EQ(config.Get<settings::AppName>(), "Loaded");
+    EXPECT_EQ(config.Get<settings::AppPort>(), 9090);
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_SetWithValidation)
+{
+    MTConfigValidated config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    // Valid value
+    auto status = config.Set<settings::ServerPort>(443);
+    ASSERT_TRUE(status.ok());
+    EXPECT_EQ(config.Get<settings::ServerPort>(), 443);
+
+    // Invalid value — validation failure
+    status = config.Set<settings::ServerPort>(0);
+    EXPECT_FALSE(status.ok());
+
+    // Value must remain unchanged after rejected Set
+    EXPECT_EQ(config.Get<settings::ServerPort>(), 443);
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_SetAndSave)
+{
+    MTConfig config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    ASSERT_TRUE(config.Set<settings::AppPort>(9999).ok());
+    ASSERT_TRUE(config.Save().ok());
+
+    // Reload in a new instance
+    MTConfig config2(file_path_);
+    ASSERT_TRUE(config2.Load().ok());
+    EXPECT_EQ(config2.Get<settings::AppPort>(), 9999);
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_Diff)
+{
+    MTConfig config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    ASSERT_TRUE(config.Set<settings::AppPort>(3000).ok());
+
+    auto diff = config.Diff();
+    EXPECT_TRUE(diff.HasDifferences());
+
+    auto modified = diff.Modified();
+    EXPECT_FALSE(modified.empty());
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_ValidateAll)
+{
+    MTConfigValidated config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    auto status = config.ValidateAll();
+    EXPECT_TRUE(status.ok());
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_GetFilePath)
+{
+    MTConfig config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+    EXPECT_EQ(config.GetFilePath(), file_path_);
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_GetFileValues)
+{
+    MTConfig config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+    auto& fv = config.GetFileValues();
+    EXPECT_EQ(fv["app"]["name"], "TestApp");
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_GetDefaults)
+{
+    MTConfig config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+    auto& defaults = config.GetDefaults();
+    EXPECT_EQ(defaults["app"]["port"], 8080);
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_GetDiffString)
+{
+    MTConfig config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+    ASSERT_TRUE(config.Set<settings::AppPort>(1234).ok());
+
+    IConfigurationProviderVirtual& vconfig = config;
+    auto diff_str = vconfig.GetDiffString();
+    EXPECT_NE(diff_str.find("app.port"), std::string::npos);
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_EnvVarSuccessfulParse)
+{
+    setenv("TEST_APP_HOST", "mt-host.example.com", 1);
+
+    MTConfigEnv config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    std::string host = config.Get<settings::AppHost>();
+    EXPECT_EQ(host, "mt-host.example.com");
+
+    unsetenv("TEST_APP_HOST");
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_EnvVarParseFailure)
+{
+    {
+        std::ofstream file(file_path_);
+        file << R"({"server": {"port": 8080}})";
+    }
+
+    setenv("TEST_SERVER_PORT", "bad_value", 1);
+
+    MTConfigPortEnv config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    ::testing::internal::CaptureStderr();
+    int port = config.Get<settings::PortWithEnv>();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
+    EXPECT_NE(stderr_output.find("TEST_SERVER_PORT"), std::string::npos);
+    EXPECT_EQ(port, 8080);
+
+    unsetenv("TEST_SERVER_PORT");
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_FileValueParseFailure)
+{
+    {
+        std::ofstream file(file_path_);
+        file << R"({"app": {"port": "not_an_int"}})";
+    }
+
+    using Schema = ConfigSchema<settings::AppPort>;
+    Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    ::testing::internal::CaptureStderr();
+    int port = config.Get<settings::AppPort>();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
+    EXPECT_EQ(port, 8080);  // falls back to default
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_DefaultValueFallback)
+{
+    // Write a file that does NOT contain "app.port"
+    {
+        std::ofstream file(file_path_);
+        file << R"({"other": {"key": "value"}})";
+    }
+
+    using Schema = ConfigSchema<settings::AppPort>;
+    Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    // app.port will be added by schema migration, but let's test the fallback
+    // by reading a setting whose path doesn't exist at all in the JSON.
+    // Schema migration adds it, so let's use a setting not in the schema
+    // Actually, schema migration adds the setting. So instead, confirm
+    // that the default value was written during migration.
+    int port = config.Get<settings::AppPort>();
+    EXPECT_EQ(port, 8080);
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_LoadInvalidJsonFile)
+{
+    {
+        std::ofstream file(file_path_);
+        file << "this is not valid json {{{";
+    }
+
+    MTConfig config(file_path_);
+    auto status = config.Load();
+    EXPECT_FALSE(status.ok());
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_SchemaMigration)
+{
+    // Create a file with only one setting
+    {
+        std::ofstream file(file_path_);
+        file << R"({"app": {"name": "OldApp"}})";
+    }
+
+    ::testing::internal::CaptureStderr();
+    MTConfigWithVersion config(file_path_);
+    auto status = config.Load();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    ASSERT_TRUE(status.ok()) << status.message();
+
+    // Migration should have added the missing settings
+    EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
+    EXPECT_NE(stderr_output.find("app.port"), std::string::npos);
+    EXPECT_NE(stderr_output.find("app.version"), std::string::npos);
+
+    EXPECT_EQ(config.Get<settings::AppName>(), "OldApp");
+    EXPECT_EQ(config.Get<settings::AppPort>(), 8080);
+    EXPECT_EQ(config.Get<settings::AppVersion>(), "1.0.0");
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_SchemaMigrationSaveFailure)
+{
+    // Create a valid file with a subset of settings
+    {
+        std::ofstream file(file_path_);
+        file << R"({"app": {"name": "OldApp"}})";
+    }
+
+    // Make the file read-only so Save fails during migration
+    std::filesystem::permissions(file_path_,
+                                 std::filesystem::perms::owner_read,
+                                 std::filesystem::perm_options::replace);
+
+    ::testing::internal::CaptureStderr();
+    MTConfigWithVersion config(file_path_);
+    auto status = config.Load();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    // Migration save should fail because the file is read-only
+    EXPECT_FALSE(status.ok());
+    EXPECT_NE(stderr_output.find("Failed to save migrated configuration"), std::string::npos);
+
+    // Cleanup: restore permissions so TearDown can remove the file
+    std::filesystem::permissions(file_path_, std::filesystem::perms::owner_all,
+                                 std::filesystem::perm_options::replace);
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_SaveDirectoryCreationFailure)
+{
+    // Use /proc/... which can't have subdirectories created on Linux
+    std::string bad_path = "/proc/fakedir/subdir/config.json";
+
+    MTConfig config(bad_path);
+    // Don't load — just build defaults and try to save directly
+    auto status = config.Save();
+    EXPECT_FALSE(status.ok());
+}
+
+TEST_F(ConfigurationIntegrationTest, MT_ValidateAllWithInvalidValue)
+{
+    // Create a file with an out-of-range port
+    {
+        std::ofstream file(file_path_);
+        file << R"({"server": {"port": 99999}})";
+    }
+
+    MTConfigValidated config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    auto status = config.ValidateAll();
+    EXPECT_FALSE(status.ok());
+    EXPECT_NE(std::string(status.message()).find("server.port"), std::string::npos);
+}
+
+struct ValidatedA {
+    static constexpr std::string_view kPath = "val.a";
+    using ValueType = int;
+    static auto DefaultValue() -> int { return 10; }
+    static auto GetValidator() -> Validator<int> { return Range(1, 100); }
+};
+
+struct ValidatedB {
+    static constexpr std::string_view kPath = "val.b";
+    using ValueType = int;
+    static auto DefaultValue() -> int { return 20; }
+    static auto GetValidator() -> Validator<int> { return Range(1, 100); }
+};
+
+TEST_F(ConfigurationIntegrationTest, ValidateAllStopsOnFirstError)
+{
+    using Schema2V = ConfigSchema<ValidatedA, ValidatedB>;
+
+    // Write a file where BOTH values are invalid
+    {
+        std::ofstream file(file_path_);
+        file << R"({"val": {"a": 999, "b": 0}})";
+    }
+
+    Configuration<Schema2V> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    auto status = config.ValidateAll();
+    EXPECT_FALSE(status.ok());
+    // Should report the first error (val.a)
+    EXPECT_NE(std::string(status.message()).find("val.a"), std::string::npos);
+}
+
+TEST_F(ConfigurationIntegrationTest, ST_SaveCreatesDeepNestedDirectories)
+{
+    std::string nested = file_path_ + "_deep/a/b/c/config.json";
+
+    using Schema = ConfigSchema<settings::AppName>;
+    Configuration<Schema> config(nested);
+    ASSERT_TRUE(config.Load().ok());
+    EXPECT_TRUE(std::filesystem::exists(nested));
+
+    std::filesystem::remove_all(file_path_ + "_deep");
+}
+
+TEST_F(ConfigurationIntegrationTest, ST_LoadInvalidJsonFile)
+{
+    {
+        std::ofstream file(file_path_);
+        file << "NOT JSON!!!";
+    }
+
+    using Schema = ConfigSchema<settings::AppName>;
+    Configuration<Schema> config(file_path_);
+    auto status = config.Load();
+    EXPECT_FALSE(status.ok());
+}
+
+TEST_F(ConfigurationIntegrationTest, ST_ValidateAllInvalidValue)
+{
+    {
+        std::ofstream file(file_path_);
+        file << R"({"server": {"port": -5}})";
+    }
+
+    using Schema = ConfigSchema<settings::ServerPort>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    auto status = config.ValidateAll();
+    EXPECT_FALSE(status.ok());
+}
+
+TEST_F(ConfigurationIntegrationTest, ST_SchemaMigrationSaveFailure)
+{
+    {
+        std::ofstream file(file_path_);
+        file << R"({"app": {"name": "OldApp"}})";
+    }
+
+    // Make the file read-only so Save fails during migration
+    std::filesystem::permissions(file_path_,
+                                 std::filesystem::perms::owner_read,
+                                 std::filesystem::perm_options::replace);
+
+    using Schema = ConfigSchema<settings::AppName, settings::AppPort>;
+    ::testing::internal::CaptureStderr();
+    Configuration<Schema> config(file_path_);
+    auto status = config.Load();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    EXPECT_FALSE(status.ok());
+    EXPECT_NE(stderr_output.find("Failed to save migrated configuration"), std::string::npos);
+
+    // Cleanup: restore permissions so TearDown can remove the file
+    std::filesystem::permissions(file_path_, std::filesystem::perms::owner_all,
+                                 std::filesystem::perm_options::replace);
+}
+
+TEST_F(ConfigurationIntegrationTest, ST_SaveDirectoryCreationFailure)
+{
+    std::string bad_path = "/proc/fakedir/subdir/config.json";
+    using Schema = ConfigSchema<settings::AppName>;
+    Configuration<Schema> config(bad_path);
+    auto status = config.Save();
+    EXPECT_FALSE(status.ok());
+}
+
+TEST_F(ConfigurationIntegrationTest, ConfigTraitsFromJsonAdl_ToJson)
+{
+    Point p{5, 15};
+    auto json = ConfigTraits<Point>::ToJson(p);
+    EXPECT_EQ(json["x"], 5);
+    EXPECT_EQ(json["y"], 15);
+}
+
+TEST_F(ConfigurationIntegrationTest, WriteFilePostWriteFailure)
+{
+    // /dev/full simulates a disk-full condition on Linux.
+    // With a small payload, the buffered stream absorbs the write and only
+    // fails on flush/close.  A payload larger than the stream buffer
+    // (~8 KiB) triggers a real write() syscall which fails immediately,
+    // setting the failbit that line 156 in serializer.h checks.
+    if (!std::filesystem::exists("/dev/full")) {
+        GTEST_SKIP() << "/dev/full not available";
+    }
+
+    // Build a JSON object large enough to exceed the ofstream buffer
+    nlohmann::json data = nlohmann::json::object();
+    for (int i = 0; i < 200; ++i) {
+        data["key_" + std::to_string(i)] = std::string(500, 'X');
+    }
+    auto status = WriteFile<JsonSerializer>("/dev/full", data);
+    EXPECT_FALSE(status.ok());
+}
+
+TEST_F(ConfigurationIntegrationTest, PredicateValidatorStringFailure)
+{
+    auto validator = Predicate<std::string>(
+        [](const std::string& s) { return s.size() <= 3; }, "too long");
+
+    auto ok_result = validator("ab");
+    EXPECT_TRUE(ok_result);
+
+    auto fail_result = validator("toolong");
+    EXPECT_FALSE(fail_result);
+    EXPECT_EQ(fail_result.error_message, "too long");
+}
+
+TEST_F(ConfigurationIntegrationTest, OrCombinatorBothFail)
+{
+    auto v = Min(10).Or(Max(-10));
+    auto result = v(5);  // 5 < 10 fails Min, 5 > -10 fails Max
+    EXPECT_FALSE(result);
+}
+
+TEST_F(ConfigurationIntegrationTest, OrCombinatorSecondPasses)
+{
+    auto v = Min(10).Or(Max(3));
+    auto result = v(2);  // 2 < 10 fails Min, 2 <= 3 passes Max
+    EXPECT_TRUE(result);
+}
+
+TEST_F(ConfigurationIntegrationTest, Int64Traits)
+{
+    std::int64_t val = 1234567890123LL;
+    auto json = ConfigTraits<std::int64_t>::ToJson(val);
+    auto parsed = ConfigTraits<std::int64_t>::FromJson(json);
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(*parsed, val);
+
+    auto str = ConfigTraits<std::int64_t>::ToString(val);
+    auto from_str = ConfigTraits<std::int64_t>::FromString(str);
+    ASSERT_TRUE(from_str.has_value());
+    EXPECT_EQ(*from_str, val);
+
+    // Invalid string
+    EXPECT_FALSE(ConfigTraits<std::int64_t>::FromString("not_a_number").has_value());
+
+    // Partial parse (trailing chars)
+    EXPECT_FALSE(ConfigTraits<std::int64_t>::FromString("123abc").has_value());
+
+    // Wrong JSON type
+    nlohmann::json wrong = "string";
+    EXPECT_FALSE(ConfigTraits<std::int64_t>::FromJson(wrong).has_value());
+}
+
+struct OrphanSetting {
+    static constexpr std::string_view kPath = "orphan.value";
+    using ValueType = std::string;
+    static auto DefaultValue() -> std::string { return "fallback"; }
+};
+
+TEST_F(ConfigurationIntegrationTest, ST_DefaultFallbackNoFileKey)
+{
+    {
+        std::ofstream file(file_path_);
+        // Intentionally empty object — Orphan's path is missing
+        file << R"({})";
+    }
+
+    using Schema = ConfigSchema<OrphanSetting>;
+    Configuration<Schema> config(file_path_);
+    // Load will trigger migration and add Orphan to the file.
+    // But before migration: the setting is not in the file.
+    // After migration: it IS in the file with the default.
+    ASSERT_TRUE(config.Load().ok());
+
+    // After migration the value should equal the default
+    EXPECT_EQ(config.Get<OrphanSetting>(), "fallback");
+}
+
+TEST_F(ConfigurationIntegrationTest, SaveToFileWithNoParentPath)
+{
+    // A bare filename with no directory component
+    std::string bare = "bare_config_test_temp.json";
+
+    using Schema = ConfigSchema<settings::AppName>;
+    Configuration<Schema> config(bare);
+    ASSERT_TRUE(config.Load().ok());
+    ASSERT_TRUE(config.Save().ok());
+
+    EXPECT_TRUE(std::filesystem::exists(bare));
+    std::filesystem::remove(bare);
+}
+
+TEST_F(ConfigurationIntegrationTest, BoolEnvVarParseFailure)
+{
+    setenv("TEST_DEBUG_MODE", "not_a_bool", 1);
+
+    using Schema = ConfigSchema<settings::DebugMode>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    ::testing::internal::CaptureStderr();
+    bool debug = config.Get<settings::DebugMode>();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
+    EXPECT_NE(stderr_output.find("TEST_DEBUG_MODE"), std::string::npos);
+    EXPECT_FALSE(debug);  // falls back to default
+
+    unsetenv("TEST_DEBUG_MODE");
+}
+
+TEST_F(ConfigurationIntegrationTest, DoubleEnvVarParseFailure)
+{
+    setenv("TEST_APP_RATIO", "not_a_number", 1);
+
+    using Schema = ConfigSchema<settings::Ratio>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    ::testing::internal::CaptureStderr();
+    double ratio = config.Get<settings::Ratio>();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
+    EXPECT_NE(stderr_output.find("TEST_APP_RATIO"), std::string::npos);
+    EXPECT_DOUBLE_EQ(ratio, 1.0);  // falls back to default
+
+    unsetenv("TEST_APP_RATIO");
+}
+
+TEST_F(ConfigurationIntegrationTest, FloatEnvVarParseFailure)
+{
+    setenv("TEST_APP_SCALE", "not_a_number", 1);
+
+    using Schema = ConfigSchema<settings::Scale>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    ::testing::internal::CaptureStderr();
+    float scale = config.Get<settings::Scale>();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
+    EXPECT_NE(stderr_output.find("TEST_APP_SCALE"), std::string::npos);
+    EXPECT_FLOAT_EQ(scale, 1.0f);  // falls back to default
+
+    unsetenv("TEST_APP_SCALE");
+}
+
+TEST_F(ConfigurationIntegrationTest, Int64EnvVarParseFailure)
+{
+    setenv("TEST_BIG_NUMBER", "not_a_number", 1);
+
+    using Schema = ConfigSchema<settings::BigNumber>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    ::testing::internal::CaptureStderr();
+    std::int64_t big = config.Get<settings::BigNumber>();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
+    EXPECT_NE(stderr_output.find("TEST_BIG_NUMBER"), std::string::npos);
+    EXPECT_EQ(big, 0);  // falls back to default
+
+    unsetenv("TEST_BIG_NUMBER");
+}
+
+TEST_F(ConfigurationIntegrationTest, BoolFileValueParseFailure)
+{
+    {
+        std::ofstream file(file_path_);
+        file << R"({"app": {"debug": "not_a_bool"}})";
+    }
+
+    using Schema = ConfigSchema<settings::DebugMode>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    ::testing::internal::CaptureStderr();
+    bool debug = config.Get<settings::DebugMode>();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
+    EXPECT_FALSE(debug);  // falls back to default
+}
+
+TEST_F(ConfigurationIntegrationTest, DoubleFileValueParseFailure)
+{
+    {
+        std::ofstream file(file_path_);
+        file << R"({"app": {"ratio": "not_a_number"}})";
+    }
+
+    using Schema = ConfigSchema<settings::Ratio>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    ::testing::internal::CaptureStderr();
+    double ratio = config.Get<settings::Ratio>();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
+    EXPECT_DOUBLE_EQ(ratio, 1.0);  // falls back to default
+}
+
+TEST_F(ConfigurationIntegrationTest, BoolEnvVarSuccessfulParse)
+{
+    setenv("TEST_DEBUG_MODE", "true", 1);
+
+    using Schema = ConfigSchema<settings::DebugMode>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    bool debug = config.Get<settings::DebugMode>();
+    EXPECT_TRUE(debug);
+
+    unsetenv("TEST_DEBUG_MODE");
+}
+
+TEST_F(ConfigurationIntegrationTest, DoubleEnvVarSuccessfulParse)
+{
+    setenv("TEST_APP_RATIO", "3.14", 1);
+
+    using Schema = ConfigSchema<settings::Ratio>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    double ratio = config.Get<settings::Ratio>();
+    EXPECT_DOUBLE_EQ(ratio, 3.14);
+
+    unsetenv("TEST_APP_RATIO");
+}
+
+TEST_F(ConfigurationIntegrationTest, CRTPInterfaceSet)
+{
+    using Schema = ConfigSchema<settings::ServerPort>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    // Call Set through the CRTP base class reference
+    IConfigurationProvider<Configuration<Schema>, Schema>& crtp_ref = config;
+    auto status = crtp_ref.Set<settings::ServerPort>(9090);
+    ASSERT_TRUE(status.ok());
+    EXPECT_EQ(crtp_ref.Get<settings::ServerPort>(), 9090);
+}
+
+TEST_F(ConfigurationIntegrationTest, CRTPInterfaceGet)
+{
+    using Schema = ConfigSchema<settings::AppName>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    IConfigurationProvider<Configuration<Schema>, Schema>& crtp_ref = config;
+    EXPECT_EQ(crtp_ref.Get<settings::AppName>(), "TestApp");
+}
+
+TEST_F(ConfigurationIntegrationTest, CRTPInterfaceLoad)
+{
+    using Schema = ConfigSchema<settings::AppName>;
+    Configuration<Schema> config(file_path_);
+
+    IConfigurationProvider<Configuration<Schema>, Schema>& crtp_ref = config;
+    ASSERT_TRUE(crtp_ref.Load().ok());
+    EXPECT_EQ(crtp_ref.Get<settings::AppName>(), "TestApp");
+}
+
+TEST_F(ConfigurationIntegrationTest, CRTPInterfaceSaveAndDiff)
+{
+    using Schema = ConfigSchema<settings::AppName, settings::AppPort>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    IConfigurationProvider<Configuration<Schema>, Schema>& crtp_ref = config;
+    crtp_ref.Set<settings::AppPort>(9999);
+
+    auto diff = crtp_ref.Diff();
+    EXPECT_TRUE(diff.HasDifferences());
+
+    ASSERT_TRUE(crtp_ref.Save().ok());
+}
+
+TEST_F(ConfigurationIntegrationTest, CRTPInterfaceValidateAll)
+{
+    using Schema = ConfigSchema<settings::ServerPort>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    IConfigurationProvider<Configuration<Schema>, Schema>& crtp_ref = config;
+    EXPECT_TRUE(crtp_ref.ValidateAll().ok());
+}
+
+TEST_F(ConfigurationIntegrationTest, CRTPInterfaceGetFilePath)
+{
+    using Schema = ConfigSchema<settings::AppName>;
+    Configuration<Schema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    IConfigurationProvider<Configuration<Schema>, Schema>& crtp_ref = config;
+    EXPECT_EQ(crtp_ref.GetFilePath(), file_path_);
+}
+
+TEST(MockVirtualConfigTest, AllMethods)
+{
+    testing::MockVirtualConfigurationProvider mock;
+
+    EXPECT_CALL(mock, Load()).WillOnce(::testing::Return(absl::OkStatus()));
+    EXPECT_CALL(mock, Save()).WillOnce(::testing::Return(absl::OkStatus()));
+    EXPECT_CALL(mock, GetFilePath()).WillOnce(::testing::Return("mock.json"));
+    EXPECT_CALL(mock, ValidateAll()).WillOnce(::testing::Return(absl::OkStatus()));
+    EXPECT_CALL(mock, GetDiffString()).WillOnce(::testing::Return("no diff"));
+
+    EXPECT_TRUE(mock.Load().ok());
+    EXPECT_TRUE(mock.Save().ok());
+    EXPECT_EQ(mock.GetFilePath(), "mock.json");
+    EXPECT_TRUE(mock.ValidateAll().ok());
+    EXPECT_EQ(mock.GetDiffString(), "no diff");
 }
 
 }  // namespace cppfig::test

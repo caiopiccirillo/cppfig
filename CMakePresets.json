@@ -139,7 +139,10 @@
             "name": "test-coverage",
             "configurePreset": "config-coverage",
             "displayName": "Test Coverage",
-            "description": "Run tests with code coverage"
+            "description": "Run tests with code coverage",
+            "environment": {
+                "LLVM_PROFILE_FILE": "${sourceDir}/build/coverage/test/%p-%m.profraw"
+            }
         }
     ],
     "workflowPresets": [

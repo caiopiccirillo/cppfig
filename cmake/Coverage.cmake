@@ -1,101 +1,122 @@
 # Coverage.cmake
-# CMake module for enabling code coverage with gcov/llvm-cov
+# CMake module for enabling source-based code coverage with LLVM.
+#
+# Uses Clang's -fprofile-instr-generate / -fcoverage-mapping instrumentation,
+# llvm-profdata to merge raw profiles, and llvm-cov for reporting.
+# This gives accurate, per-region coverage for template-heavy header-only
+# libraries, without the gcov/gcovr template-instantiation merge artefacts.
 
 option(ENABLE_COVERAGE "Enable code coverage reporting" OFF)
 
 if(ENABLE_COVERAGE)
-    message(STATUS "Code coverage enabled")
+    message(STATUS "Code coverage enabled (LLVM source-based)")
 
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        # Add coverage flags
-        set(COVERAGE_COMPILE_FLAGS "--coverage -fprofile-arcs -ftest-coverage")
-        set(COVERAGE_LINK_FLAGS "--coverage")
-
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COVERAGE_COMPILE_FLAGS}")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${COVERAGE_COMPILE_FLAGS}")
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${COVERAGE_LINK_FLAGS}")
-        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${COVERAGE_LINK_FLAGS}")
-
-        # For Clang, use llvm-cov; for GCC, use gcov
-        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-            set(GCOV_TOOL "llvm-cov gcov")
-        else()
-            set(GCOV_TOOL "gcov")
-        endif()
-    else()
-        message(WARNING "Code coverage is only supported with GCC or Clang")
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "Source-based coverage requires Clang. Current compiler: ${CMAKE_CXX_COMPILER_ID}")
     endif()
+
+    # LLVM source-based coverage flags
+    set(COVERAGE_COMPILE_FLAGS "-fprofile-instr-generate -fcoverage-mapping")
+    set(COVERAGE_LINK_FLAGS    "-fprofile-instr-generate")
+
+    set(CMAKE_CXX_FLAGS        "${CMAKE_CXX_FLAGS} ${COVERAGE_COMPILE_FLAGS}")
+    set(CMAKE_C_FLAGS          "${CMAKE_C_FLAGS} ${COVERAGE_COMPILE_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${COVERAGE_LINK_FLAGS}")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${COVERAGE_LINK_FLAGS}")
 endif()
 
-# Function to add a coverage target
+set(COVERAGE_TEST_TARGETS "" CACHE INTERNAL "Test targets for coverage")
+
+function(coverage_register_target target)
+    if(ENABLE_COVERAGE)
+        set(COVERAGE_TEST_TARGETS ${COVERAGE_TEST_TARGETS} ${target} CACHE INTERNAL "")
+    endif()
+endfunction()
+
 function(add_coverage_target)
     if(NOT ENABLE_COVERAGE)
         return()
     endif()
 
-    find_program(LCOV_PATH lcov)
-    find_program(GENHTML_PATH genhtml)
-    find_program(GCOVR_PATH gcovr)
+    find_program(LLVM_PROFDATA_PATH llvm-profdata REQUIRED)
+    find_program(LLVM_COV_PATH     llvm-cov      REQUIRED)
 
-    if(GCOVR_PATH)
-        # Use gcovr for coverage report generation
-        # Use --filter to only include src/cppfig/ directory (our library code)
-        add_custom_target(coverage
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/coverage
-            COMMAND ${GCOVR_PATH}
-                --root ${CMAKE_SOURCE_DIR}
-                --filter ".*src/cppfig/.*"
-                --html --html-details
-                --output ${CMAKE_BINARY_DIR}/coverage/index.html
-            COMMAND ${CMAKE_COMMAND} -E echo "Coverage report generated: ${CMAKE_BINARY_DIR}/coverage/index.html"
-            WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-            COMMENT "Generating code coverage report with gcovr"
-            VERBATIM
-        )
+    set(_first_object "")
+    set(_object_args "")
+    foreach(_tgt ${COVERAGE_TEST_TARGETS})
+        if(_first_object STREQUAL "")
+            set(_first_object "$<TARGET_FILE:${_tgt}>")
+        else()
+            list(APPEND _object_args "--object=$<TARGET_FILE:${_tgt}>")
+        endif()
+    endforeach()
 
-        add_custom_target(coverage-text
-            COMMAND ${GCOVR_PATH}
-                --root ${CMAKE_SOURCE_DIR}
-                --filter ".*src/cppfig/.*"
-                --print-summary
-            WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-            COMMENT "Generating code coverage summary"
-            VERBATIM
-        )
+    # Regex to exclude third-party / non-library source from reports
+    set(_ignore_regex "(third|test|benchmark|build|examples|vcpkg_installed)/.*")
 
-        add_custom_target(coverage-xml
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/coverage
-            COMMAND ${GCOVR_PATH}
-                --root ${CMAKE_SOURCE_DIR}
-                --filter ".*src/cppfig/.*"
-                --xml
-                --output ${CMAKE_BINARY_DIR}/coverage/coverage.xml
-            COMMAND ${CMAKE_COMMAND} -E echo "Coverage XML report: ${CMAKE_BINARY_DIR}/coverage/coverage.xml"
-            WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-            COMMENT "Generating code coverage XML report"
-            VERBATIM
-        )
-    elseif(LCOV_PATH AND GENHTML_PATH)
-        # Fallback to lcov/genhtml
-        add_custom_target(coverage
-            COMMAND ${LCOV_PATH} --directory . --zerocounters
-            COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-            COMMAND ${LCOV_PATH} --directory . --capture --output-file coverage.info
-            COMMAND ${LCOV_PATH} --remove coverage.info
-                '${CMAKE_SOURCE_DIR}/test/*'
-                '${CMAKE_SOURCE_DIR}/benchmark/*'
-                '${CMAKE_SOURCE_DIR}/examples/*'
-                '${CMAKE_SOURCE_DIR}/third/*'
-                '${CMAKE_BINARY_DIR}/*'
-                '/usr/*'
-                --output-file coverage.info.cleaned
-            COMMAND ${GENHTML_PATH} coverage.info.cleaned --output-directory coverage
-            COMMAND ${CMAKE_COMMAND} -E echo "Coverage report generated: ${CMAKE_BINARY_DIR}/coverage/index.html"
-            WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-            COMMENT "Generating code coverage report with lcov"
-            VERBATIM
-        )
-    else()
-        message(WARNING "Neither gcovr nor lcov/genhtml found. Install gcovr for coverage reports: pip install gcovr")
-    endif()
+    # Wrapper script that suppresses the harmless "N functions have mismatched
+    # data" warning emitted by llvm-cov when merging profiles from multiple
+    # independently-compiled binaries.
+    set(_llvm_cov_wrapper "${CMAKE_BINARY_DIR}/run-llvm-cov.sh")
+    file(GENERATE OUTPUT "${_llvm_cov_wrapper}"
+        CONTENT "#!/bin/sh\n# Auto-generated by Coverage.cmake — suppresses mismatched-data warnings.\nexec ${LLVM_COV_PATH} \"$@\" 2>/dev/null\n"
+        FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+                         GROUP_READ GROUP_EXECUTE
+                         WORLD_READ WORLD_EXECUTE
+    )
+
+    add_custom_target(coverage-merge
+        COMMAND ${CMAKE_COMMAND} -E echo "Merging raw coverage profiles..."
+        COMMAND sh -c "${LLVM_PROFDATA_PATH} merge -sparse -o ${CMAKE_BINARY_DIR}/coverage.profdata ${CMAKE_BINARY_DIR}/test/*.profraw"
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMENT "Merging raw LLVM coverage profiles"
+    )
+
+    add_custom_target(coverage-text
+        COMMAND ${_llvm_cov_wrapper} report
+            ${_first_object}
+            ${_object_args}
+            "-instr-profile=${CMAKE_BINARY_DIR}/coverage.profdata"
+            "-ignore-filename-regex=${_ignore_regex}"
+            -use-color
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "LLVM coverage summary"
+        DEPENDS coverage-merge
+        VERBATIM
+    )
+
+    add_custom_target(coverage
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/coverage
+        COMMAND ${_llvm_cov_wrapper} show
+            ${_first_object}
+            ${_object_args}
+            "-instr-profile=${CMAKE_BINARY_DIR}/coverage.profdata"
+            "-ignore-filename-regex=${_ignore_regex}"
+            -format=html
+            "-output-dir=${CMAKE_BINARY_DIR}/coverage"
+            -show-line-counts-or-regions
+            -show-instantiation-summary
+            -Xdemangler=c++filt
+        COMMAND ${CMAKE_COMMAND} -E echo "Coverage HTML report: ${CMAKE_BINARY_DIR}/coverage/index.html"
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Generating LLVM coverage HTML report"
+        DEPENDS coverage-merge
+        VERBATIM
+    )
+
+    add_custom_target(coverage-xml
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/coverage
+        COMMAND ${_llvm_cov_wrapper} export
+            ${_first_object}
+            ${_object_args}
+            "-instr-profile=${CMAKE_BINARY_DIR}/coverage.profdata"
+            "-ignore-filename-regex=${_ignore_regex}"
+            -format=lcov
+            > ${CMAKE_BINARY_DIR}/coverage/coverage.lcov
+        COMMAND ${CMAKE_COMMAND} -E echo "Coverage LCOV export: ${CMAKE_BINARY_DIR}/coverage/coverage.lcov"
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Exporting LLVM coverage in LCOV format"
+        DEPENDS coverage-merge
+        VERBATIM
+    )
 endfunction()

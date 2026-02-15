@@ -18,10 +18,10 @@ namespace cppfig {
 struct SingleThreadedPolicy {
     /// @brief No-op mutex type.
     struct MutexType {
-        void lock() {}
-        void unlock() {}
-        void lock_shared() {}
-        void unlock_shared() {}
+        void lock() {}         // LCOV_EXCL_LINE
+        void unlock() {}       // LCOV_EXCL_LINE
+        void lock_shared() {}  // LCOV_EXCL_LINE
+        void unlock_shared() {} // LCOV_EXCL_LINE
     };
 
     /// @brief No-op shared (reader) lock.

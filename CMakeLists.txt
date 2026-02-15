@@ -22,6 +22,9 @@ option(STRICT_BUILD "Enable warnings as errors" ON)
 configure_file(CMakeConfig.h.in "${CMAKE_BINARY_DIR}/CMakeConfig.h")
 include_directories(${CMAKE_BINARY_DIR})
 
+# Uncomment to enable clang-tidy during compilation
+# set(CMAKE_CXX_CLANG_TIDY clang-tidy;-fix;-fix-errors)
+
 add_subdirectory(src)
 add_subdirectory(examples)
 

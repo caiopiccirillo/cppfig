@@ -147,6 +147,7 @@ private:
 /// EXPECT_CALL(mock, Load()).WillOnce(Return(absl::OkStatus()));
 /// EXPECT_CALL(mock, GetFilePath()).WillOnce(Return("config.json"));
 /// @endcode
+// LCOV_EXCL_START — GMock macro internals generate uninstrumented stubs
 class MockVirtualConfigurationProvider : public IConfigurationProviderVirtual {
 public:
     MOCK_METHOD(absl::Status, Load, (), (override));
@@ -171,5 +172,6 @@ public:
     /// @brief Removes a file if it exists.
     static void RemoveFile(const std::string& path) { std::remove(path.c_str()); }
 };
+// LCOV_EXCL_STOP
 
 }  // namespace cppfig::testing

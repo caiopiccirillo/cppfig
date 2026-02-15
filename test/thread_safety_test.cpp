@@ -10,14 +10,11 @@
 #include <fstream>
 #include <latch>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
 namespace cppfig::test {
-
-// ---------------------------------------------------------------------------
-// Test settings
-// ---------------------------------------------------------------------------
 
 namespace settings {
 
@@ -66,10 +63,6 @@ using TestSchema = ConfigSchema<settings::Counter, settings::Name, settings::Rat
 
 using ThreadSafeConfig = Configuration<TestSchema, JsonSerializer, MultiThreadedPolicy>;
 
-// ---------------------------------------------------------------------------
-// Test fixture
-// ---------------------------------------------------------------------------
-
 class ThreadSafetyTest : public ::testing::Test {
 protected:
     void SetUp() override
@@ -81,11 +74,6 @@ protected:
 
     std::string file_path_;
 };
-
-// ---------------------------------------------------------------------------
-// Basic sanity: MultiThreadedPolicy behaves identically to default in a
-// single-threaded scenario.
-// ---------------------------------------------------------------------------
 
 TEST_F(ThreadSafetyTest, SingleThreadedBasicOperations)
 {
@@ -139,10 +127,6 @@ TEST_F(ThreadSafetyTest, SingleThreadedDiffAndValidateAll)
     EXPECT_TRUE(validate_status.ok());
 }
 
-// ---------------------------------------------------------------------------
-// Concurrent reads — must never crash or return corrupt data.
-// ---------------------------------------------------------------------------
-
 TEST_F(ThreadSafetyTest, ConcurrentReads)
 {
     ThreadSafeConfig config(file_path_);
@@ -187,11 +171,6 @@ TEST_F(ThreadSafetyTest, ConcurrentReads)
 
     EXPECT_EQ(error_count.load(), 0) << "Concurrent reads returned unexpected values";
 }
-
-// ---------------------------------------------------------------------------
-// Concurrent reads + writes — must never crash. Reads should always return a
-// value that was either the old or the new one (no torn reads).
-// ---------------------------------------------------------------------------
 
 TEST_F(ThreadSafetyTest, ConcurrentReadsAndWrites)
 {
@@ -244,10 +223,6 @@ TEST_F(ThreadSafetyTest, ConcurrentReadsAndWrites)
     EXPECT_EQ(torn_read_count.load(), 0) << "Detected torn reads or failed writes";
 }
 
-// ---------------------------------------------------------------------------
-// Concurrent writes to different settings — must not crash.
-// ---------------------------------------------------------------------------
-
 TEST_F(ThreadSafetyTest, ConcurrentWritesToDifferentSettings)
 {
     ThreadSafeConfig config(file_path_);
@@ -297,10 +272,6 @@ TEST_F(ThreadSafetyTest, ConcurrentWritesToDifferentSettings)
     EXPECT_EQ(config.Get<settings::Enabled>(), (kIters - 1) % 2 == 0);
 }
 
-// ---------------------------------------------------------------------------
-// Concurrent Diff / ValidateAll with writes — must not crash.
-// ---------------------------------------------------------------------------
-
 TEST_F(ThreadSafetyTest, ConcurrentDiffAndValidateAllWithWrites)
 {
     ThreadSafeConfig config(file_path_);
@@ -348,10 +319,6 @@ TEST_F(ThreadSafetyTest, ConcurrentDiffAndValidateAllWithWrites)
     // Smoke check — final state should be valid
     EXPECT_TRUE(config.ValidateAll().ok());
 }
-
-// ---------------------------------------------------------------------------
-// Concurrent Load and Save — must not crash or corrupt state.
-// ---------------------------------------------------------------------------
 
 TEST_F(ThreadSafetyTest, ConcurrentLoadAndSave)
 {
@@ -413,10 +380,6 @@ TEST_F(ThreadSafetyTest, ConcurrentLoadAndSave)
     EXPECT_EQ(errors.load(), 0);
 }
 
-// ---------------------------------------------------------------------------
-// Concurrent Load (reload from disk) — must not crash.
-// ---------------------------------------------------------------------------
-
 TEST_F(ThreadSafetyTest, ConcurrentReload)
 {
     {
@@ -463,10 +426,6 @@ TEST_F(ThreadSafetyTest, ConcurrentReload)
     // Should still be in a consistent state
     EXPECT_EQ(config.Get<settings::Counter>(), 55);
 }
-
-// ---------------------------------------------------------------------------
-// Validation rejection under concurrency — rejected Sets must not mutate state.
-// ---------------------------------------------------------------------------
 
 TEST_F(ThreadSafetyTest, ConcurrentValidationRejection)
 {
@@ -521,10 +480,6 @@ TEST_F(ThreadSafetyTest, ConcurrentValidationRejection)
     EXPECT_EQ(config.Get<settings::ValidatedPort>(), 8080);
 }
 
-// ---------------------------------------------------------------------------
-// GetFilePath is safe without locking (immutable after construction).
-// ---------------------------------------------------------------------------
-
 TEST_F(ThreadSafetyTest, ConcurrentGetFilePath)
 {
     ThreadSafeConfig config(file_path_);
@@ -555,10 +510,6 @@ TEST_F(ThreadSafetyTest, ConcurrentGetFilePath)
 
     EXPECT_EQ(mismatches.load(), 0);
 }
-
-// ---------------------------------------------------------------------------
-// Virtual interface concurrent access — exercise the virtual overrides.
-// ---------------------------------------------------------------------------
 
 TEST_F(ThreadSafetyTest, ConcurrentVirtualInterface)
 {
@@ -601,10 +552,6 @@ TEST_F(ThreadSafetyTest, ConcurrentVirtualInterface)
         th.join();
     }
 }
-
-// ---------------------------------------------------------------------------
-// Stress test: all operations mixed concurrently.
-// ---------------------------------------------------------------------------
 
 TEST_F(ThreadSafetyTest, StressAllOperationsMixed)
 {
@@ -702,10 +649,6 @@ TEST_F(ThreadSafetyTest, StressAllOperationsMixed)
     EXPECT_TRUE(config.Save().ok());
 }
 
-// ---------------------------------------------------------------------------
-// Verify SingleThreadedPolicy compiles and works (no overhead sanity check).
-// ---------------------------------------------------------------------------
-
 TEST_F(ThreadSafetyTest, SingleThreadedPolicyCompiles)
 {
     Configuration<TestSchema, JsonSerializer, SingleThreadedPolicy> config(file_path_);
@@ -721,10 +664,6 @@ TEST_F(ThreadSafetyTest, SingleThreadedPolicyCompiles)
     EXPECT_TRUE(config.Save().ok());
 }
 
-// ---------------------------------------------------------------------------
-// Default template argument is SingleThreadedPolicy.
-// ---------------------------------------------------------------------------
-
 TEST_F(ThreadSafetyTest, DefaultPolicyIsSingleThreaded)
 {
     // Configuration<TestSchema> should compile and work (uses SingleThreadedPolicy)
@@ -734,6 +673,246 @@ TEST_F(ThreadSafetyTest, DefaultPolicyIsSingleThreaded)
     config.Set<settings::Counter>(999);
     EXPECT_EQ(config.Get<settings::Counter>(), 999);
     EXPECT_TRUE(config.Save().ok());
+}
+
+namespace edge_settings {
+
+struct PortWithEnv {
+    static constexpr std::string_view kPath = "server.port";
+    static constexpr std::string_view kEnvOverride = "CPPFIG_EDGE_PORT";
+    using ValueType = int;
+    static auto DefaultValue() -> int { return 8080; }
+};
+
+struct HostWithEnv {
+    static constexpr std::string_view kPath = "server.host";
+    static constexpr std::string_view kEnvOverride = "CPPFIG_EDGE_HOST";
+    using ValueType = std::string;
+    static auto DefaultValue() -> std::string { return "localhost"; }
+};
+
+struct AppName {
+    static constexpr std::string_view kPath = "app.name";
+    using ValueType = std::string;
+    static auto DefaultValue() -> std::string { return "EdgeApp"; }
+};
+
+struct AppPort {
+    static constexpr std::string_view kPath = "app.port";
+    using ValueType = int;
+    static auto DefaultValue() -> int { return 3000; }
+};
+
+struct AppVersion {
+    static constexpr std::string_view kPath = "app.version";
+    using ValueType = std::string;
+    static auto DefaultValue() -> std::string { return "1.0.0"; }
+};
+
+struct ValidatedPort {
+    static constexpr std::string_view kPath = "validated.port";
+    using ValueType = int;
+    static auto DefaultValue() -> int { return 8080; }
+    static auto GetValidator() -> cppfig::Validator<int> { return cppfig::Range(1, 65535); }
+};
+
+}  // namespace edge_settings
+
+TEST_F(ThreadSafetyTest, EdgeEnvVarSuccessfulParse)
+{
+    setenv("CPPFIG_EDGE_HOST", "env-host.example.com", 1);
+
+    using Schema = ConfigSchema<edge_settings::HostWithEnv>;
+    Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    std::string host = config.Get<edge_settings::HostWithEnv>();
+    EXPECT_EQ(host, "env-host.example.com");
+
+    unsetenv("CPPFIG_EDGE_HOST");
+}
+
+TEST_F(ThreadSafetyTest, EdgeEnvVarParseFailure)
+{
+    {
+        std::ofstream file(file_path_);
+        file << R"({"server": {"port": 9090}})";
+    }
+
+    setenv("CPPFIG_EDGE_PORT", "not_a_number", 1);
+
+    using Schema = ConfigSchema<edge_settings::PortWithEnv>;
+    Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    ::testing::internal::CaptureStderr();
+    int port = config.Get<edge_settings::PortWithEnv>();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
+    EXPECT_NE(stderr_output.find("CPPFIG_EDGE_PORT"), std::string::npos);
+    EXPECT_EQ(port, 9090);
+
+    unsetenv("CPPFIG_EDGE_PORT");
+}
+
+TEST_F(ThreadSafetyTest, EdgeFileValueParseFailure)
+{
+    {
+        std::ofstream file(file_path_);
+        file << R"({"app": {"port": "not_an_int"}})";
+    }
+
+    using Schema = ConfigSchema<edge_settings::AppPort>;
+    Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    ::testing::internal::CaptureStderr();
+    int port = config.Get<edge_settings::AppPort>();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
+    EXPECT_EQ(port, 3000);  // falls back to default
+}
+
+TEST_F(ThreadSafetyTest, EdgeDefaultValueFallback)
+{
+    {
+        std::ofstream file(file_path_);
+        file << R"({"unrelated": {"key": 1}})";
+    }
+
+    // Schema migration will add app.name, but before that it didn't exist.
+    // After migration the value equals the default.
+    using Schema = ConfigSchema<edge_settings::AppName>;
+    Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    EXPECT_EQ(config.Get<edge_settings::AppName>(), "EdgeApp");
+}
+
+TEST_F(ThreadSafetyTest, EdgeLoadInvalidJsonFile)
+{
+    {
+        std::ofstream file(file_path_);
+        file << "this is not valid json {{{";
+    }
+
+    using Schema = ConfigSchema<edge_settings::AppName>;
+    Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(file_path_);
+
+    auto status = config.Load();
+    EXPECT_FALSE(status.ok());
+}
+
+TEST_F(ThreadSafetyTest, EdgeSchemaMigration)
+{
+    {
+        std::ofstream file(file_path_);
+        file << R"({"app": {"name": "Old"}})";
+    }
+
+    using Schema = ConfigSchema<edge_settings::AppName, edge_settings::AppPort, edge_settings::AppVersion>;
+    Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(file_path_);
+
+    ::testing::internal::CaptureStderr();
+    auto status = config.Load();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    ASSERT_TRUE(status.ok()) << status.message();
+    EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
+    EXPECT_NE(stderr_output.find("app.port"), std::string::npos);
+    EXPECT_NE(stderr_output.find("app.version"), std::string::npos);
+
+    EXPECT_EQ(config.Get<edge_settings::AppName>(), "Old");
+    EXPECT_EQ(config.Get<edge_settings::AppPort>(), 3000);
+    EXPECT_EQ(config.Get<edge_settings::AppVersion>(), "1.0.0");
+}
+
+TEST_F(ThreadSafetyTest, EdgeSchemaMigrationSaveFailure)
+{
+    {
+        std::ofstream file(file_path_);
+        file << R"({"app": {"name": "Old"}})";
+    }
+
+    // Make the file read-only so Save fails during migration
+    std::filesystem::permissions(file_path_,
+                                 std::filesystem::perms::owner_read,
+                                 std::filesystem::perm_options::replace);
+
+    using Schema = ConfigSchema<edge_settings::AppName, edge_settings::AppPort>;
+    Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(file_path_);
+
+    ::testing::internal::CaptureStderr();
+    auto status = config.Load();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    EXPECT_FALSE(status.ok());
+    EXPECT_NE(stderr_output.find("Failed to save migrated configuration"), std::string::npos);
+
+    // Restore permissions for cleanup
+    std::filesystem::permissions(file_path_, std::filesystem::perms::owner_all,
+                                 std::filesystem::perm_options::replace);
+}
+
+TEST_F(ThreadSafetyTest, EdgeSaveDirectoryCreationFailure)
+{
+    std::string bad_path = "/proc/fakedir/subdir/config.json";
+
+    using Schema = ConfigSchema<edge_settings::AppName>;
+    Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(bad_path);
+
+    auto status = config.Save();
+    EXPECT_FALSE(status.ok());
+}
+
+TEST_F(ThreadSafetyTest, EdgeSaveNoParentPath)
+{
+    std::string bare = "bare_ts_config_temp.json";
+
+    using Schema = ConfigSchema<edge_settings::AppName>;
+    Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(bare);
+    ASSERT_TRUE(config.Load().ok());
+    ASSERT_TRUE(config.Save().ok());
+
+    EXPECT_TRUE(std::filesystem::exists(bare));
+    std::filesystem::remove(bare);
+}
+
+TEST_F(ThreadSafetyTest, EdgeValidateAllInvalidValue)
+{
+    {
+        std::ofstream file(file_path_);
+        file << R"({"validated": {"port": 99999}})";
+    }
+
+    using Schema = ConfigSchema<edge_settings::ValidatedPort>;
+    Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    auto status = config.ValidateAll();
+    EXPECT_FALSE(status.ok());
+    EXPECT_NE(std::string(status.message()).find("validated.port"), std::string::npos);
+}
+
+TEST_F(ThreadSafetyTest, EdgeValidateAllEarlyStop)
+{
+    {
+        std::ofstream file(file_path_);
+        // Both values are invalid
+        file << R"({"validated": {"port": -1}, "app": {"port": 999}})";
+    }
+
+    using Schema = ConfigSchema<edge_settings::ValidatedPort, edge_settings::AppPort>;
+    Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    // ValidatedPort has a validator and its value (-1) is invalid.
+    // AppPort has no validator so it doesn't cause an error.
+    auto status = config.ValidateAll();
+    EXPECT_FALSE(status.ok());
+    EXPECT_NE(std::string(status.message()).find("validated.port"), std::string::npos);
 }
 
 }  // namespace cppfig::test

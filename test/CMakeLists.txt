@@ -41,3 +41,8 @@ include(GoogleTest)
 gtest_discover_tests(unit_test)
 gtest_discover_tests(integration_test)
 gtest_discover_tests(thread_safety_test)
+
+# Register test targets for LLVM source-based coverage reporting
+coverage_register_target(unit_test)
+coverage_register_target(integration_test)
+coverage_register_target(thread_safety_test)

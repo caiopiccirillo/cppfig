@@ -767,4 +767,282 @@ TEST(LoggerTest, ErrorFFormatted)
     EXPECT_NE(output.find("Error code: 500"), std::string::npos);
 }
 
+TEST(ValidatorTest, MinValidatorDouble)
+{
+    auto validator = Min(5.0);
+    EXPECT_TRUE(validator(5.0));
+    EXPECT_TRUE(validator(10.0));
+    EXPECT_FALSE(validator(4.9));
+}
+
+TEST(ValidatorTest, MaxValidatorDouble)
+{
+    auto validator = Max(10.0);
+    EXPECT_TRUE(validator(10.0));
+    EXPECT_TRUE(validator(5.0));
+    EXPECT_FALSE(validator(10.1));
+}
+
+TEST(ValidatorTest, RangeValidatorDouble)
+{
+    auto validator = Range(0.0, 1.0);
+    EXPECT_TRUE(validator(0.0));
+    EXPECT_TRUE(validator(0.5));
+    EXPECT_TRUE(validator(1.0));
+    EXPECT_FALSE(validator(-0.1));
+    EXPECT_FALSE(validator(1.1));
+}
+
+TEST(ValidatorTest, PositiveValidatorDouble)
+{
+    auto validator = Positive<double>();
+    EXPECT_TRUE(validator(0.1));
+    EXPECT_TRUE(validator(100.0));
+    EXPECT_FALSE(validator(0.0));
+    EXPECT_FALSE(validator(-0.1));
+}
+
+TEST(ValidatorTest, NonNegativeValidatorDouble)
+{
+    auto validator = NonNegative<double>();
+    EXPECT_TRUE(validator(0.0));
+    EXPECT_TRUE(validator(100.0));
+    EXPECT_FALSE(validator(-0.1));
+}
+
+TEST(ValidatorTest, OneOfIntValidator)
+{
+    auto validator = OneOf<int>({ 1, 2, 3, 5, 8, 13 });
+    EXPECT_TRUE(validator(1));
+    EXPECT_TRUE(validator(13));
+    EXPECT_FALSE(validator(4));
+}
+
+TEST(ValidatorTest, PredicateStringValidator)
+{
+    auto validator = Predicate<std::string>(
+        [](const std::string& s) { return !s.empty(); }, "must not be empty");
+    auto ok = validator("hello");
+    EXPECT_TRUE(ok);
+    auto fail = validator("");
+    EXPECT_FALSE(fail);
+    EXPECT_EQ(fail.error_message, "must not be empty");
+}
+
+TEST(ValidatorTest, MinValidatorFloat)
+{
+    auto validator = Min(1.0f);
+    EXPECT_TRUE(validator(1.0f));
+    EXPECT_TRUE(validator(2.0f));
+    EXPECT_FALSE(validator(0.9f));
+}
+
+TEST(ValidatorTest, MaxValidatorFloat)
+{
+    auto validator = Max(100.0f);
+    EXPECT_TRUE(validator(100.0f));
+    EXPECT_TRUE(validator(50.0f));
+    EXPECT_FALSE(validator(100.1f));
+}
+
+TEST(ValidatorTest, NotEmptyFailureMessage)
+{
+    auto validator = NotEmpty();
+    auto result = validator("");
+    EXPECT_FALSE(result);
+    EXPECT_NE(result.error_message.find("not be empty"), std::string::npos);
+}
+
+TEST(ValidatorTest, MaxLengthFailureMessage)
+{
+    auto validator = MaxLength(3);
+    auto result = validator("toolong");
+    EXPECT_FALSE(result);
+    EXPECT_NE(result.error_message.find("exceeds maximum"), std::string::npos);
+}
+
+TEST(ValidatorTest, MinLengthFailureMessage)
+{
+    auto validator = MinLength(5);
+    auto result = validator("ab");
+    EXPECT_FALSE(result);
+    EXPECT_NE(result.error_message.find("less than minimum"), std::string::npos);
+}
+
+TEST(ValidatorTest, OneOfFailureMessage)
+{
+    auto validator = OneOf<std::string>({ "a", "b" });
+    auto result = validator("c");
+    EXPECT_FALSE(result);
+    EXPECT_NE(result.error_message.find("not in the list"), std::string::npos);
+}
+
+TEST(ValidatorTest, AlwaysValidDouble)
+{
+    auto validator = AlwaysValid<double>();
+    EXPECT_TRUE(validator(0.0));
+    EXPECT_TRUE(validator(-1000.0));
+}
+
+TEST(ValidatorTest, AlwaysValidString)
+{
+    auto validator = AlwaysValid<std::string>();
+    EXPECT_TRUE(validator(""));
+    EXPECT_TRUE(validator("anything"));
+}
+
+TEST(ConfigTraitsTest, BoolFromStringOnOff)
+{
+    EXPECT_EQ(ConfigTraits<bool>::FromString("on"), true);
+    EXPECT_EQ(ConfigTraits<bool>::FromString("off"), false);
+}
+
+TEST(ConfigTraitsTest, BoolToString)
+{
+    EXPECT_EQ(ConfigTraits<bool>::ToString(true), "true");
+    EXPECT_EQ(ConfigTraits<bool>::ToString(false), "false");
+}
+
+TEST(ConfigTraitsTest, IntToString)
+{
+    EXPECT_EQ(ConfigTraits<int>::ToString(42), "42");
+    EXPECT_EQ(ConfigTraits<int>::ToString(-1), "-1");
+}
+
+TEST(ConfigTraitsTest, Int64ToJson)
+{
+    EXPECT_EQ(ConfigTraits<std::int64_t>::ToJson(42LL), 42);
+}
+
+TEST(ConfigTraitsTest, Int64FromJson)
+{
+    EXPECT_EQ(ConfigTraits<std::int64_t>::FromJson(nlohmann::json(42)), 42LL);
+    EXPECT_EQ(ConfigTraits<std::int64_t>::FromJson(nlohmann::json("invalid")), std::nullopt);
+}
+
+TEST(ConfigTraitsTest, Int64ToString)
+{
+    EXPECT_EQ(ConfigTraits<std::int64_t>::ToString(123456789LL), "123456789");
+}
+
+TEST(ConfigTraitsTest, Int64FromString)
+{
+    EXPECT_EQ(ConfigTraits<std::int64_t>::FromString("123456789"), 123456789LL);
+    EXPECT_EQ(ConfigTraits<std::int64_t>::FromString("abc"), std::nullopt);
+    EXPECT_EQ(ConfigTraits<std::int64_t>::FromString("123abc"), std::nullopt);
+}
+
+TEST(JsonSerializerTest, SetAtPathOverwritesNonObject)
+{
+    nlohmann::json data = { { "a", 42 } };  // "a" is an int, not an object
+    JsonSerializer::SetAtPath(data, "a.b.c", 100);
+    EXPECT_EQ(data["a"]["b"]["c"], 100);
+}
+
+TEST(JsonSerializerTest, SetAtPathSingleSegment)
+{
+    nlohmann::json data = nlohmann::json::object();
+    JsonSerializer::SetAtPath(data, "key", "value");
+    EXPECT_EQ(data["key"], "value");
+}
+
+TEST(JsonSerializerTest, MergeDeepRecursive)
+{
+    nlohmann::json base = { { "a", { { "b", { { "c", 1 } } } } } };
+    nlohmann::json overlay = { { "a", { { "b", { { "d", 2 } } } } } };
+    auto merged = JsonSerializer::Merge(base, overlay);
+    EXPECT_EQ(merged["a"]["b"]["c"], 1);
+    EXPECT_EQ(merged["a"]["b"]["d"], 2);
+}
+
+TEST(ValidationResultTest, OkResult)
+{
+    auto result = ValidationResult::Ok();
+    EXPECT_TRUE(result.is_valid);
+    EXPECT_TRUE(result.error_message.empty());
+    EXPECT_TRUE(static_cast<bool>(result));
+}
+
+TEST(ValidationResultTest, ErrorResult)
+{
+    auto result = ValidationResult::Error("test error");
+    EXPECT_FALSE(result.is_valid);
+    EXPECT_EQ(result.error_message, "test error");
+    EXPECT_FALSE(static_cast<bool>(result));
+}
+
+TEST(ConfigDiffTest, DiffNestedObjects)
+{
+    nlohmann::json base = { { "a", { { "b", { { "c", 1 } } } } } };
+    nlohmann::json target = { { "a", { { "b", { { "c", 2 } } } } } };
+
+    auto diff = DiffJson(base, target);
+    EXPECT_TRUE(diff.HasDifferences());
+    EXPECT_EQ(diff.Modified().size(), 1);
+    EXPECT_EQ(diff.Modified()[0].path, "a.b.c");
+}
+
+TEST(ConfigDiffTest, DiffAddedToNonObject)
+{
+    nlohmann::json base = 42;
+    nlohmann::json target = { { "a", 1 } };
+
+    auto diff = DiffJson(base, target);
+    EXPECT_TRUE(diff.HasDifferences());
+    EXPECT_EQ(diff.Added().size(), 1);
+}
+
+TEST(ConfigDiffTest, DiffRemovedFromNonObject)
+{
+    nlohmann::json base = { { "a", 1 } };
+    nlohmann::json target = 42;
+
+    auto diff = DiffJson(base, target);
+    EXPECT_TRUE(diff.HasDifferences());
+    EXPECT_EQ(diff.Removed().size(), 1);
+}
+
+TEST(MockConfigurationTest, LoadAndSaveAreNoOps)
+{
+    testing::MockConfiguration<MockSchema> config;
+    EXPECT_TRUE(config.Load().ok());
+    EXPECT_TRUE(config.Save().ok());
+}
+
+TEST(MockConfigurationTest, SetRawJsonAndGet)
+{
+    testing::MockConfiguration<MockSchema> config;
+    config.SetRawJson(std::string(MockAppName::kPath), nlohmann::json("CustomName"));
+    EXPECT_EQ(config.Get<MockAppName>(), "CustomName");
+}
+
+TEST(MockConfigurationTest, ClearValueAndGetDefault)
+{
+    testing::MockConfiguration<MockSchema> config;
+    config.SetValue<MockAppPort>(9000);
+    config.ClearValue(MockAppPort::kPath);
+    EXPECT_EQ(config.Get<MockAppPort>(), 8080);  // default
+}
+
+TEST(ConfigurationTestFixtureTest, CreateTempFilePathDefault)
+{
+    auto path = testing::ConfigurationTestFixture::CreateTempFilePath();
+    EXPECT_NE(path.find("/tmp/"), std::string::npos);
+    EXPECT_NE(path.find("test_config"), std::string::npos);
+    EXPECT_NE(path.find(".json"), std::string::npos);
+}
+
+TEST(ConfigurationTestFixtureTest, CreateTempFilePathWithPrefix)
+{
+    auto path = testing::ConfigurationTestFixture::CreateTempFilePath("my_prefix");
+    EXPECT_NE(path.find("/tmp/"), std::string::npos);
+    EXPECT_NE(path.find("my_prefix"), std::string::npos);
+}
+
+TEST(ConfigurationTestFixtureTest, RemoveFileNonexistent)
+{
+    // Should not crash for non-existent file
+    testing::ConfigurationTestFixture::RemoveFile("/tmp/nonexistent_test_file_12345.json");
+}
+
 }  // namespace cppfig::test
