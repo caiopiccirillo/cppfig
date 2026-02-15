@@ -14,10 +14,10 @@ struct ValidationResult {
     std::string error_message;
 
     /// @brief Creates a successful validation result.
-    static auto Ok() -> ValidationResult { return { .is_valid=true, .error_message="" }; }
+    static auto Ok() -> ValidationResult { return { .is_valid = true, .error_message = "" }; }
 
     /// @brief Creates a failed validation result with an error message.
-    static auto Error(std::string message) -> ValidationResult { return { .is_valid=false, .error_message=std::move(message) }; }
+    static auto Error(std::string message) -> ValidationResult { return { .is_valid = false, .error_message = std::move(message) }; }
 
     explicit operator bool() const { return is_valid; }
 };

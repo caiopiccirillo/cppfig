@@ -1,8 +1,7 @@
 #pragma once
 
-#include <nlohmann/json.hpp>
-
 #include <concepts>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
 #include <string_view>
