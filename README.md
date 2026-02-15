@@ -122,7 +122,7 @@ See [Serializers](docs/serializers.md) for details.
 ### Requirements
 
 - C++20 compiler (GCC 11+, Clang 14+)
-- [Abseil](https://github.com/abseil/abseil-cpp) (for `absl::Status`)
+- No external dependencies for the core library
 
 ### Optional Dependencies
 
@@ -151,7 +151,7 @@ set(CPPFIG_ENABLE_JSON ON)
 Core (`.conf` only, no extra dependencies):
 
 ```bash
-vcpkg install abseil
+# No additional packages needed — cppfig is fully self-contained
 ```
 
 With JSON support:
@@ -322,12 +322,12 @@ cppfig::Configuration<Schema,
                        ThreadPolicy = SingleThreadedPolicy>
 
 // Methods
-auto Load() -> absl::Status;
-auto Save() const -> absl::Status;
+auto Load() -> cppfig::Status;
+auto Save() const -> cppfig::Status;
 auto Get<Setting>() const -> typename Setting::value_type;
-auto Set<Setting>(value) -> absl::Status;
+auto Set<Setting>(value) -> cppfig::Status;
 auto Diff() const -> ConfigDiff;
-auto ValidateAll() const -> absl::Status;
+auto ValidateAll() const -> cppfig::Status;
 auto GetFilePath() const -> std::string_view;
 
 // Thread policies

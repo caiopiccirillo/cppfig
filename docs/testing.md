@@ -141,7 +141,7 @@ TEST(ServiceTest, InitializeLoadsConfig) {
     cppfig::testing::MockVirtualConfigurationProvider mock_config;
 
     EXPECT_CALL(mock_config, Load())
-        .WillOnce(testing::Return(absl::OkStatus()));
+        .WillOnce(testing::Return(cppfig::OkStatus()));
 
     Service service(mock_config);
     EXPECT_NO_THROW(service.Initialize());
@@ -151,7 +151,7 @@ TEST(ServiceTest, InitializeFailsOnLoadError) {
     cppfig::testing::MockVirtualConfigurationProvider mock_config;
 
     EXPECT_CALL(mock_config, Load())
-        .WillOnce(testing::Return(absl::InternalError("File not found")));
+        .WillOnce(testing::Return(cppfig::InternalError("File not found")));
 
     Service service(mock_config);
     EXPECT_THROW(service.Initialize(), std::runtime_error);
@@ -165,10 +165,10 @@ GMock-compatible mock for the virtual interface:
 ```cpp
 class MockVirtualConfigurationProvider : public IConfigurationProviderVirtual {
 public:
-    MOCK_METHOD(absl::Status, Load, (), (override));
-    MOCK_METHOD(absl::Status, Save, (), (const, override));
+    MOCK_METHOD(cppfig::Status, Load, (), (override));
+    MOCK_METHOD(cppfig::Status, Save, (), (const, override));
     MOCK_METHOD(std::string_view, GetFilePath, (), (const, override));
-    MOCK_METHOD(absl::Status, ValidateAll, (), (const, override));
+    MOCK_METHOD(cppfig::Status, ValidateAll, (), (const, override));
     MOCK_METHOD(std::string, GetDiffString, (), (const, override));
 };
 ```

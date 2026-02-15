@@ -109,7 +109,7 @@ struct MyFormatSerializer {
     using data_type = cppfig::Value;
 
     // Required: parse from input stream into a Value tree
-    static auto Parse(std::istream& is) -> absl::StatusOr<cppfig::Value> {
+    static auto Parse(std::istream& is) -> cppfig::StatusOr<cppfig::Value> {
         // ... read and convert to cppfig::Value ...
     }
 
@@ -139,7 +139,7 @@ A serializer must provide:
 | Member | Signature | Purpose |
 |--------|-----------|---------|
 | `data_type` | type alias (`Value`) | Internal data representation |
-| `Parse` | `(std::istream&) → absl::StatusOr<Value>` | Parse from stream |
+| `Parse` | `(std::istream&) → StatusOr<Value>` | Parse from stream |
 | `Stringify` | `(const Value&) → std::string` | Convert to string |
 
 Path navigation (`GetAtPath`, `SetAtPath`, `HasPath`) and merging are handled
@@ -158,7 +158,7 @@ if (result.ok()) {
 }
 
 // Write a Value tree to a file
-absl::Status status = cppfig::WriteFile<cppfig::ConfSerializer>(
+cppfig::Status status = cppfig::WriteFile<cppfig::ConfSerializer>(
     "config.conf", my_data
 );
 ```

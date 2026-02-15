@@ -47,7 +47,7 @@ To also enable the optional JSON serializer:
 ### Requirements
 
 - C++20 compatible compiler (GCC 11+, Clang 14+)
-- [Abseil](https://github.com/abseil/abseil-cpp) (for `absl::Status` and `absl::StatusOr`)
+- No external dependencies for the core library
 
 #### Optional Dependencies
 
