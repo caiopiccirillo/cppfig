@@ -17,6 +17,7 @@ A modern, header-only C++20 configuration library with **compile-time type safet
 - **Schema migration** - Automatically adds new settings to existing files
 - **Mockable** - GMock-compatible interfaces for unit testing
 - **Pluggable serialization** - JSON default, extensible to YAML/TOML
+- **Thread-safe** - Opt-in `MultiThreadedPolicy` with reader-writer locking (zero overhead by default)
 
 ## Quick Start
 
@@ -145,8 +146,29 @@ vcpkg install nlohmann-json abseil
 | [Validators](docs/validators.md) | Built-in and custom validation |
 | [Testing](docs/testing.md) | Mock configuration in unit tests |
 | [Serializers](docs/serializers.md) | Custom serialization formats |
+| [Thread Safety](docs/getting-started.md#thread-safety) | Concurrent access with `MultiThreadedPolicy` |
 
 ## Key Concepts
+
+### Thread Safety
+
+By default, `Configuration` uses `SingleThreadedPolicy` (zero overhead). For concurrent access, opt in to reader-writer locking:
+
+```cpp
+// Thread-safe configuration:
+cppfig::Configuration<MySchema, cppfig::JsonSerializer, cppfig::MultiThreadedPolicy>
+    config("config.json");
+```
+
+| Policy | Overhead | Use case |
+|--------|----------|----------|
+| `SingleThreadedPolicy` (default) | None | Single-threaded or externally synchronized |
+| `MultiThreadedPolicy` | `std::shared_mutex` | Concurrent reads and writes from multiple threads |
+
+- `Get` acquires a **shared** (reader) lock — multiple concurrent readers allowed.
+- `Set` / `Load` acquire an **exclusive** (writer) lock.
+- `Save` / `Diff` / `ValidateAll` acquire a **shared** lock (read-only).
+- Validation in `Set` runs **before** the exclusive lock, so invalid values never block readers.
 
 ### Setting Structure
 
@@ -242,7 +264,9 @@ TEST(MyTest, UsesConfiguration) {
 ### Configuration Class
 
 ```cpp
-cppfig::Configuration<Schema, Serializer = JsonSerializer>
+cppfig::Configuration<Schema,
+                       Serializer = JsonSerializer,
+                       ThreadPolicy = SingleThreadedPolicy>
 
 // Methods
 auto Load() -> absl::Status;
@@ -252,6 +276,10 @@ auto Set<Setting>(value) -> absl::Status;
 auto Diff() const -> ConfigDiff;
 auto ValidateAll() const -> absl::Status;
 auto GetFilePath() const -> std::string_view;
+
+// Thread policies
+cppfig::SingleThreadedPolicy   // Zero-overhead (default)
+cppfig::MultiThreadedPolicy    // std::shared_mutex reader-writer locking
 ```
 
 ### ConfigSchema
@@ -324,6 +352,7 @@ cppfig/
 │   ├── interface.h       # Mockable interfaces
 │   ├── diff.h            # Configuration diff
 │   ├── logging.h         # Logging utilities
+│   ├── thread_policy.h   # Thread safety policies
 │   └── testing/mock.h    # Testing helpers
 ├── examples/             # Example code
 ├── test/                 # Unit & integration tests

@@ -95,6 +95,68 @@ int main() {
 }
 ```
 
+## Thread Safety
+
+By default, `Configuration` uses `SingleThreadedPolicy`, which has zero synchronization overhead. If you need to access the configuration from multiple threads concurrently, use `MultiThreadedPolicy`:
+
+```cpp
+#include <cppfig/cppfig.h>
+
+// Thread-safe configuration with reader-writer locking:
+cppfig::Configuration<MySchema, cppfig::JsonSerializer, cppfig::MultiThreadedPolicy>
+    config("config.json");
+```
+
+With `MultiThreadedPolicy`:
+
+- **Multiple threads may call `Get` concurrently** — reads acquire a shared (reader) lock.
+- **`Set` and `Load` acquire an exclusive (writer) lock** — they mutate internal state and will block until all readers finish.
+- **`Save`, `Diff`, and `ValidateAll` acquire a shared (reader) lock** — they only read internal state.
+- **Validation in `Set` runs before the exclusive lock is acquired**, so invalid values never block readers.
+- **`GetFilePath` requires no lock** — the file path is immutable after construction.
+
+### Choosing a Policy
+
+| Policy | Overhead | Use case |
+|--------|----------|----------|
+| `SingleThreadedPolicy` (default) | None | Single-threaded applications, or when access is externally synchronized |
+| `MultiThreadedPolicy` | `std::shared_mutex` | Concurrent reads and writes from multiple threads |
+
+### Example
+
+```cpp
+#include <cppfig/cppfig.h>
+#include <thread>
+
+using SafeConfig = cppfig::Configuration<
+    MySchema, cppfig::JsonSerializer, cppfig::MultiThreadedPolicy>;
+
+int main() {
+    SafeConfig config("config.json");
+    config.Load();
+
+    // Reader threads — run concurrently
+    std::thread reader1([&] {
+        int port = config.Get<settings::ServerPort>();
+    });
+    std::thread reader2([&] {
+        std::string host = config.Get<settings::ServerHost>();
+    });
+
+    // Writer thread — acquires exclusive access
+    std::thread writer([&] {
+        config.Set<settings::ServerPort>(9000);
+        config.Save();
+    });
+
+    reader1.join();
+    reader2.join();
+    writer.join();
+}
+```
+
+> **Note:** `GetFileValues()` and `GetDefaults()` return references to internal data and are **not** protected after the call returns. In multi-threaded code, prefer `Get<Setting>()` for safe access to individual values.
+
 ## Next Steps
 
 - [Defining Settings](defining-settings.md) - Learn about all setting options

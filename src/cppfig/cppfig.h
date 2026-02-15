@@ -7,6 +7,7 @@
 #include "cppfig/schema.h"
 #include "cppfig/serializer.h"
 #include "cppfig/setting.h"
+#include "cppfig/thread_policy.h"
 #include "cppfig/traits.h"
 #include "cppfig/validator.h"
 
