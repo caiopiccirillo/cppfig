@@ -486,13 +486,13 @@ TEST(ConfigDiffTest, ModifiedEntry)
 
 TEST(ConfigDiffTest, DiffEntryTypeString)
 {
-    DiffEntry added { DiffType::Added, "path", "", "value" };
+    DiffEntry added { .type = DiffType::Added, .path = "path", .old_value = "", .new_value = "value" };
     EXPECT_EQ(added.TypeString(), "ADDED");
 
-    DiffEntry removed { DiffType::Removed, "path", "value", "" };
+    DiffEntry removed { .type = DiffType::Removed, .path = "path", .old_value = "value", .new_value = "" };
     EXPECT_EQ(removed.TypeString(), "REMOVED");
 
-    DiffEntry modified { DiffType::Modified, "path", "old", "new" };
+    DiffEntry modified { .type = DiffType::Modified, .path = "path", .old_value = "old", .new_value = "new" };
     EXPECT_EQ(modified.TypeString(), "MODIFIED");
 }
 

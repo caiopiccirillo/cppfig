@@ -16,43 +16,43 @@ namespace cppfig::test {
 
 namespace settings {
 
-struct Counter {
-    static constexpr std::string_view path = "app.counter";
-    using value_type = int;
-    static auto default_value() -> int { return 0; }
-};
+    struct Counter {
+        static constexpr std::string_view path = "app.counter";
+        using value_type = int;
+        static auto default_value() -> int { return 0; }
+    };
 
-struct Name {
-    static constexpr std::string_view path = "app.name";
-    using value_type = std::string;
-    static auto default_value() -> std::string { return "default"; }
-};
+    struct Name {
+        static constexpr std::string_view path = "app.name";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "default"; }
+    };
 
-struct Ratio {
-    static constexpr std::string_view path = "app.ratio";
-    using value_type = double;
-    static auto default_value() -> double { return 1.0; }
-};
+    struct Ratio {
+        static constexpr std::string_view path = "app.ratio";
+        using value_type = double;
+        static auto default_value() -> double { return 1.0; }
+    };
 
-struct Enabled {
-    static constexpr std::string_view path = "app.enabled";
-    using value_type = bool;
-    static auto default_value() -> bool { return true; }
-};
+    struct Enabled {
+        static constexpr std::string_view path = "app.enabled";
+        using value_type = bool;
+        static auto default_value() -> bool { return true; }
+    };
 
-struct ValidatedPort {
-    static constexpr std::string_view path = "server.port";
-    using value_type = int;
-    static auto default_value() -> int { return 8080; }
-    static auto validator() -> cppfig::Validator<int> { return cppfig::Range(1, 65535); }
-};
+    struct ValidatedPort {
+        static constexpr std::string_view path = "server.port";
+        using value_type = int;
+        static auto default_value() -> int { return 8080; }
+        static auto validator() -> cppfig::Validator<int> { return cppfig::Range(1, 65535); }
+    };
 
-struct HostWithEnv {
-    static constexpr std::string_view path = "server.host";
-    static constexpr std::string_view env_override = "CPPFIG_TEST_HOST";
-    using value_type = std::string;
-    static auto default_value() -> std::string { return "localhost"; }
-};
+    struct HostWithEnv {
+        static constexpr std::string_view path = "server.host";
+        static constexpr std::string_view env_override = "CPPFIG_TEST_HOST";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "localhost"; }
+    };
 
 }  // namespace settings
 
@@ -132,17 +132,18 @@ TEST_F(ThreadSafetyTest, ConcurrentReads)
     (void)config.Set<settings::Counter>(42);
     (void)config.Set<settings::Name>("concurrent");
 
-    constexpr int kNumThreads = 8;
-    constexpr int kReadsPerThread = 10'000;
+    constexpr int k_num_threads = 8;
+    constexpr int k_reads_per_thread = 10'000;
 
-    std::latch start_latch(kNumThreads);
+    std::latch start_latch(k_num_threads);
     std::vector<std::thread> threads;
-    std::atomic<int> error_count{0};
+    std::atomic<int> error_count { 0 };
 
-    for (int t = 0; t < kNumThreads; ++t) {
+    threads.reserve(k_num_threads);
+    for (int t = 0; t < k_num_threads; ++t) {
         threads.emplace_back([&] {
             start_latch.arrive_and_wait();
-            for (int i = 0; i < kReadsPerThread; ++i) {
+            for (int i = 0; i < k_reads_per_thread; ++i) {
                 int counter = config.Get<settings::Counter>();
                 if (counter != 42) {
                     error_count.fetch_add(1, std::memory_order_relaxed);
@@ -176,20 +177,21 @@ TEST_F(ThreadSafetyTest, ConcurrentReadsAndWrites)
     ASSERT_TRUE(config.Load().ok());
     (void)config.Set<settings::Counter>(0);
 
-    constexpr int kNumReaders = 6;
-    constexpr int kNumWriters = 2;
-    constexpr int kOpsPerThread = 5'000;
+    constexpr int k_num_readers = 6;
+    constexpr int k_num_writers = 2;
+    constexpr int k_ops_per_thread = 5'000;
 
-    std::latch start_latch(kNumReaders + kNumWriters);
+    std::latch start_latch(k_num_readers + k_num_writers);
     std::vector<std::thread> threads;
-    std::atomic<int> torn_read_count{0};
+    std::atomic<int> torn_read_count { 0 };
 
     // Writers increment the counter
-    for (int w = 0; w < kNumWriters; ++w) {
+    threads.reserve(k_num_writers);
+    for (int w = 0; w < k_num_writers; ++w) {
         threads.emplace_back([&, w] {
             start_latch.arrive_and_wait();
-            for (int i = 0; i < kOpsPerThread; ++i) {
-                int value = w * kOpsPerThread + i;
+            for (int i = 0; i < k_ops_per_thread; ++i) {
+                int value = (w * k_ops_per_thread) + i;
                 auto status = config.Set<settings::Counter>(value);
                 // All values we write are non-negative ints — must always pass validation
                 if (!status.ok()) {
@@ -201,10 +203,10 @@ TEST_F(ThreadSafetyTest, ConcurrentReadsAndWrites)
     }
 
     // Readers check that we always get a valid int (not garbage)
-    for (int r = 0; r < kNumReaders; ++r) {
+    for (int r = 0; r < k_num_readers; ++r) {
         threads.emplace_back([&] {
             start_latch.arrive_and_wait();
-            for (int i = 0; i < kOpsPerThread; ++i) {
+            for (int i = 0; i < k_ops_per_thread; ++i) {
                 int counter = config.Get<settings::Counter>();
                 // The counter must be a non-negative integer set by one of the writers
                 if (counter < 0) {
@@ -226,35 +228,35 @@ TEST_F(ThreadSafetyTest, ConcurrentWritesToDifferentSettings)
     ThreadSafeConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    constexpr int kIters = 5'000;
+    constexpr int k_iters = 5'000;
 
     std::latch start_latch(4);
     std::vector<std::thread> threads;
 
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             (void)config.Set<settings::Counter>(i);
         }
     });
 
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             (void)config.Set<settings::Name>("value_" + std::to_string(i));
         }
     });
 
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             (void)config.Set<settings::Ratio>(static_cast<double>(i) / 100.0);
         }
     });
 
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             (void)config.Set<settings::Enabled>(i % 2 == 0);
         }
     });
@@ -264,10 +266,10 @@ TEST_F(ThreadSafetyTest, ConcurrentWritesToDifferentSettings)
     }
 
     // After all writes complete, each setting should hold the last value written.
-    EXPECT_EQ(config.Get<settings::Counter>(), kIters - 1);
-    EXPECT_EQ(config.Get<settings::Name>(), "value_" + std::to_string(kIters - 1));
-    EXPECT_DOUBLE_EQ(config.Get<settings::Ratio>(), static_cast<double>(kIters - 1) / 100.0);
-    EXPECT_EQ(config.Get<settings::Enabled>(), (kIters - 1) % 2 == 0);
+    EXPECT_EQ(config.Get<settings::Counter>(), k_iters - 1);
+    EXPECT_EQ(config.Get<settings::Name>(), "value_" + std::to_string(k_iters - 1));
+    EXPECT_DOUBLE_EQ(config.Get<settings::Ratio>(), static_cast<double>(k_iters - 1) / 100.0);
+    EXPECT_EQ(config.Get<settings::Enabled>(), (k_iters - 1) % 2 == 0);
 }
 
 TEST_F(ThreadSafetyTest, ConcurrentDiffAndValidateAllWithWrites)
@@ -275,7 +277,7 @@ TEST_F(ThreadSafetyTest, ConcurrentDiffAndValidateAllWithWrites)
     ThreadSafeConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    constexpr int kIters = 2'000;
+    constexpr int k_iters = 2'000;
 
     std::latch start_latch(3);
     std::vector<std::thread> threads;
@@ -283,7 +285,7 @@ TEST_F(ThreadSafetyTest, ConcurrentDiffAndValidateAllWithWrites)
     // Writer
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             (void)config.Set<settings::Counter>(i);
             (void)config.Set<settings::ValidatedPort>(1024 + (i % 60000));
         }
@@ -292,7 +294,7 @@ TEST_F(ThreadSafetyTest, ConcurrentDiffAndValidateAllWithWrites)
     // Diff reader
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             auto diff = config.Diff();
             // Just exercise the method; no specific value guarantee while writing
             (void)diff.HasDifferences();
@@ -303,7 +305,7 @@ TEST_F(ThreadSafetyTest, ConcurrentDiffAndValidateAllWithWrites)
     // ValidateAll reader
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             auto status = config.ValidateAll();
             // All values written are valid, so validation should always pass
             (void)status.ok();
@@ -331,16 +333,16 @@ TEST_F(ThreadSafetyTest, ConcurrentLoadAndSave)
     ThreadSafeConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    constexpr int kIters = 500;
+    constexpr int k_iters = 500;
 
     std::latch start_latch(3);
     std::vector<std::thread> threads;
-    std::atomic<int> errors{0};
+    std::atomic<int> errors { 0 };
 
     // Saver
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             auto status = config.Save();
             if (!status.ok()) {
                 errors.fetch_add(1, std::memory_order_relaxed);
@@ -351,7 +353,7 @@ TEST_F(ThreadSafetyTest, ConcurrentLoadAndSave)
     // Writer + saver
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             (void)config.Set<settings::Counter>(i);
             auto status = config.Save();
             if (!status.ok()) {
@@ -363,7 +365,7 @@ TEST_F(ThreadSafetyTest, ConcurrentLoadAndSave)
     // Reader
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             int val = config.Get<settings::Counter>();
             if (val < 0) {
                 errors.fetch_add(1, std::memory_order_relaxed);
@@ -390,16 +392,17 @@ TEST_F(ThreadSafetyTest, ConcurrentReload)
     ThreadSafeConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    constexpr int kIters = 500;
+    constexpr int k_iters = 500;
 
     std::latch start_latch(3);
     std::vector<std::thread> threads;
 
     // Multiple loaders
-    for (int t = 0; t < 2; ++t) {
+    threads.reserve(2);
+for (int t = 0; t < 2; ++t) {
         threads.emplace_back([&] {
             start_latch.arrive_and_wait();
-            for (int i = 0; i < kIters; ++i) {
+            for (int i = 0; i < k_iters; ++i) {
                 auto status = config.Load();
                 (void)status;
             }
@@ -409,7 +412,7 @@ TEST_F(ThreadSafetyTest, ConcurrentReload)
     // Reader while loads are happening
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             int val = config.Get<settings::Counter>();
             (void)val;
             std::string name = config.Get<settings::Name>();
@@ -431,16 +434,16 @@ TEST_F(ThreadSafetyTest, ConcurrentValidationRejection)
     ASSERT_TRUE(config.Load().ok());
     (void)config.Set<settings::ValidatedPort>(8080);
 
-    constexpr int kIters = 5'000;
+    constexpr int k_iters = 5'000;
 
     std::latch start_latch(3);
     std::vector<std::thread> threads;
-    std::atomic<int> unexpected_values{0};
+    std::atomic<int> unexpected_values { 0 };
 
     // Writer that always gets rejected (port 0 is invalid)
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             auto status = config.Set<settings::ValidatedPort>(0);
             if (status.ok()) {
                 unexpected_values.fetch_add(1, std::memory_order_relaxed);
@@ -451,7 +454,7 @@ TEST_F(ThreadSafetyTest, ConcurrentValidationRejection)
     // Writer that always gets rejected (port 70000 is invalid)
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             auto status = config.Set<settings::ValidatedPort>(70000);
             if (status.ok()) {
                 unexpected_values.fetch_add(1, std::memory_order_relaxed);
@@ -462,7 +465,7 @@ TEST_F(ThreadSafetyTest, ConcurrentValidationRejection)
     // Reader — port must always remain 8080 since all writes are rejected
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             int port = config.Get<settings::ValidatedPort>();
             if (port != 8080) {
                 unexpected_values.fetch_add(1, std::memory_order_relaxed);
@@ -483,17 +486,17 @@ TEST_F(ThreadSafetyTest, ConcurrentGetFilePath)
     ThreadSafeConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    constexpr int kNumThreads = 8;
-    constexpr int kIters = 10'000;
+    constexpr int k_num_threads = 8;
+    constexpr int k_iters = 10'000;
 
-    std::latch start_latch(kNumThreads);
+    std::latch start_latch(k_num_threads);
     std::vector<std::thread> threads;
-    std::atomic<int> mismatches{0};
+    std::atomic<int> mismatches { 0 };
 
-    for (int t = 0; t < kNumThreads; ++t) {
+    for (int t = 0; t < k_num_threads; ++t) {
         threads.emplace_back([&] {
             start_latch.arrive_and_wait();
-            for (int i = 0; i < kIters; ++i) {
+            for (int i = 0; i < k_iters; ++i) {
                 auto path = config.GetFilePath();
                 if (path != file_path_) {
                     mismatches.fetch_add(1, std::memory_order_relaxed);
@@ -517,14 +520,14 @@ TEST_F(ThreadSafetyTest, ConcurrentVirtualInterface)
 
     IConfigurationProviderVirtual& vconfig = config;
 
-    constexpr int kIters = 1'000;
+    constexpr int k_iters = 1'000;
 
     std::latch start_latch(3);
     std::vector<std::thread> threads;
 
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             auto status = vconfig.ValidateAll();
             (void)status;
         }
@@ -532,7 +535,7 @@ TEST_F(ThreadSafetyTest, ConcurrentVirtualInterface)
 
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             auto diff_str = vconfig.GetDiffString();
             (void)diff_str;
         }
@@ -540,7 +543,7 @@ TEST_F(ThreadSafetyTest, ConcurrentVirtualInterface)
 
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             auto path = vconfig.GetFilePath();
             (void)path;
         }
@@ -562,19 +565,20 @@ TEST_F(ThreadSafetyTest, StressAllOperationsMixed)
     ThreadSafeConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    constexpr int kIters = 1'000;
-    constexpr int kNumThreads = 8;
+    constexpr int k_iters = 1'000;
+    constexpr int k_num_threads = 8;
 
-    std::latch start_latch(kNumThreads);
+    std::latch start_latch(k_num_threads);
     std::vector<std::thread> threads;
-    std::atomic<int> errors{0};
+    std::atomic<int> errors { 0 };
 
     // Thread 0-1: Set Counter
-    for (int t = 0; t < 2; ++t) {
+    threads.reserve(2);
+for (int t = 0; t < 2; ++t) {
         threads.emplace_back([&, t] {
             start_latch.arrive_and_wait();
-            for (int i = 0; i < kIters; ++i) {
-                (void)config.Set<settings::Counter>(t * kIters + i);
+            for (int i = 0; i < k_iters; ++i) {
+                (void)config.Set<settings::Counter>((t * k_iters) + i);
             }
         });
     }
@@ -582,7 +586,7 @@ TEST_F(ThreadSafetyTest, StressAllOperationsMixed)
     // Thread 2: Set Name
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             (void)config.Set<settings::Name>("stress_" + std::to_string(i));
         }
     });
@@ -590,7 +594,7 @@ TEST_F(ThreadSafetyTest, StressAllOperationsMixed)
     // Thread 3: Set ValidatedPort (valid values only)
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             (void)config.Set<settings::ValidatedPort>(1024 + (i % 60000));
         }
     });
@@ -598,7 +602,7 @@ TEST_F(ThreadSafetyTest, StressAllOperationsMixed)
     // Thread 4: Readers
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             (void)config.Get<settings::Counter>();
             (void)config.Get<settings::Name>();
             (void)config.Get<settings::ValidatedPort>();
@@ -610,7 +614,7 @@ TEST_F(ThreadSafetyTest, StressAllOperationsMixed)
     // Thread 5: Diff
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             auto diff = config.Diff();
             (void)diff.ToString();
         }
@@ -619,7 +623,7 @@ TEST_F(ThreadSafetyTest, StressAllOperationsMixed)
     // Thread 6: ValidateAll
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             auto status = config.ValidateAll();
             (void)status;
         }
@@ -628,7 +632,7 @@ TEST_F(ThreadSafetyTest, StressAllOperationsMixed)
     // Thread 7: Save
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
-        for (int i = 0; i < kIters; ++i) {
+        for (int i = 0; i < k_iters; ++i) {
             auto status = config.Save();
             if (!status.ok()) {
                 errors.fetch_add(1, std::memory_order_relaxed);
@@ -675,44 +679,44 @@ TEST_F(ThreadSafetyTest, DefaultPolicyIsSingleThreaded)
 
 namespace edge_settings {
 
-struct PortWithEnv {
-    static constexpr std::string_view path = "server.port";
-    static constexpr std::string_view env_override = "CPPFIG_EDGE_PORT";
-    using value_type = int;
-    static auto default_value() -> int { return 8080; }
-};
+    struct PortWithEnv {
+        static constexpr std::string_view path = "server.port";
+        static constexpr std::string_view env_override = "CPPFIG_EDGE_PORT";
+        using value_type = int;
+        static auto default_value() -> int { return 8080; }
+    };
 
-struct HostWithEnv {
-    static constexpr std::string_view path = "server.host";
-    static constexpr std::string_view env_override = "CPPFIG_EDGE_HOST";
-    using value_type = std::string;
-    static auto default_value() -> std::string { return "localhost"; }
-};
+    struct HostWithEnv {
+        static constexpr std::string_view path = "server.host";
+        static constexpr std::string_view env_override = "CPPFIG_EDGE_HOST";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "localhost"; }
+    };
 
-struct AppName {
-    static constexpr std::string_view path = "app.name";
-    using value_type = std::string;
-    static auto default_value() -> std::string { return "EdgeApp"; }
-};
+    struct AppName {
+        static constexpr std::string_view path = "app.name";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "EdgeApp"; }
+    };
 
-struct AppPort {
-    static constexpr std::string_view path = "app.port";
-    using value_type = int;
-    static auto default_value() -> int { return 3000; }
-};
+    struct AppPort {
+        static constexpr std::string_view path = "app.port";
+        using value_type = int;
+        static auto default_value() -> int { return 3000; }
+    };
 
-struct AppVersion {
-    static constexpr std::string_view path = "app.version";
-    using value_type = std::string;
-    static auto default_value() -> std::string { return "1.0.0"; }
-};
+    struct AppVersion {
+        static constexpr std::string_view path = "app.version";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "1.0.0"; }
+    };
 
-struct ValidatedPort {
-    static constexpr std::string_view path = "validated.port";
-    using value_type = int;
-    static auto default_value() -> int { return 8080; }
-    static auto validator() -> cppfig::Validator<int> { return cppfig::Range(1, 65535); }
-};
+    struct ValidatedPort {
+        static constexpr std::string_view path = "validated.port";
+        using value_type = int;
+        static auto default_value() -> int { return 8080; }
+        static auto validator() -> cppfig::Validator<int> { return cppfig::Range(1, 65535); }
+    };
 
 }  // namespace edge_settings
 

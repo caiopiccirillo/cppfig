@@ -330,13 +330,13 @@ namespace custom_settings {
     struct Origin {
         static constexpr std::string_view path = "origin";
         using value_type = Point;
-        static auto default_value() -> Point { return Point { 0, 0 }; }
+        static auto default_value() -> Point { return Point { .x = 0, .y = 0 }; }
     };
 
     struct Target {
         static constexpr std::string_view path = "target";
         using value_type = Point;
-        static auto default_value() -> Point { return Point { 100, 100 }; }
+        static auto default_value() -> Point { return Point { .x = 100, .y = 100 }; }
     };
 
 }  // namespace custom_settings
@@ -458,7 +458,7 @@ TEST_F(ConfigurationIntegrationTest, GetFileValues)
     Configuration<Schema> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    auto& file_values = config.GetFileValues();
+    const auto& file_values = config.GetFileValues();
     EXPECT_EQ(file_values["app"]["name"], "TestApp");
 }
 
@@ -468,7 +468,7 @@ TEST_F(ConfigurationIntegrationTest, GetDefaults)
     Configuration<Schema> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    auto& defaults = config.GetDefaults();
+    const auto& defaults = config.GetDefaults();
     EXPECT_EQ(defaults["app"]["name"], "TestApp");
 }
 
@@ -491,7 +491,7 @@ TEST_F(ConfigurationIntegrationTest, SaveCreatesParentDirectories)
 TEST_F(ConfigurationIntegrationTest, CustomTypeToAndFromString)
 {
     // Test the ToString and FromString methods on ConfigTraitsFromJsonAdl
-    Point p { 10, 20 };
+    Point p { .x=10, .y=20 };
 
     auto str = ConfigTraits<Point>::ToString(p);
     EXPECT_NE(str.find("10"), std::string::npos);
@@ -708,7 +708,7 @@ TEST_F(ConfigurationIntegrationTest, MT_GetFileValues)
 {
     MTConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
-    auto& fv = config.GetFileValues();
+    const auto& fv = config.GetFileValues();
     EXPECT_EQ(fv["app"]["name"], "TestApp");
 }
 
@@ -716,7 +716,7 @@ TEST_F(ConfigurationIntegrationTest, MT_GetDefaults)
 {
     MTConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
-    auto& defaults = config.GetDefaults();
+    const auto& defaults = config.GetDefaults();
     EXPECT_EQ(defaults["app"]["port"], 8080);
 }
 
@@ -1008,7 +1008,7 @@ TEST_F(ConfigurationIntegrationTest, ST_SaveDirectoryCreationFailure)
 
 TEST_F(ConfigurationIntegrationTest, ConfigTraitsFromJsonAdl_ToJson)
 {
-    Point p{5, 15};
+    Point p { .x=5, .y=15 };
     auto json = ConfigTraits<Point>::ToJson(p);
     EXPECT_EQ(json["x"], 5);
     EXPECT_EQ(json["y"], 15);
