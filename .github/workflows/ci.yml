@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  checks: write
+  packages: read
+
+jobs:
+  build-and-test:
+    name: Build & Test (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: clang
+            preset: debug-clang
+          - compiler: gcc
+            preset: debug-gcc
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Unshallow vcpkg submodule
+        run: git -C third/vcpkg fetch --unshallow
+
+      - name: Build devcontainer image
+        uses: devcontainers/ci@v0.3
+        with:
+          imageName: ghcr.io/${{ github.repository }}/devcontainer
+          cacheFrom: ghcr.io/${{ github.repository }}/devcontainer
+          push: never
+          runCmd: |
+            ./third/vcpkg/bootstrap-vcpkg.sh
+            cmake --workflow --preset=${{ matrix.preset }}
+            mkdir -p build/test-results
+            ./build/debug/${{ matrix.compiler }}/test/unit_test \
+              --gtest_output=xml:build/test-results/unit_test.xml
+            ./build/debug/${{ matrix.compiler }}/test/integration_test \
+              --gtest_output=xml:build/test-results/integration_test.xml
+            ./build/debug/${{ matrix.compiler }}/test/thread_safety_test \
+              --gtest_output=xml:build/test-results/thread_safety_test.xml
+
+      - name: Upload test results
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.compiler }}
+          path: build/test-results/*.xml
+
+      - name: Publish test report
+        if: success() || failure()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Test Results (${{ matrix.compiler }})
+          path: build/test-results/*.xml
+          reporter: java-junit
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Unshallow vcpkg submodule
+        run: git -C third/vcpkg fetch --unshallow
+
+      - name: Build devcontainer and run coverage
+        uses: devcontainers/ci@v0.3
+        with:
+          imageName: ghcr.io/${{ github.repository }}/devcontainer
+          cacheFrom: ghcr.io/${{ github.repository }}/devcontainer
+          push: never
+          runCmd: |
+            ./third/vcpkg/bootstrap-vcpkg.sh
+            cmake --workflow --preset=coverage
+            ninja -C build/coverage coverage
+            ninja -C build/coverage coverage-xml
+            echo "## Coverage Summary" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            llvm-cov report \
+              build/coverage/test/unit_test \
+              --object=build/coverage/test/integration_test \
+              --object=build/coverage/test/thread_safety_test \
+              -instr-profile=build/coverage/coverage.profdata \
+              "-ignore-filename-regex=(third|test|benchmark|build|examples|vcpkg_installed)/.*" \
+              2>/dev/null >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            build/coverage/coverage/
+            build/coverage/coverage/coverage.lcov
