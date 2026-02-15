@@ -612,7 +612,7 @@ using MTConfigEnv = Configuration<MTSchemaWithEnv, JsonSerializer, MultiThreaded
 using MTSchemaPortEnv = ConfigSchema<settings::PortWithEnv>;
 using MTConfigPortEnv = Configuration<MTSchemaPortEnv, JsonSerializer, MultiThreadedPolicy>;
 
-TEST_F(ConfigurationIntegrationTest, MT_CreateFileWithDefaults)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedCreateFileWithDefaults)
 {
     MTConfig config(file_path_);
 
@@ -627,7 +627,7 @@ TEST_F(ConfigurationIntegrationTest, MT_CreateFileWithDefaults)
     EXPECT_EQ(json["app"]["port"], 8080);
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_LoadExistingFile)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedLoadExistingFile)
 {
     {
         std::ofstream file(file_path_);
@@ -642,7 +642,7 @@ TEST_F(ConfigurationIntegrationTest, MT_LoadExistingFile)
     EXPECT_EQ(config.Get<settings::AppPort>(), 9090);
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_SetWithValidation)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedSetWithValidation)
 {
     MTConfigValidated config(file_path_);
     ASSERT_TRUE(config.Load().ok());
@@ -660,7 +660,7 @@ TEST_F(ConfigurationIntegrationTest, MT_SetWithValidation)
     EXPECT_EQ(config.Get<settings::ServerPort>(), 443);
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_SetAndSave)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedSetAndSave)
 {
     MTConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
@@ -674,7 +674,7 @@ TEST_F(ConfigurationIntegrationTest, MT_SetAndSave)
     EXPECT_EQ(config2.Get<settings::AppPort>(), 9999);
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_Diff)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedDiff)
 {
     MTConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
@@ -688,7 +688,7 @@ TEST_F(ConfigurationIntegrationTest, MT_Diff)
     EXPECT_FALSE(modified.empty());
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_ValidateAll)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedValidateAll)
 {
     MTConfigValidated config(file_path_);
     ASSERT_TRUE(config.Load().ok());
@@ -697,14 +697,14 @@ TEST_F(ConfigurationIntegrationTest, MT_ValidateAll)
     EXPECT_TRUE(status.ok());
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_GetFilePath)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedGetFilePath)
 {
     MTConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
     EXPECT_EQ(config.GetFilePath(), file_path_);
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_GetFileValues)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedGetFileValues)
 {
     MTConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
@@ -712,7 +712,7 @@ TEST_F(ConfigurationIntegrationTest, MT_GetFileValues)
     EXPECT_EQ(fv["app"]["name"], "TestApp");
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_GetDefaults)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedGetDefaults)
 {
     MTConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
@@ -720,7 +720,7 @@ TEST_F(ConfigurationIntegrationTest, MT_GetDefaults)
     EXPECT_EQ(defaults["app"]["port"], 8080);
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_GetDiffString)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedGetDiffString)
 {
     MTConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
@@ -731,7 +731,7 @@ TEST_F(ConfigurationIntegrationTest, MT_GetDiffString)
     EXPECT_NE(diff_str.find("app.port"), std::string::npos);
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_EnvVarSuccessfulParse)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedEnvVarSuccessfulParse)
 {
     setenv("TEST_APP_HOST", "mt-host.example.com", 1);
 
@@ -744,7 +744,7 @@ TEST_F(ConfigurationIntegrationTest, MT_EnvVarSuccessfulParse)
     unsetenv("TEST_APP_HOST");
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_EnvVarParseFailure)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedEnvVarParseFailure)
 {
     {
         std::ofstream file(file_path_);
@@ -767,7 +767,7 @@ TEST_F(ConfigurationIntegrationTest, MT_EnvVarParseFailure)
     unsetenv("TEST_SERVER_PORT");
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_FileValueParseFailure)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedFileValueParseFailure)
 {
     {
         std::ofstream file(file_path_);
@@ -786,7 +786,7 @@ TEST_F(ConfigurationIntegrationTest, MT_FileValueParseFailure)
     EXPECT_EQ(port, 8080);  // falls back to default
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_DefaultValueFallback)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedDefaultValueFallback)
 {
     // Write a file that does NOT contain "app.port"
     {
@@ -807,7 +807,7 @@ TEST_F(ConfigurationIntegrationTest, MT_DefaultValueFallback)
     EXPECT_EQ(port, 8080);
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_LoadInvalidJsonFile)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedLoadInvalidJsonFile)
 {
     {
         std::ofstream file(file_path_);
@@ -819,7 +819,7 @@ TEST_F(ConfigurationIntegrationTest, MT_LoadInvalidJsonFile)
     EXPECT_FALSE(status.ok());
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_SchemaMigration)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedSchemaMigration)
 {
     // Create a file with only one setting
     {
@@ -844,7 +844,7 @@ TEST_F(ConfigurationIntegrationTest, MT_SchemaMigration)
     EXPECT_EQ(config.Get<settings::AppVersion>(), "1.0.0");
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_SchemaMigrationSaveFailure)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedSchemaMigrationSaveFailure)
 {
     // Create a valid file with a subset of settings
     {
@@ -871,7 +871,7 @@ TEST_F(ConfigurationIntegrationTest, MT_SchemaMigrationSaveFailure)
                                  std::filesystem::perm_options::replace);
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_SaveDirectoryCreationFailure)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedSaveDirectoryCreationFailure)
 {
     // Use /proc/... which can't have subdirectories created on Linux
     std::string bad_path = "/proc/fakedir/subdir/config.json";
@@ -882,7 +882,7 @@ TEST_F(ConfigurationIntegrationTest, MT_SaveDirectoryCreationFailure)
     EXPECT_FALSE(status.ok());
 }
 
-TEST_F(ConfigurationIntegrationTest, MT_ValidateAllWithInvalidValue)
+TEST_F(ConfigurationIntegrationTest, MultiThreadedValidateAllWithInvalidValue)
 {
     // Create a file with an out-of-range port
     {
@@ -931,7 +931,7 @@ TEST_F(ConfigurationIntegrationTest, ValidateAllStopsOnFirstError)
     EXPECT_NE(std::string(status.message()).find("val.a"), std::string::npos);
 }
 
-TEST_F(ConfigurationIntegrationTest, ST_SaveCreatesDeepNestedDirectories)
+TEST_F(ConfigurationIntegrationTest, SingleThreadedSaveCreatesDeepNestedDirectories)
 {
     std::string nested = file_path_ + "_deep/a/b/c/config.json";
 
@@ -943,7 +943,7 @@ TEST_F(ConfigurationIntegrationTest, ST_SaveCreatesDeepNestedDirectories)
     std::filesystem::remove_all(file_path_ + "_deep");
 }
 
-TEST_F(ConfigurationIntegrationTest, ST_LoadInvalidJsonFile)
+TEST_F(ConfigurationIntegrationTest, SingleThreadedLoadInvalidJsonFile)
 {
     {
         std::ofstream file(file_path_);
@@ -956,7 +956,7 @@ TEST_F(ConfigurationIntegrationTest, ST_LoadInvalidJsonFile)
     EXPECT_FALSE(status.ok());
 }
 
-TEST_F(ConfigurationIntegrationTest, ST_ValidateAllInvalidValue)
+TEST_F(ConfigurationIntegrationTest, SingleThreadedValidateAllInvalidValue)
 {
     {
         std::ofstream file(file_path_);
@@ -971,7 +971,7 @@ TEST_F(ConfigurationIntegrationTest, ST_ValidateAllInvalidValue)
     EXPECT_FALSE(status.ok());
 }
 
-TEST_F(ConfigurationIntegrationTest, ST_SchemaMigrationSaveFailure)
+TEST_F(ConfigurationIntegrationTest, SingleThreadedSchemaMigrationSaveFailure)
 {
     {
         std::ofstream file(file_path_);
@@ -997,7 +997,7 @@ TEST_F(ConfigurationIntegrationTest, ST_SchemaMigrationSaveFailure)
                                  std::filesystem::perm_options::replace);
 }
 
-TEST_F(ConfigurationIntegrationTest, ST_SaveDirectoryCreationFailure)
+TEST_F(ConfigurationIntegrationTest, SingleThreadedSaveDirectoryCreationFailure)
 {
     std::string bad_path = "/proc/fakedir/subdir/config.json";
     using Schema = ConfigSchema<settings::AppName>;
@@ -1006,7 +1006,7 @@ TEST_F(ConfigurationIntegrationTest, ST_SaveDirectoryCreationFailure)
     EXPECT_FALSE(status.ok());
 }
 
-TEST_F(ConfigurationIntegrationTest, ConfigTraitsFromJsonAdl_ToJson)
+TEST_F(ConfigurationIntegrationTest, ConfigTraitsFromJsonAdlToJson)
 {
     Point p { .x=5, .y=15 };
     auto json = ConfigTraits<Point>::ToJson(p);
@@ -1091,7 +1091,7 @@ struct OrphanSetting {
     static auto default_value() -> std::string { return "fallback"; }
 };
 
-TEST_F(ConfigurationIntegrationTest, ST_DefaultFallbackNoFileKey)
+TEST_F(ConfigurationIntegrationTest, SingleThreadedDefaultFallbackNoFileKey)
 {
     {
         std::ofstream file(file_path_);
