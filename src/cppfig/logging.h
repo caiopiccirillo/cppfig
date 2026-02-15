@@ -50,7 +50,10 @@ public:
     static void InfoF(const char* format, Args... args)
     {
         std::fprintf(stdout, "[cppfig] INFO: ");
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
         std::fprintf(stdout, format, args...);
+#pragma GCC diagnostic pop
         std::fprintf(stdout, "\n");
     }
 
@@ -59,7 +62,10 @@ public:
     static void WarnF(const char* format, Args... args)
     {
         std::fprintf(stderr, "[cppfig] WARN: ");
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
         std::fprintf(stderr, format, args...);
+#pragma GCC diagnostic pop
         std::fprintf(stderr, "\n");
     }
 
@@ -68,7 +74,10 @@ public:
     static void ErrorF(const char* format, Args... args)
     {
         std::fprintf(stderr, "[cppfig] ERROR: ");
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
         std::fprintf(stderr, format, args...);
+#pragma GCC diagnostic pop
         std::fprintf(stderr, "\n");
     }
 };

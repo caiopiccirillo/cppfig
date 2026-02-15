@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -153,7 +154,7 @@ TEST_F(ThreadSafetyTest, ConcurrentReads)
                     error_count.fetch_add(1, std::memory_order_relaxed);
                 }
                 double ratio = config.Get<settings::Ratio>();
-                if (ratio != 1.0) {
+                if (std::abs(ratio - 1.0) > 1e-9) {
                     error_count.fetch_add(1, std::memory_order_relaxed);
                 }
                 bool enabled = config.Get<settings::Enabled>();

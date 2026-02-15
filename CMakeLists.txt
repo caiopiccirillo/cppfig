@@ -19,6 +19,67 @@ find_package(absl CONFIG REQUIRED)
 
 option(STRICT_BUILD "Enable warnings as errors" ON)
 
+if(STRICT_BUILD)
+    message(STATUS "Strict build enabled — adding comprehensive compiler warnings")
+
+    # Warnings common to GCC and Clang
+    add_compile_options(
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Werror
+
+        # Type-safety & conversions
+        -Wconversion
+        -Wsign-conversion
+        -Wdouble-promotion
+        -Wfloat-equal
+        -Wcast-align
+        -Wcast-qual
+
+        # C++ best practices
+        -Wold-style-cast
+        -Woverloaded-virtual
+        -Wnon-virtual-dtor
+        -Wshadow
+        -Wundef
+
+        # Control-flow & logic
+        -Wimplicit-fallthrough
+        -Wswitch-enum
+        -Wnull-dereference
+
+        # Formatting & style
+        -Wformat=2
+        -Wmisleading-indentation
+        -Wunused
+        -Wredundant-decls
+    )
+
+    # GCC-only warnings
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        add_compile_options(
+            -Wduplicated-cond
+            -Wduplicated-branches
+            -Wlogical-op
+            -Wuseless-cast
+            -Wsuggest-override
+            -Wstringop-overflow=4
+            -Warray-bounds=2
+        )
+    endif()
+
+    # Clang-only warnings
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        add_compile_options(
+            -Wextra-semi
+            -Wnewline-eof
+            -Wheader-hygiene
+            -Wdocumentation
+        )
+    endif()
+endif()
+
 configure_file(CMakeConfig.h.in "${CMAKE_BINARY_DIR}/CMakeConfig.h")
 include_directories(${CMAKE_BINARY_DIR})
 
