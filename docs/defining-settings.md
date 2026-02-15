@@ -125,20 +125,20 @@ struct LogLevel {
 
 Out of the box, cppfig supports:
 
-| Type | JSON Type | Environment Variable |
-|------|-----------|---------------------|
-| `bool` | boolean | `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off` |
-| `int` | number | Integer string |
-| `std::int64_t` | number | Integer string |
-| `float` | number | Decimal string |
-| `double` | number | Decimal string |
-| `std::string` | string | As-is |
+| Type | File Representation | Environment Variable |
+|------|-------------------|---------------------|
+| `bool` | `true` / `false` | `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off` |
+| `int` | integer literal | Integer string |
+| `std::int64_t` | integer literal | Integer string |
+| `float` | decimal literal | Decimal string |
+| `double` | decimal literal | Decimal string |
+| `std::string` | string value | As-is |
 
 For custom types, see [Custom Types](custom-types.md).
 
 ## Hierarchical Configuration
 
-Use dot-separated paths to create hierarchical JSON structure:
+Use dot-separated paths to create hierarchical structure:
 
 ```cpp
 struct DatabaseHost {
@@ -157,7 +157,15 @@ struct DatabasePoolSize {
 };
 ```
 
-This generates JSON like:
+This generates a `.conf` file like:
+
+```conf
+database.connection.host = localhost
+database.connection.port = 5432
+database.pool.max_size = 10
+```
+
+Or, when using `JsonSerializer`:
 
 ```json
 {

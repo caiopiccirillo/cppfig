@@ -14,8 +14,21 @@ include(Coverage)
 copy_compile_commands()
 
 find_package(GTest CONFIG REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
 find_package(absl CONFIG REQUIRED)
+
+# Optional serializer back-ends
+option(CPPFIG_ENABLE_JSON "Enable JSON serializer (requires nlohmann-json)" OFF)
+
+# When building in-tree we always need JSON for the tests & benchmarks.
+# Detect whether nlohmann-json is available and enable automatically.
+find_package(nlohmann_json CONFIG QUIET)
+if(nlohmann_json_FOUND)
+    set(CPPFIG_ENABLE_JSON ON CACHE BOOL "" FORCE)
+    message(STATUS "nlohmann-json found — CPPFIG_ENABLE_JSON=ON")
+else()
+    message(STATUS "nlohmann-json not found — JSON serializer disabled")
+endif()
+# Future: option(CPPFIG_ENABLE_TOML "Enable TOML serializer" OFF)
 
 option(STRICT_BUILD "Enable warnings as errors" ON)
 

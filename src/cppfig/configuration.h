@@ -5,17 +5,18 @@
 
 #include <cstdlib>
 #include <filesystem>
-#include <nlohmann/json.hpp>
 #include <string>
 #include <string_view>
 
 #include "cppfig/diff.h"
+#include "cppfig/conf.h"
 #include "cppfig/interface.h"
 #include "cppfig/logging.h"
 #include "cppfig/serializer.h"
 #include "cppfig/setting.h"
 #include "cppfig/thread_policy.h"
 #include "cppfig/traits.h"
+#include "cppfig/value.h"
 
 namespace cppfig {
 
@@ -78,21 +79,21 @@ namespace cppfig {
 /// @endcode
 ///
 /// @tparam Schema The ConfigSchema type defining all settings.
-/// @tparam SerializerT The serializer to use (defaults to JsonSerializer).
+/// @tparam SerializerT The serializer to use (defaults to ConfSerializer).
 /// @tparam ThreadPolicy The threading policy (defaults to SingleThreadedPolicy).
-template <typename Schema, Serializer SerializerT = JsonSerializer, typename ThreadPolicy = SingleThreadedPolicy>
+template <typename Schema, Serializer SerializerT = ConfSerializer, typename ThreadPolicy = SingleThreadedPolicy>
 class Configuration : public IConfigurationProvider<Configuration<Schema, SerializerT, ThreadPolicy>, Schema>,
                       public IConfigurationProviderVirtual {
 public:
     using serializer_type = SerializerT;
-    using data_type = typename SerializerT::data_type;
+    using data_type = Value;
 
     /// @brief Creates a configuration manager with a file path.
     ///
     /// @param file_path Path to the configuration file.
     explicit Configuration(std::string file_path)
         : file_path_(std::move(file_path))
-        , file_values_(data_type::object())
+        , file_values_(Value::Object())
     {
         BuildDefaults();
     }
@@ -127,9 +128,9 @@ public:
         // 2. Check file value (shared lock — concurrent readers allowed)
         {
             typename ThreadPolicy::shared_lock lock(mutex_);
-            auto file_result = SerializerT::GetAtPath(file_values_, S::path);
+            auto file_result = file_values_.GetAtPath(S::path);
             if (file_result.ok()) {
-                auto parsed = ConfigTraits<value_type>::FromJson(*file_result);
+                auto parsed = ConfigTraits<value_type>::Deserialize(*file_result);
                 if (parsed.has_value()) {
                     return *parsed;
                 }
@@ -161,8 +162,8 @@ public:
 
         // Set the value under exclusive lock
         typename ThreadPolicy::unique_lock lock(mutex_);
-        auto json_value = ConfigTraits<value_type>::ToJson(value);
-        SerializerT::SetAtPath(file_values_, S::path, json_value);
+        auto serialized = ConfigTraits<value_type>::Serialize(value);
+        file_values_.SetAtPath(S::path, serialized);
 
         return absl::OkStatus();
     }
@@ -210,17 +211,17 @@ public:
     /// Thread safety: @c file_path_ is immutable after construction — no lock needed.
     [[nodiscard]] auto GetFilePathImpl() const -> std::string_view { return file_path_; }
 
-    /// @brief Returns the current file values as JSON.
+    /// @brief Returns the current file values.
     ///
     /// @warning The returned reference is *not* protected after the call returns.
     ///          In multi-threaded code, prefer @c Get<Setting>() for safe access.
-    [[nodiscard]] auto GetFileValues() const -> const data_type& { return file_values_; }
+    [[nodiscard]] auto GetFileValues() const -> const Value& { return file_values_; }
 
-    /// @brief Returns the default values as JSON.
+    /// @brief Returns the default values.
     ///
     /// Thread safety: @c defaults_ is immutable after construction — safe to call
     /// concurrently without synchronization.
-    [[nodiscard]] auto GetDefaults() const -> const data_type& { return defaults_; }
+    [[nodiscard]] auto GetDefaults() const -> const Value& { return defaults_; }
 
     [[nodiscard]] auto Load() -> absl::Status override { return LoadImpl(); }
 
@@ -261,7 +262,11 @@ private:
             Logger::Warn("New settings detected in schema, adding to configuration file:");
             for (const auto& entry : added) {
                 Logger::WarnF("  - %s = %s", entry.path.c_str(), entry.new_value.c_str());
-                SerializerT::SetAtPath(file_values_, entry.path, nlohmann::json::parse(entry.new_value));
+                // Copy the default value directly from the defaults tree
+                auto default_val = defaults_.GetAtPath(entry.path);
+                if (default_val.ok()) {
+                    file_values_.SetAtPath(entry.path, *default_val);
+                }
             }
 
             // Save the updated configuration
@@ -305,10 +310,10 @@ private:
             }
 
             using value_type = typename S::value_type;
-            auto file_result = SerializerT::GetAtPath(file_values_, S::path);
+            auto file_result = file_values_.GetAtPath(S::path);
 
             if (file_result.ok()) {
-                auto parsed = ConfigTraits<value_type>::FromJson(*file_result);
+                auto parsed = ConfigTraits<value_type>::Deserialize(*file_result);
                 if (parsed.has_value()) {
                     auto validator = GetSettingValidator<S>();
                     auto validation = validator(*parsed);
@@ -324,18 +329,18 @@ private:
 
     void BuildDefaults()
     {
-        defaults_ = data_type::object();
+        defaults_ = Value::Object();
 
         Schema::ForEachSetting([this]<typename S>() {
             using value_type = typename S::value_type;
-            auto json_value = ConfigTraits<value_type>::ToJson(S::default_value());
-            SerializerT::SetAtPath(defaults_, S::path, json_value);
+            auto serialized = ConfigTraits<value_type>::Serialize(S::default_value());
+            defaults_.SetAtPath(S::path, serialized);
         });
     }
 
     std::string file_path_;
-    data_type file_values_;
-    data_type defaults_;
+    Value file_values_;
+    Value defaults_;
     mutable typename ThreadPolicy::mutex_type mutex_;
 };
 

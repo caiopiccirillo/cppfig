@@ -1,10 +1,11 @@
 #pragma once
 
 #include <cstdint>
-#include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
 #include <vector>
+
+#include "cppfig/value.h"
 
 namespace cppfig {
 
@@ -98,36 +99,36 @@ public:
 
 namespace detail {
 
-    /// @brief Recursively compares two JSON objects and collects differences.
-    inline void CompareJsonRecursive(const nlohmann::json& base, const nlohmann::json& target, const std::string& prefix,
-                                     ConfigDiff& diff)
+    /// @brief Recursively compares two Value objects and collects differences.
+    inline void CompareValueRecursive(const Value& base, const Value& target, const std::string& prefix,
+                                      ConfigDiff& diff)
     {
         // Check for keys in target that are not in base (added)
-        if (target.is_object()) {
-            for (const auto& [key, value] : target.items()) {
+        if (target.IsObject()) {
+            for (const auto& [key, value] : target.Items()) {
                 std::string path = prefix.empty() ? key : prefix + "." + key;
 
-                if (!base.is_object() || !base.contains(key)) {
-                    diff.entries.push_back({ DiffType::Added, path, "", value.dump() });
+                if (!base.IsObject() || !base.Contains(key)) {
+                    diff.entries.push_back({ DiffType::Added, path, "", value.Dump() });
                 }
                 else if (base[key] != value) {
-                    if (base[key].is_object() && value.is_object()) {
-                        CompareJsonRecursive(base[key], value, path, diff);
+                    if (base[key].IsObject() && value.IsObject()) {
+                        CompareValueRecursive(base[key], value, path, diff);
                     }
                     else {
-                        diff.entries.push_back({ DiffType::Modified, path, base[key].dump(), value.dump() });
+                        diff.entries.push_back({ DiffType::Modified, path, base[key].Dump(), value.Dump() });
                     }
                 }
             }
         }
 
         // Check for keys in base that are not in target (removed)
-        if (base.is_object()) {
-            for (const auto& [key, value] : base.items()) {
+        if (base.IsObject()) {
+            for (const auto& [key, value] : base.Items()) {
                 std::string path = prefix.empty() ? key : prefix + "." + key;
 
-                if (!target.is_object() || !target.contains(key)) {
-                    diff.entries.push_back({ DiffType::Removed, path, value.dump(), "" });
+                if (!target.IsObject() || !target.Contains(key)) {
+                    diff.entries.push_back({ DiffType::Removed, path, value.Dump(), "" });
                 }
             }
         }
@@ -135,15 +136,15 @@ namespace detail {
 
 }  // namespace detail
 
-/// @brief Compares two JSON configurations and returns the differences.
+/// @brief Compares two Value configurations and returns the differences.
 ///
 /// @param base The base configuration (e.g., defaults).
 /// @param target The target configuration (e.g., file values).
 /// @return A ConfigDiff containing all differences.
-inline auto DiffJson(const nlohmann::json& base, const nlohmann::json& target) -> ConfigDiff
+inline auto DiffValues(const Value& base, const Value& target) -> ConfigDiff
 {
     ConfigDiff diff;
-    detail::CompareJsonRecursive(base, target, "", diff);
+    detail::CompareValueRecursive(base, target, "", diff);
     return diff;
 }
 
@@ -153,9 +154,9 @@ inline auto DiffJson(const nlohmann::json& base, const nlohmann::json& target) -
 /// - ADDED: Settings in file not in defaults (possibly deprecated)
 /// - REMOVED: Settings in defaults not in file (will use default)
 /// - MODIFIED: Settings that differ from defaults
-inline auto DiffFileFromDefaults(const nlohmann::json& defaults, const nlohmann::json& file_values) -> ConfigDiff
+inline auto DiffFileFromDefaults(const Value& defaults, const Value& file_values) -> ConfigDiff
 {
-    return DiffJson(defaults, file_values);
+    return DiffValues(defaults, file_values);
 }
 
 /// @brief Compares defaults against file configuration.
@@ -164,9 +165,9 @@ inline auto DiffFileFromDefaults(const nlohmann::json& defaults, const nlohmann:
 /// - ADDED: New settings in defaults not in file (schema migration)
 /// - REMOVED: Settings in file not in defaults (deprecated)
 /// - MODIFIED: Settings that will be overridden by file
-inline auto DiffDefaultsFromFile(const nlohmann::json& defaults, const nlohmann::json& file_values) -> ConfigDiff
+inline auto DiffDefaultsFromFile(const Value& defaults, const Value& file_values) -> ConfigDiff
 {
-    return DiffJson(file_values, defaults);
+    return DiffValues(file_values, defaults);
 }
 
 }  // namespace cppfig

@@ -1,4 +1,5 @@
 #include <cppfig/cppfig.h>
+#include <cppfig/json.h>
 #include <cppfig/testing/mock.h>
 #include <gtest/gtest.h>
 

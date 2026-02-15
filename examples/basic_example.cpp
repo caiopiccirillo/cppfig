@@ -66,8 +66,8 @@ using MySchema = cppfig::ConfigSchema<settings::AppName, settings::AppVersion, s
 
 int main()
 {
-    // Create configuration manager
-    cppfig::Configuration<MySchema> config("/tmp/cppfig_example.json");
+    // Create configuration manager (uses .conf format by default)
+    cppfig::Configuration<MySchema> config("/tmp/cppfig_example.conf");
 
     // Load configuration (creates file with defaults if it doesn't exist)
     auto status = config.Load();

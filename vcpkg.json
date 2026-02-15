@@ -1,4 +1,7 @@
 {
+    "name": "cppfig",
+    "version": "0.1.0",
+    "description": "C++20 compile-time type-safe configuration library",
     "dependencies": [
         {
             "name": "gtest",
@@ -17,5 +20,23 @@
             "version>=": "20240722.0"
         }
     ],
+    "features": {
+        "json": {
+            "description": "JSON serializer support (requires nlohmann-json)",
+            "dependencies": [
+                {
+                    "name": "nlohmann-json"
+                }
+            ]
+        },
+        "toml": {
+            "description": "TOML serializer support (requires toml++) — not yet implemented",
+            "dependencies": [
+                {
+                    "name": "tomlplusplus"
+                }
+            ]
+        }
+    },
     "builtin-baseline": "ce613c41372b23b1f51333815feb3edd87ef8a8b"
 }

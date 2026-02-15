@@ -1,4 +1,5 @@
 #include <cppfig/cppfig.h>
+#include <cppfig/json.h>
 #include <cppfig/testing/mock.h>
 #include <gtest/gtest.h>
 
@@ -121,7 +122,7 @@ protected:
 TEST_F(ConfigurationIntegrationTest, CreateFileWithDefaults)
 {
     using Schema = ConfigSchema<settings::AppName, settings::AppPort>;
-    Configuration<Schema> config(file_path_);
+    Configuration<Schema, JsonSerializer> config(file_path_);
 
     auto status = config.Load();
     ASSERT_TRUE(status.ok()) << status.message();
@@ -145,7 +146,7 @@ TEST_F(ConfigurationIntegrationTest, LoadExistingFile)
     }
 
     using Schema = ConfigSchema<settings::AppName, settings::AppPort>;
-    Configuration<Schema> config(file_path_);
+    Configuration<Schema, JsonSerializer> config(file_path_);
 
     auto status = config.Load();
     ASSERT_TRUE(status.ok()) << status.message();
@@ -164,7 +165,7 @@ TEST_F(ConfigurationIntegrationTest, SchemaMigration)
 
     // New schema has an additional setting
     using Schema = ConfigSchema<settings::AppName, settings::AppVersion>;
-    Configuration<Schema> config(file_path_);
+    Configuration<Schema, JsonSerializer> config(file_path_);
 
     auto status = config.Load();
     ASSERT_TRUE(status.ok()) << status.message();
@@ -262,7 +263,7 @@ TEST_F(ConfigurationIntegrationTest, ValidateAll)
     }
 
     using Schema = ConfigSchema<settings::ServerPort>;
-    Configuration<Schema> config(file_path_);
+    Configuration<Schema, JsonSerializer> config(file_path_);
 
     ASSERT_TRUE(config.Load().ok());
 
@@ -274,7 +275,7 @@ TEST_F(ConfigurationIntegrationTest, HierarchicalSettings)
 {
     using Schema = ConfigSchema<settings::DatabaseHost, settings::DatabasePort,
                                 settings::DatabasePoolSize, settings::LoggingLevel>;
-    Configuration<Schema> config(file_path_);
+    Configuration<Schema, JsonSerializer> config(file_path_);
 
     ASSERT_TRUE(config.Load().ok());
 
@@ -344,7 +345,7 @@ namespace custom_settings {
 TEST_F(ConfigurationIntegrationTest, CustomTypeInConfig)
 {
     using Schema = ConfigSchema<custom_settings::Origin, custom_settings::Target>;
-    Configuration<Schema> config(file_path_);
+    Configuration<Schema, JsonSerializer> config(file_path_);
 
     ASSERT_TRUE(config.Load().ok());
 
@@ -371,7 +372,7 @@ TEST_F(ConfigurationIntegrationTest, InvalidJsonFile)
     }
 
     using Schema = ConfigSchema<settings::AppName>;
-    Configuration<Schema> config(file_path_);
+    Configuration<Schema, JsonSerializer> config(file_path_);
 
     auto status = config.Load();
     EXPECT_FALSE(status.ok());
@@ -392,7 +393,7 @@ TEST_F(ConfigurationIntegrationTest, EnvironmentVariableParseFailure)
     setenv("TEST_SERVER_PORT", "not_a_number", 1);
 
     using EnvSchema = ConfigSchema<settings::PortWithEnv>;
-    Configuration<EnvSchema> config(file_path_);
+    Configuration<EnvSchema, JsonSerializer> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
     // Should fall back to file value since env var parse failed
@@ -420,7 +421,7 @@ TEST_F(ConfigurationIntegrationTest, FileValueParseFailure)
     }
 
     using Schema = ConfigSchema<settings::AppPort>;
-    Configuration<Schema> config(file_path_);
+    Configuration<Schema, JsonSerializer> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
     // Should fall back to default since file value can't be parsed
@@ -512,8 +513,8 @@ TEST_F(ConfigurationIntegrationTest, CustomTypeFromStringInvalid)
 TEST_F(ConfigurationIntegrationTest, CustomTypeFromJsonInvalid)
 {
     // JSON that doesn't match Point structure
-    nlohmann::json invalid = 42;
-    auto parsed = ConfigTraits<Point>::FromJson(invalid);
+    Value invalid = 42;
+    auto parsed = ConfigTraits<Point>::Deserialize(invalid);
     EXPECT_FALSE(parsed.has_value());
 }
 
@@ -528,7 +529,8 @@ TEST_F(ConfigurationIntegrationTest, ReadFileNotFound)
 TEST_F(ConfigurationIntegrationTest, WriteFileToInvalidPath)
 {
     // Test WriteFile to a path that cannot be opened (directory doesn't exist and path is invalid)
-    nlohmann::json data = { { "key", "value" } };
+    auto data = Value::Object();
+    data["key"] = Value("value");
     auto status = WriteFile<JsonSerializer>("/nonexistent_root_dir/cannot/write/here.json", data);
     EXPECT_FALSE(status.ok());
     EXPECT_TRUE(absl::IsInternal(status));
@@ -559,7 +561,7 @@ TEST_F(ConfigurationIntegrationTest, FileValueSuccessfulParse)
     }
 
     using Schema = ConfigSchema<settings::AppName>;
-    Configuration<Schema> config(file_path_);
+    Configuration<Schema, JsonSerializer> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
     // File value should be successfully parsed and returned
@@ -579,7 +581,7 @@ TEST_F(ConfigurationIntegrationTest, SchemaMigrationAddsMultipleSettings)
     using Schema = ConfigSchema<settings::AppName, settings::AppPort, settings::AppVersion>;
 
     ::testing::internal::CaptureStderr();
-    Configuration<Schema> config(file_path_);
+    Configuration<Schema, JsonSerializer> config(file_path_);
     auto status = config.Load();
     auto stderr_output = ::testing::internal::GetCapturedStderr();
 
@@ -922,7 +924,7 @@ TEST_F(ConfigurationIntegrationTest, ValidateAllStopsOnFirstError)
         file << R"({"val": {"a": 999, "b": 0}})";
     }
 
-    Configuration<Schema2V> config(file_path_);
+    Configuration<Schema2V, JsonSerializer> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
     auto status = config.ValidateAll();
@@ -951,7 +953,7 @@ TEST_F(ConfigurationIntegrationTest, SingleThreadedLoadInvalidJsonFile)
     }
 
     using Schema = ConfigSchema<settings::AppName>;
-    Configuration<Schema> config(file_path_);
+    Configuration<Schema, JsonSerializer> config(file_path_);
     auto status = config.Load();
     EXPECT_FALSE(status.ok());
 }
@@ -964,7 +966,7 @@ TEST_F(ConfigurationIntegrationTest, SingleThreadedValidateAllInvalidValue)
     }
 
     using Schema = ConfigSchema<settings::ServerPort>;
-    Configuration<Schema> config(file_path_);
+    Configuration<Schema, JsonSerializer> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
     auto status = config.ValidateAll();
@@ -985,7 +987,7 @@ TEST_F(ConfigurationIntegrationTest, SingleThreadedSchemaMigrationSaveFailure)
 
     using Schema = ConfigSchema<settings::AppName, settings::AppPort>;
     ::testing::internal::CaptureStderr();
-    Configuration<Schema> config(file_path_);
+    Configuration<Schema, JsonSerializer> config(file_path_);
     auto status = config.Load();
     auto stderr_output = ::testing::internal::GetCapturedStderr();
 
@@ -1009,9 +1011,9 @@ TEST_F(ConfigurationIntegrationTest, SingleThreadedSaveDirectoryCreationFailure)
 TEST_F(ConfigurationIntegrationTest, ConfigTraitsFromJsonAdlToJson)
 {
     Point p { .x=5, .y=15 };
-    auto json = ConfigTraits<Point>::ToJson(p);
-    EXPECT_EQ(json["x"], 5);
-    EXPECT_EQ(json["y"], 15);
+    auto val = ConfigTraits<Point>::Serialize(p);
+    EXPECT_EQ(val["x"], 5);
+    EXPECT_EQ(val["y"], 15);
 }
 
 TEST_F(ConfigurationIntegrationTest, WriteFilePostWriteFailure)
@@ -1026,9 +1028,9 @@ TEST_F(ConfigurationIntegrationTest, WriteFilePostWriteFailure)
     }
 
     // Build a JSON object large enough to exceed the ofstream buffer
-    nlohmann::json data = nlohmann::json::object();
+    auto data = Value::Object();
     for (int i = 0; i < 200; ++i) {
-        data["key_" + std::to_string(i)] = std::string(500, 'X');
+        data["key_" + std::to_string(i)] = Value(std::string(500, 'X'));
     }
     auto status = WriteFile<JsonSerializer>("/dev/full", data);
     EXPECT_FALSE(status.ok());
@@ -1064,8 +1066,8 @@ TEST_F(ConfigurationIntegrationTest, OrCombinatorSecondPasses)
 TEST_F(ConfigurationIntegrationTest, Int64Traits)
 {
     std::int64_t val = 1234567890123LL;
-    auto json = ConfigTraits<std::int64_t>::ToJson(val);
-    auto parsed = ConfigTraits<std::int64_t>::FromJson(json);
+    auto serialized = ConfigTraits<std::int64_t>::Serialize(val);
+    auto parsed = ConfigTraits<std::int64_t>::Deserialize(serialized);
     ASSERT_TRUE(parsed.has_value());
     EXPECT_EQ(*parsed, val);
 
@@ -1081,8 +1083,8 @@ TEST_F(ConfigurationIntegrationTest, Int64Traits)
     EXPECT_FALSE(ConfigTraits<std::int64_t>::FromString("123abc").has_value());
 
     // Wrong JSON type
-    nlohmann::json wrong = "string";
-    EXPECT_FALSE(ConfigTraits<std::int64_t>::FromJson(wrong).has_value());
+    Value wrong("string");
+    EXPECT_FALSE(ConfigTraits<std::int64_t>::Deserialize(wrong).has_value());
 }
 
 struct OrphanSetting {
@@ -1100,7 +1102,7 @@ TEST_F(ConfigurationIntegrationTest, SingleThreadedDefaultFallbackNoFileKey)
     }
 
     using Schema = ConfigSchema<OrphanSetting>;
-    Configuration<Schema> config(file_path_);
+    Configuration<Schema, JsonSerializer> config(file_path_);
     // Load will trigger migration and add Orphan to the file.
     // But before migration: the setting is not in the file.
     // After migration: it IS in the file with the default.
@@ -1208,7 +1210,7 @@ TEST_F(ConfigurationIntegrationTest, BoolFileValueParseFailure)
     }
 
     using Schema = ConfigSchema<settings::DebugMode>;
-    Configuration<Schema> config(file_path_);
+    Configuration<Schema, JsonSerializer> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
     ::testing::internal::CaptureStderr();
@@ -1227,7 +1229,7 @@ TEST_F(ConfigurationIntegrationTest, DoubleFileValueParseFailure)
     }
 
     using Schema = ConfigSchema<settings::Ratio>;
-    Configuration<Schema> config(file_path_);
+    Configuration<Schema, JsonSerializer> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
     ::testing::internal::CaptureStderr();

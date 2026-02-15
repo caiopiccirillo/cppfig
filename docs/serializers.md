@@ -1,17 +1,101 @@
 # Serializers
 
-cppfig uses a pluggable serialization system. JSON is the default, but you can implement custom serializers for YAML, TOML, or any other format.
+cppfig uses a pluggable serialization system. **The flat `.conf` format is the default** — zero extra dependencies. JSON, TOML, and other formats are available as opt-in features.
 
-## Default JSON Serializer
+## Default Conf Serializer
 
-The built-in `JsonSerializer` uses nlohmann::json:
+The built-in `ConfSerializer` uses a simple flat key-value format and requires no additional dependencies:
 
 ```cpp
-// Default usage - JSON serialization
-cppfig::Configuration<MySchema> config("config.json");
-// or explicitly:
+#include <cppfig/cppfig.h>
+
+// Default — uses .conf serialization
+cppfig::Configuration<MySchema> config("config.conf");
+```
+
+### Generated .conf
+
+```conf
+# Each line is a full dot-path = value
+server.host = localhost
+server.port = 8080
+logging.enabled = true
+logging.level = info
+```
+
+### Format Details
+
+- Each line is `full.dot.path = value` — what you see is exactly what you write in code.
+- Lines starting with `#` are comments.
+- No sections, no grouping — one flat list per file.
+- Value types are inferred automatically:
+  - `true` / `false` / `yes` / `no` / `on` / `off` → `bool`
+  - Integer literals → `int64_t`
+  - Decimal literals → `double`
+  - Everything else → `std::string`
+- Quoted strings (`"hello world"`) preserve literal content including spaces.
+
+## JSON Serializer (Optional)
+
+Enable JSON support by adding the dependency and CMake option:
+
+### CMake
+
+```cmake
+# Option 1: set the CMake option explicitly
+set(CPPFIG_ENABLE_JSON ON)
+
+# Option 2: if nlohmann-json is already available via find_package(),
+#            it is auto-detected and CPPFIG_ENABLE_JSON is set automatically.
+find_package(nlohmann_json CONFIG REQUIRED)
+```
+
+### vcpkg
+
+```json
+{
+    "dependencies": [
+        {
+            "name": "cppfig",
+            "features": ["json"]
+        }
+    ]
+}
+```
+
+### Usage
+
+```cpp
+#include <cppfig/cppfig.h>
+#include <cppfig/json.h>  // opt-in header
+
+// Explicitly select JsonSerializer as the second template parameter
 cppfig::Configuration<MySchema, cppfig::JsonSerializer> config("config.json");
 ```
+
+### Generated JSON
+
+```json
+{
+    "server": {
+        "host": "localhost",
+        "port": 8080
+    },
+    "logging": {
+        "enabled": true,
+        "level": "info"
+    }
+}
+```
+
+## Future Serializers
+
+| Format | Header | CMake Option | vcpkg Feature | Status |
+|--------|--------|--------------|---------------|--------|
+| Conf | `<cppfig/cppfig.h>` | *(always available)* | — |  Built-in |
+| JSON | `<cppfig/json.h>` | `CPPFIG_ENABLE_JSON` | `json` |  Available |
+| TOML | `<cppfig/toml.h>` | `CPPFIG_ENABLE_TOML` | `toml` |  Planned |
+| YAML | `<cppfig/yaml.h>` | `CPPFIG_ENABLE_YAML` | `yaml` |  Planned |
 
 ## Implementing a Custom Serializer
 
@@ -20,177 +104,63 @@ To create a custom serializer, implement a struct that satisfies the `Serializer
 ```cpp
 #include <cppfig/serializer.h>
 
-struct YamlSerializer {
-    // The data type used internally (usually the library's document type)
-    using data_type = YAML::Node;  // Example using yaml-cpp
+struct MyFormatSerializer {
+    // Required: type alias (must be cppfig::Value)
+    using data_type = cppfig::Value;
 
-    // Parse from input stream
-    static auto Parse(std::istream& is) -> absl::StatusOr<data_type> {
-        try {
-            return YAML::Load(is);
-        } catch (const YAML::Exception& e) {
-            return absl::InvalidArgumentError(
-                std::string("YAML parse error: ") + e.what()
-            );
-        }
+    // Required: parse from input stream into a Value tree
+    static auto Parse(std::istream& is) -> absl::StatusOr<cppfig::Value> {
+        // ... read and convert to cppfig::Value ...
     }
 
-    // Convert to string for saving
-    static auto Stringify(const data_type& data, int indent = 2) -> std::string {
-        YAML::Emitter out;
-        out << data;
-        return out.c_str();
-    }
-
-    // Merge two data structures (for schema migration)
-    static auto Merge(const data_type& base, const data_type& overlay) -> data_type {
-        // Deep merge implementation
-        data_type result = Clone(base);
-        MergeNodes(result, overlay);
-        return result;
-    }
-
-    // Get value at dot-separated path
-    static auto GetAtPath(const data_type& data, std::string_view path)
-        -> absl::StatusOr<data_type> {
-        // Navigate path like "server.port"
-        data_type current = data;
-        // ... path navigation logic
-        return current;
-    }
-
-    // Set value at dot-separated path
-    static void SetAtPath(data_type& data, std::string_view path,
-                          const data_type& value) {
-        // Navigate and set
-    }
-
-    // Check if path exists
-    static auto HasPath(const data_type& data, std::string_view path) -> bool {
-        return GetAtPath(data, path).ok();
+    // Required: convert a Value tree to a string for saving
+    static auto Stringify(const cppfig::Value& data) -> std::string {
+        // ... serialize the Value tree ...
     }
 };
+```
+
+### Using a Custom Serializer
+
+```cpp
+cppfig::Configuration<MySchema, MyFormatSerializer> config("config.myformat");
+
+// Or create a template alias for convenience
+template <typename Schema>
+using MyFormatConfig = cppfig::Configuration<Schema, MyFormatSerializer>;
+
+MyFormatConfig<MySchema> config("config.myformat");
 ```
 
 ## Serializer Concept Requirements
 
 A serializer must provide:
 
-| Function | Signature | Purpose |
-|----------|-----------|---------|
-| `data_type` | type alias | Internal data representation |
-| `Parse` | `(istream&) -> StatusOr<data_type>` | Parse from stream |
-| `Stringify` | `(data_type) -> string` | Convert to string |
-| `Merge` | `(data_type, data_type) -> data_type` | Deep merge for migration |
+| Member | Signature | Purpose |
+|--------|-----------|---------|
+| `data_type` | type alias (`Value`) | Internal data representation |
+| `Parse` | `(std::istream&) → absl::StatusOr<Value>` | Parse from stream |
+| `Stringify` | `(const Value&) → std::string` | Convert to string |
 
-Additionally, these are used by Configuration internally:
-| Function | Purpose |
-|----------|---------|
-| `GetAtPath` | Navigate hierarchical structure |
-| `SetAtPath` | Set value at path |
-| `HasPath` | Check if path exists |
-
-## Using a Custom Serializer
-
-```cpp
-// Use YAML serializer
-cppfig::Configuration<MySchema, YamlSerializer> config("config.yaml");
-
-// Or with template alias
-template <typename Schema>
-using YamlConfiguration = cppfig::Configuration<Schema, YamlSerializer>;
-
-YamlConfiguration<MySchema> config("config.yaml");
-```
-
-## JsonSerializer API
-
-The built-in `JsonSerializer` provides:
-
-```cpp
-struct JsonSerializer {
-    using data_type = nlohmann::json;
-
-    // Parse from stream
-    static auto Parse(std::istream& is) -> absl::StatusOr<data_type>;
-
-    // Parse from string (convenience)
-    static auto ParseString(std::string_view str) -> absl::StatusOr<data_type>;
-
-    // Convert to formatted string
-    static auto Stringify(const data_type& data, int indent = 4) -> std::string;
-
-    // Deep merge two JSON objects
-    static auto Merge(const data_type& base, const data_type& overlay) -> data_type;
-
-    // Get value at dot-separated path
-    static auto GetAtPath(const data_type& data, std::string_view path)
-        -> absl::StatusOr<data_type>;
-
-    // Set value at dot-separated path (creates intermediate objects)
-    static void SetAtPath(data_type& data, std::string_view path,
-                          const data_type& value);
-
-    // Check if path exists
-    static auto HasPath(const data_type& data, std::string_view path) -> bool;
-};
-```
+Path navigation (`GetAtPath`, `SetAtPath`, `HasPath`) and merging are handled
+by `cppfig::Value` directly — serializers only need to convert between their
+file format and a `Value` tree.
 
 ## File I/O Helpers
 
 cppfig provides helper functions for file operations:
 
 ```cpp
-// Read file into serializer's data type
-auto result = cppfig::ReadFile<cppfig::JsonSerializer>("config.json");
+// Read file into a Value tree via any serializer
+auto result = cppfig::ReadFile<cppfig::ConfSerializer>("config.conf");
 if (result.ok()) {
-    nlohmann::json data = *result;
+    cppfig::Value data = *result;
 }
 
-// Write data to file
-absl::Status status = cppfig::WriteFile<cppfig::JsonSerializer>(
-    "config.json",
-    my_json_data
+// Write a Value tree to a file
+absl::Status status = cppfig::WriteFile<cppfig::ConfSerializer>(
+    "config.conf", my_data
 );
-```
-
-## Example: TOML Serializer Sketch
-
-```cpp
-#include <toml++/toml.h>
-
-struct TomlSerializer {
-    using data_type = toml::table;
-
-    static auto Parse(std::istream& is) -> absl::StatusOr<data_type> {
-        try {
-            return toml::parse(is);
-        } catch (const toml::parse_error& e) {
-            return absl::InvalidArgumentError(e.what());
-        }
-    }
-
-    static auto Stringify(const data_type& data, int = 0) -> std::string {
-        std::ostringstream ss;
-        ss << data;
-        return ss.str();
-    }
-
-    static auto Merge(const data_type& base, const data_type& overlay) -> data_type {
-        data_type result = base;
-        for (auto&& [k, v] : overlay) {
-            if (auto* base_table = result[k].as_table();
-                base_table && v.is_table()) {
-                *base_table = Merge(*base_table, *v.as_table());
-            } else {
-                result.insert_or_assign(k, v);
-            }
-        }
-        return result;
-    }
-
-    // ... GetAtPath, SetAtPath, HasPath implementations
-};
 ```
 
 ## Type Conversion
@@ -199,11 +169,12 @@ Serializers work with `ConfigTraits<T>` for type conversion:
 
 ```cpp
 // In Configuration::Get<Setting>():
-// 1. Get raw value from serializer's data type
-auto json_value = Serializer::GetAtPath(data_, Setting::path);
+// 1. Get raw value from the Value tree
+Value raw = data_.GetAtPath(Setting::path);
 
 // 2. Convert to Setting's value type using ConfigTraits
-auto value = ConfigTraits<value_type>::FromJson(*json_value);
+auto value = ConfigTraits<value_type>::Deserialize(*raw);
 ```
 
-Ensure your custom types' `ConfigTraits` can work with your serializer's `data_type`. For non-JSON serializers, you may need to implement custom conversion logic.
+`ConfigTraits<T>` works with `cppfig::Value` (not any specific serializer
+format), so custom type traits are serializer-agnostic.

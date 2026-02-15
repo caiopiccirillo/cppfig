@@ -1,11 +1,12 @@
 #pragma once
 
 #include <concepts>
-#include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
+
+#include "cppfig/value.h"
 
 namespace cppfig {
 
@@ -18,15 +19,15 @@ namespace cppfig {
 /// @tparam T The configuration value type.
 template <typename T>
 struct ConfigTraits {
-    /// @brief Serializes a value to JSON.
+    /// @brief Serializes a value to a Value node.
     /// @param value The value to serialize.
-    /// @return The JSON representation of the value.
-    static auto ToJson(const T& value) -> nlohmann::json = delete;
+    /// @return The Value representation of the value.
+    static auto Serialize(const T& value) -> Value = delete;
 
-    /// @brief Deserializes a value from JSON.
-    /// @param json The JSON to deserialize.
+    /// @brief Deserializes a value from a Value node.
+    /// @param value The Value node to deserialize.
     /// @return The deserialized value, or std::nullopt on failure.
-    static auto FromJson(const nlohmann::json& json) -> std::optional<T> = delete;
+    static auto Deserialize(const Value& value) -> std::optional<T> = delete;
 
     /// @brief Converts a value to a human-readable string.
     /// @param value The value to convert.
@@ -44,23 +45,23 @@ struct ConfigTraits {
 /// A type satisfies Configurable if ConfigTraits<T> provides the required
 /// static member functions for serialization and conversion.
 template <typename T>
-concept Configurable = requires(const T& value, const nlohmann::json& json, std::string_view str) {
-    { ConfigTraits<T>::ToJson(value) } -> std::convertible_to<nlohmann::json>;
-    { ConfigTraits<T>::FromJson(json) } -> std::same_as<std::optional<T>>;
+concept Configurable = requires(const T& value, const Value& val, std::string_view str) {
+    { ConfigTraits<T>::Serialize(value) } -> std::convertible_to<Value>;
+    { ConfigTraits<T>::Deserialize(val) } -> std::same_as<std::optional<T>>;
     { ConfigTraits<T>::ToString(value) } -> std::convertible_to<std::string>;
     { ConfigTraits<T>::FromString(str) } -> std::same_as<std::optional<T>>;
 };
 
 template <>
 struct ConfigTraits<bool> {
-    static auto ToJson(bool value) -> nlohmann::json { return value; }
+    static auto Serialize(bool value) -> Value { return value; }
 
-    static auto FromJson(const nlohmann::json& json) -> std::optional<bool>
+    static auto Deserialize(const Value& value) -> std::optional<bool>
     {
-        if (!json.is_boolean()) {
+        if (!value.IsBoolean()) {
             return std::nullopt;
         }
-        return json.get<bool>();
+        return value.Get<bool>();
     }
 
     static auto ToString(bool value) -> std::string { return value ? "true" : "false"; }
@@ -79,14 +80,14 @@ struct ConfigTraits<bool> {
 
 template <>
 struct ConfigTraits<int> {
-    static auto ToJson(int value) -> nlohmann::json { return value; }
+    static auto Serialize(int value) -> Value { return value; }
 
-    static auto FromJson(const nlohmann::json& json) -> std::optional<int>
+    static auto Deserialize(const Value& value) -> std::optional<int>
     {
-        if (!json.is_number_integer()) {
+        if (!value.IsInteger()) {
             return std::nullopt;
         }
-        return json.get<int>();
+        return value.Get<int>();
     }
 
     static auto ToString(int value) -> std::string { return std::to_string(value); }
@@ -109,14 +110,14 @@ struct ConfigTraits<int> {
 
 template <>
 struct ConfigTraits<std::int64_t> {
-    static auto ToJson(std::int64_t value) -> nlohmann::json { return value; }
+    static auto Serialize(std::int64_t value) -> Value { return value; }
 
-    static auto FromJson(const nlohmann::json& json) -> std::optional<std::int64_t>
+    static auto Deserialize(const Value& value) -> std::optional<std::int64_t>
     {
-        if (!json.is_number_integer()) {
+        if (!value.IsInteger()) {
             return std::nullopt;
         }
-        return json.get<std::int64_t>();
+        return value.Get<std::int64_t>();
     }
 
     static auto ToString(std::int64_t value) -> std::string { return std::to_string(value); }
@@ -139,14 +140,14 @@ struct ConfigTraits<std::int64_t> {
 
 template <>
 struct ConfigTraits<double> {
-    static auto ToJson(double value) -> nlohmann::json { return value; }
+    static auto Serialize(double value) -> Value { return value; }
 
-    static auto FromJson(const nlohmann::json& json) -> std::optional<double>
+    static auto Deserialize(const Value& value) -> std::optional<double>
     {
-        if (!json.is_number()) {
+        if (!value.IsNumber()) {
             return std::nullopt;
         }
-        return json.get<double>();
+        return value.Get<double>();
     }
 
     static auto ToString(double value) -> std::string { return std::to_string(value); }
@@ -169,14 +170,14 @@ struct ConfigTraits<double> {
 
 template <>
 struct ConfigTraits<float> {
-    static auto ToJson(float value) -> nlohmann::json { return value; }
+    static auto Serialize(float value) -> Value { return value; }
 
-    static auto FromJson(const nlohmann::json& json) -> std::optional<float>
+    static auto Deserialize(const Value& value) -> std::optional<float>
     {
-        if (!json.is_number()) {
+        if (!value.IsNumber()) {
             return std::nullopt;
         }
-        return json.get<float>();
+        return value.Get<float>();
     }
 
     static auto ToString(float value) -> std::string { return std::to_string(value); }
@@ -199,69 +200,19 @@ struct ConfigTraits<float> {
 
 template <>
 struct ConfigTraits<std::string> {
-    static auto ToJson(const std::string& value) -> nlohmann::json { return value; }
+    static auto Serialize(const std::string& value) -> Value { return value; }
 
-    static auto FromJson(const nlohmann::json& json) -> std::optional<std::string>
+    static auto Deserialize(const Value& value) -> std::optional<std::string>
     {
-        if (!json.is_string()) {
+        if (!value.IsString()) {
             return std::nullopt;
         }
-        return json.get<std::string>();
+        return value.Get<std::string>();
     }
 
     static auto ToString(const std::string& value) -> std::string { return value; }
 
     static auto FromString(std::string_view str) -> std::optional<std::string> { return std::string(str); }
-};
-
-/// @brief Concept for types that have nlohmann::json ADL serialization.
-template <typename T>
-concept HasJsonAdl = requires(const T& value, nlohmann::json& json) {
-    { to_json(json, value) };
-    { from_json(json, std::declval<T&>()) };
-};
-
-/// @brief Helper to create ConfigTraits for types with nlohmann::json ADL.
-///
-/// Users can inherit from this to get automatic trait implementation:
-/// @code
-/// template<>
-/// struct ConfigTraits<MyType> : ConfigTraitsFromJsonAdl<MyType> {};
-/// @endcode
-template <typename T>
-    requires HasJsonAdl<T>
-struct ConfigTraitsFromJsonAdl {
-    static auto ToJson(const T& value) -> nlohmann::json
-    {
-        nlohmann::json json;
-        to_json(json, value);
-        return json;
-    }
-
-    static auto FromJson(const nlohmann::json& json) -> std::optional<T>
-    {
-        try {
-            T value;
-            from_json(json, value);
-            return value;
-        }
-        catch (...) {
-            return std::nullopt;
-        }
-    }
-
-    static auto ToString(const T& value) -> std::string { return ToJson(value).dump(); }
-
-    static auto FromString(std::string_view str) -> std::optional<T>
-    {
-        try {
-            auto json = nlohmann::json::parse(str);
-            return FromJson(json);
-        }
-        catch (...) {
-            return std::nullopt;
-        }
-    }
 };
 
 }  // namespace cppfig

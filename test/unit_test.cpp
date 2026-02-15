@@ -1,4 +1,5 @@
 #include <cppfig/cppfig.h>
+#include <cppfig/json.h>
 #include <cppfig/testing/mock.h>
 #include <gtest/gtest.h>
 
@@ -6,15 +7,15 @@ namespace cppfig::test {
 
 TEST(ConfigTraitsTest, BoolToJson)
 {
-    EXPECT_EQ(ConfigTraits<bool>::ToJson(true), true);
-    EXPECT_EQ(ConfigTraits<bool>::ToJson(false), false);
+    EXPECT_EQ(ConfigTraits<bool>::Serialize(true), true);
+    EXPECT_EQ(ConfigTraits<bool>::Serialize(false), false);
 }
 
 TEST(ConfigTraitsTest, BoolFromJson)
 {
-    EXPECT_EQ(ConfigTraits<bool>::FromJson(nlohmann::json(true)), true);
-    EXPECT_EQ(ConfigTraits<bool>::FromJson(nlohmann::json(false)), false);
-    EXPECT_EQ(ConfigTraits<bool>::FromJson(nlohmann::json("invalid")), std::nullopt);
+    EXPECT_EQ(ConfigTraits<bool>::Deserialize(Value(true)), true);
+    EXPECT_EQ(ConfigTraits<bool>::Deserialize(Value(false)), false);
+    EXPECT_EQ(ConfigTraits<bool>::Deserialize(Value("invalid")), std::nullopt);
 }
 
 TEST(ConfigTraitsTest, BoolFromString)
@@ -30,14 +31,14 @@ TEST(ConfigTraitsTest, BoolFromString)
 
 TEST(ConfigTraitsTest, IntToJson)
 {
-    EXPECT_EQ(ConfigTraits<int>::ToJson(42), 42);
-    EXPECT_EQ(ConfigTraits<int>::ToJson(-1), -1);
+    EXPECT_EQ(ConfigTraits<int>::Serialize(42), 42);
+    EXPECT_EQ(ConfigTraits<int>::Serialize(-1), -1);
 }
 
 TEST(ConfigTraitsTest, IntFromJson)
 {
-    EXPECT_EQ(ConfigTraits<int>::FromJson(nlohmann::json(42)), 42);
-    EXPECT_EQ(ConfigTraits<int>::FromJson(nlohmann::json("invalid")), std::nullopt);
+    EXPECT_EQ(ConfigTraits<int>::Deserialize(Value(42)), 42);
+    EXPECT_EQ(ConfigTraits<int>::Deserialize(Value("invalid")), std::nullopt);
 }
 
 TEST(ConfigTraitsTest, IntFromString)
@@ -50,28 +51,28 @@ TEST(ConfigTraitsTest, IntFromString)
 
 TEST(ConfigTraitsTest, DoubleToJson)
 {
-    EXPECT_DOUBLE_EQ(ConfigTraits<double>::ToJson(3.14).get<double>(), 3.14);
+    EXPECT_DOUBLE_EQ(ConfigTraits<double>::Serialize(3.14).Get<double>(), 3.14);
 }
 
 TEST(ConfigTraitsTest, DoubleFromJson)
 {
-    auto result = ConfigTraits<double>::FromJson(nlohmann::json(3.14));
+    auto result = ConfigTraits<double>::Deserialize(Value(3.14));
     ASSERT_TRUE(result.has_value());
     EXPECT_DOUBLE_EQ(*result, 3.14);
 
     // Test invalid type returns nullopt
-    EXPECT_EQ(ConfigTraits<double>::FromJson(nlohmann::json("invalid")), std::nullopt);
+    EXPECT_EQ(ConfigTraits<double>::Deserialize(Value("invalid")), std::nullopt);
 }
 
 TEST(ConfigTraitsTest, StringToJson)
 {
-    EXPECT_EQ(ConfigTraits<std::string>::ToJson("hello"), "hello");
+    EXPECT_EQ(ConfigTraits<std::string>::Serialize("hello"), "hello");
 }
 
 TEST(ConfigTraitsTest, StringFromJson)
 {
-    EXPECT_EQ(ConfigTraits<std::string>::FromJson(nlohmann::json("hello")), "hello");
-    EXPECT_EQ(ConfigTraits<std::string>::FromJson(nlohmann::json(42)), std::nullopt);
+    EXPECT_EQ(ConfigTraits<std::string>::Deserialize(Value("hello")), "hello");
+    EXPECT_EQ(ConfigTraits<std::string>::Deserialize(Value(42)), std::nullopt);
 }
 
 // Additional traits tests for coverage
@@ -91,15 +92,15 @@ TEST(ConfigTraitsTest, DoubleToString)
 
 TEST(ConfigTraitsTest, FloatToJson)
 {
-    EXPECT_FLOAT_EQ(ConfigTraits<float>::ToJson(3.14f).get<float>(), 3.14f);
+    EXPECT_FLOAT_EQ(ConfigTraits<float>::Serialize(3.14f).Get<float>(), 3.14f);
 }
 
 TEST(ConfigTraitsTest, FloatFromJson)
 {
-    auto result = ConfigTraits<float>::FromJson(nlohmann::json(3.14f));
+    auto result = ConfigTraits<float>::Deserialize(Value(3.14f));
     ASSERT_TRUE(result.has_value());
     EXPECT_FLOAT_EQ(*result, 3.14f);
-    EXPECT_EQ(ConfigTraits<float>::FromJson(nlohmann::json("invalid")), std::nullopt);
+    EXPECT_EQ(ConfigTraits<float>::Deserialize(Value("invalid")), std::nullopt);
 }
 
 TEST(ConfigTraitsTest, FloatFromString)
@@ -352,10 +353,19 @@ TEST(JsonSerializerTest, ParseAndStringify)
 
 TEST(JsonSerializerTest, Merge)
 {
-    nlohmann::json base = { { "a", 1 }, { "b", { { "c", 2 } } } };
-    nlohmann::json overlay = { { "b", { { "d", 3 } } }, { "e", 4 } };
+    auto base = Value::Object();
+    base["a"] = 1;
+    auto b_obj = Value::Object();
+    b_obj["c"] = 2;
+    base["b"] = b_obj;
 
-    auto merged = JsonSerializer::Merge(base, overlay);
+    auto overlay = Value::Object();
+    auto b_overlay = Value::Object();
+    b_overlay["d"] = 3;
+    overlay["b"] = b_overlay;
+    overlay["e"] = 4;
+
+    auto merged = Value::Merge(base, overlay);
 
     EXPECT_EQ(merged["a"], 1);
     EXPECT_EQ(merged["b"]["c"], 2);
@@ -365,31 +375,39 @@ TEST(JsonSerializerTest, Merge)
 
 TEST(JsonSerializerTest, GetAtPath)
 {
-    nlohmann::json data = { { "a", { { "b", { { "c", 42 } } } } } };
+    auto data = Value::Object();
+    auto a_obj = Value::Object();
+    auto b_obj = Value::Object();
+    b_obj["c"] = 42;
+    a_obj["b"] = b_obj;
+    data["a"] = a_obj;
 
-    auto result = JsonSerializer::GetAtPath(data, "a.b.c");
+    auto result = data.GetAtPath("a.b.c");
     ASSERT_TRUE(result.ok());
     EXPECT_EQ(*result, 42);
 
-    auto not_found = JsonSerializer::GetAtPath(data, "a.b.d");
+    auto not_found = data.GetAtPath("a.b.d");
     EXPECT_FALSE(not_found.ok());
 }
 
 TEST(JsonSerializerTest, SetAtPath)
 {
-    nlohmann::json data = nlohmann::json::object();
+    auto data = Value::Object();
 
-    JsonSerializer::SetAtPath(data, "a.b.c", 42);
+    data.SetAtPath("a.b.c", 42);
 
     EXPECT_EQ(data["a"]["b"]["c"], 42);
 }
 
 TEST(JsonSerializerTest, HasPath)
 {
-    nlohmann::json data = { { "a", { { "b", 1 } } } };
+    auto data = Value::Object();
+    auto a_obj = Value::Object();
+    a_obj["b"] = 1;
+    data["a"] = a_obj;
 
-    EXPECT_TRUE(JsonSerializer::HasPath(data, "a.b"));
-    EXPECT_FALSE(JsonSerializer::HasPath(data, "a.c"));
+    EXPECT_TRUE(data.HasPath("a.b"));
+    EXPECT_FALSE(data.HasPath("a.c"));
 }
 
 TEST(JsonSerializerTest, ParseStringSuccess)
@@ -417,46 +435,54 @@ TEST(JsonSerializerTest, ParseStreamError)
 TEST(JsonSerializerTest, MergeNonObject)
 {
     // When base is not an object, overlay replaces it entirely
-    nlohmann::json base = 42;
-    nlohmann::json overlay = { { "key", "value" } };
+    Value base = 42;
+    auto overlay = Value::Object();
+    overlay["key"] = Value("value");
 
-    auto merged = JsonSerializer::Merge(base, overlay);
+    auto merged = Value::Merge(base, overlay);
     EXPECT_EQ(merged["key"], "value");
 }
 
 TEST(JsonSerializerTest, MergeNonObjectOverlay)
 {
     // When overlay is not an object, it replaces base
-    nlohmann::json base = { { "key", "value" } };
-    nlohmann::json overlay = 42;
+    auto base = Value::Object();
+    base["key"] = Value("value");
+    Value overlay = 42;
 
-    auto merged = JsonSerializer::Merge(base, overlay);
+    auto merged = Value::Merge(base, overlay);
     EXPECT_EQ(merged, 42);
 }
 
 TEST(JsonSerializerTest, GetAtPathNotAnObject)
 {
-    nlohmann::json data = { { "a", 42 } };
-    auto result = JsonSerializer::GetAtPath(data, "a.b");
+    auto data = Value::Object();
+    data["a"] = 42;
+    auto result = data.GetAtPath("a.b");
     EXPECT_FALSE(result.ok());
     EXPECT_TRUE(absl::IsNotFound(result.status()));
 }
 
 TEST(ConfigDiffTest, NoDifferences)
 {
-    nlohmann::json a = { { "key", "value" } };
-    nlohmann::json b = { { "key", "value" } };
+    auto a = Value::Object();
+    a["key"] = Value("value");
+    auto b = Value::Object();
+    b["key"] = Value("value");
 
-    auto diff = DiffJson(a, b);
+    auto diff = DiffValues(a, b);
     EXPECT_FALSE(diff.HasDifferences());
 }
 
 TEST(ConfigDiffTest, AddedEntry)
 {
-    nlohmann::json base = { { "a", 1 } };
-    nlohmann::json target = { { "a", 1 }, { "b", 2 } };
+    auto base = Value::Object();
+    base["a"] = 1;
+    auto target = Value::Object();
+    target["a"] = 1;
+    target["b"] = 2;
 
-    auto diff = DiffJson(base, target);
+    auto diff = DiffValues(base, target);
     EXPECT_TRUE(diff.HasDifferences());
     EXPECT_EQ(diff.Added().size(), 1);
     EXPECT_EQ(diff.Added()[0].path, "b");
@@ -464,10 +490,13 @@ TEST(ConfigDiffTest, AddedEntry)
 
 TEST(ConfigDiffTest, RemovedEntry)
 {
-    nlohmann::json base = { { "a", 1 }, { "b", 2 } };
-    nlohmann::json target = { { "a", 1 } };
+    auto base = Value::Object();
+    base["a"] = 1;
+    base["b"] = 2;
+    auto target = Value::Object();
+    target["a"] = 1;
 
-    auto diff = DiffJson(base, target);
+    auto diff = DiffValues(base, target);
     EXPECT_TRUE(diff.HasDifferences());
     EXPECT_EQ(diff.Removed().size(), 1);
     EXPECT_EQ(diff.Removed()[0].path, "b");
@@ -475,10 +504,12 @@ TEST(ConfigDiffTest, RemovedEntry)
 
 TEST(ConfigDiffTest, ModifiedEntry)
 {
-    nlohmann::json base = { { "a", 1 } };
-    nlohmann::json target = { { "a", 2 } };
+    auto base = Value::Object();
+    base["a"] = 1;
+    auto target = Value::Object();
+    target["a"] = 2;
 
-    auto diff = DiffJson(base, target);
+    auto diff = DiffValues(base, target);
     EXPECT_TRUE(diff.HasDifferences());
     EXPECT_EQ(diff.Modified().size(), 1);
     EXPECT_EQ(diff.Modified()[0].path, "a");
@@ -498,10 +529,13 @@ TEST(ConfigDiffTest, DiffEntryTypeString)
 
 TEST(ConfigDiffTest, DiffSize)
 {
-    nlohmann::json base = { { "a", 1 } };
-    nlohmann::json target = { { "a", 2 }, { "b", 3 } };
+    auto base = Value::Object();
+    base["a"] = 1;
+    auto target = Value::Object();
+    target["a"] = 2;
+    target["b"] = 3;
 
-    auto diff = DiffJson(base, target);
+    auto diff = DiffValues(base, target);
     EXPECT_EQ(diff.Size(), 2);  // modified + added
 }
 
@@ -561,8 +595,11 @@ TEST(ConfigDiffTest, FilterByType)
 
 TEST(ConfigDiffTest, DiffDefaultsFromFile)
 {
-    nlohmann::json defaults = { { "a", 1 }, { "b", 2 } };
-    nlohmann::json file_values = { { "a", 1 } };
+    auto defaults = Value::Object();
+    defaults["a"] = 1;
+    defaults["b"] = 2;
+    auto file_values = Value::Object();
+    file_values["a"] = 1;
 
     auto diff = DiffDefaultsFromFile(defaults, file_values);
     // "b" is in defaults but not in file - shows as Added from perspective of file->defaults
@@ -571,8 +608,11 @@ TEST(ConfigDiffTest, DiffDefaultsFromFile)
 
 TEST(ConfigDiffTest, DiffFileFromDefaults)
 {
-    nlohmann::json defaults = { { "a", 1 } };
-    nlohmann::json file_values = { { "a", 1 }, { "b", 2 } };
+    auto defaults = Value::Object();
+    defaults["a"] = 1;
+    auto file_values = Value::Object();
+    file_values["a"] = 1;
+    file_values["b"] = 2;
 
     auto diff = DiffFileFromDefaults(defaults, file_values);
     // "b" is in file but not in defaults
@@ -688,7 +728,7 @@ TEST(MockConfigurationTest, GetReturnsDefaultWhenParseFailsWithInvalidType)
     testing::MockConfiguration<MockSchema> config;
 
     // Inject a string where an int is expected - FromJson will fail
-    config.SetRawJson(std::string(MockAppPort::path), "not_an_integer");
+    config.SetRawValue(std::string(MockAppPort::path), Value("not_an_integer"));
 
     // Get should return the default value since parsing fails
     EXPECT_EQ(config.Get<MockAppPort>(), 8080);
@@ -911,13 +951,13 @@ TEST(ConfigTraitsTest, IntToString)
 
 TEST(ConfigTraitsTest, Int64ToJson)
 {
-    EXPECT_EQ(ConfigTraits<std::int64_t>::ToJson(42LL), 42);
+    EXPECT_EQ(ConfigTraits<std::int64_t>::Serialize(42LL), 42);
 }
 
 TEST(ConfigTraitsTest, Int64FromJson)
 {
-    EXPECT_EQ(ConfigTraits<std::int64_t>::FromJson(nlohmann::json(42)), 42LL);
-    EXPECT_EQ(ConfigTraits<std::int64_t>::FromJson(nlohmann::json("invalid")), std::nullopt);
+    EXPECT_EQ(ConfigTraits<std::int64_t>::Deserialize(Value(42)), 42LL);
+    EXPECT_EQ(ConfigTraits<std::int64_t>::Deserialize(Value("invalid")), std::nullopt);
 }
 
 TEST(ConfigTraitsTest, Int64ToString)
@@ -934,23 +974,36 @@ TEST(ConfigTraitsTest, Int64FromString)
 
 TEST(JsonSerializerTest, SetAtPathOverwritesNonObject)
 {
-    nlohmann::json data = { { "a", 42 } };  // "a" is an int, not an object
-    JsonSerializer::SetAtPath(data, "a.b.c", 100);
+    auto data = Value::Object();
+    data["a"] = 42;  // "a" is an int, not an object
+    data.SetAtPath("a.b.c", 100);
     EXPECT_EQ(data["a"]["b"]["c"], 100);
 }
 
 TEST(JsonSerializerTest, SetAtPathSingleSegment)
 {
-    nlohmann::json data = nlohmann::json::object();
-    JsonSerializer::SetAtPath(data, "key", "value");
+    auto data = Value::Object();
+    data.SetAtPath("key", Value("value"));
     EXPECT_EQ(data["key"], "value");
 }
 
 TEST(JsonSerializerTest, MergeDeepRecursive)
 {
-    nlohmann::json base = { { "a", { { "b", { { "c", 1 } } } } } };
-    nlohmann::json overlay = { { "a", { { "b", { { "d", 2 } } } } } };
-    auto merged = JsonSerializer::Merge(base, overlay);
+    auto base = Value::Object();
+    auto a_base = Value::Object();
+    auto b_base = Value::Object();
+    b_base["c"] = 1;
+    a_base["b"] = b_base;
+    base["a"] = a_base;
+
+    auto overlay = Value::Object();
+    auto a_overlay = Value::Object();
+    auto b_overlay = Value::Object();
+    b_overlay["d"] = 2;
+    a_overlay["b"] = b_overlay;
+    overlay["a"] = a_overlay;
+
+    auto merged = Value::Merge(base, overlay);
     EXPECT_EQ(merged["a"]["b"]["c"], 1);
     EXPECT_EQ(merged["a"]["b"]["d"], 2);
 }
@@ -973,10 +1026,21 @@ TEST(ValidationResultTest, ErrorResult)
 
 TEST(ConfigDiffTest, DiffNestedObjects)
 {
-    nlohmann::json base = { { "a", { { "b", { { "c", 1 } } } } } };
-    nlohmann::json target = { { "a", { { "b", { { "c", 2 } } } } } };
+    auto base = Value::Object();
+    auto a_base = Value::Object();
+    auto b_base = Value::Object();
+    b_base["c"] = 1;
+    a_base["b"] = b_base;
+    base["a"] = a_base;
 
-    auto diff = DiffJson(base, target);
+    auto target = Value::Object();
+    auto a_target = Value::Object();
+    auto b_target = Value::Object();
+    b_target["c"] = 2;
+    a_target["b"] = b_target;
+    target["a"] = a_target;
+
+    auto diff = DiffValues(base, target);
     EXPECT_TRUE(diff.HasDifferences());
     EXPECT_EQ(diff.Modified().size(), 1);
     EXPECT_EQ(diff.Modified()[0].path, "a.b.c");
@@ -984,20 +1048,22 @@ TEST(ConfigDiffTest, DiffNestedObjects)
 
 TEST(ConfigDiffTest, DiffAddedToNonObject)
 {
-    nlohmann::json base = 42;
-    nlohmann::json target = { { "a", 1 } };
+    Value base = 42;
+    auto target = Value::Object();
+    target["a"] = 1;
 
-    auto diff = DiffJson(base, target);
+    auto diff = DiffValues(base, target);
     EXPECT_TRUE(diff.HasDifferences());
     EXPECT_EQ(diff.Added().size(), 1);
 }
 
 TEST(ConfigDiffTest, DiffRemovedFromNonObject)
 {
-    nlohmann::json base = { { "a", 1 } };
-    nlohmann::json target = 42;
+    auto base = Value::Object();
+    base["a"] = 1;
+    Value target = 42;
 
-    auto diff = DiffJson(base, target);
+    auto diff = DiffValues(base, target);
     EXPECT_TRUE(diff.HasDifferences());
     EXPECT_EQ(diff.Removed().size(), 1);
 }
@@ -1012,7 +1078,7 @@ TEST(MockConfigurationTest, LoadAndSaveAreNoOps)
 TEST(MockConfigurationTest, SetRawJsonAndGet)
 {
     testing::MockConfiguration<MockSchema> config;
-    config.SetRawJson(std::string(MockAppName::path), nlohmann::json("CustomName"));
+    config.SetRawValue(std::string(MockAppName::path), Value("CustomName"));
     EXPECT_EQ(config.Get<MockAppName>(), "CustomName");
 }
 
@@ -1029,7 +1095,7 @@ TEST(ConfigurationTestFixtureTest, CreateTempFilePathDefault)
     auto path = testing::ConfigurationTestFixture::CreateTempFilePath();
     EXPECT_NE(path.find("/tmp/"), std::string::npos);
     EXPECT_NE(path.find("test_config"), std::string::npos);
-    EXPECT_NE(path.find(".json"), std::string::npos);
+    EXPECT_NE(path.find(".conf"), std::string::npos);
 }
 
 TEST(ConfigurationTestFixtureTest, CreateTempFilePathWithPrefix)

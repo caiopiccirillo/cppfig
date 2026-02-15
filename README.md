@@ -11,12 +11,12 @@ A modern, header-only C++20 configuration library with **compile-time type safet
 - **Compile-time type safety** - All type errors caught at compile time
 - **Zero macros** - Pure C++20 templates and concepts
 - **IDE-friendly** - Full autocompletion: `config.Get<settings::ServerPort>()`
-- **Hierarchical configuration** - Dot-notation paths create nested JSON
+- **Hierarchical configuration** - Dot-notation paths create nested structures
 - **Environment variable overrides** - Production-friendly configuration
 - **Validation** - Built-in validators with custom extensions
 - **Schema migration** - Automatically adds new settings to existing files
 - **Mockable** - GMock-compatible interfaces for unit testing
-- **Pluggable serialization** - JSON default, extensible to YAML/TOML
+- **Pluggable serialization** - Flat `.conf` default, JSON opt-in, extensible to YAML/TOML
 - **Thread-safe** - Opt-in `MultiThreadedPolicy` with reader-writer locking (zero overhead by default)
 
 ## Quick Start
@@ -67,8 +67,8 @@ using MySchema = cppfig::ConfigSchema<
 >;
 
 int main() {
-    // Create configuration manager
-    cppfig::Configuration<MySchema> config("config.json");
+    // Create configuration manager (.conf format by default)
+    cppfig::Configuration<MySchema> config("config.conf");
 
     // Load (creates file with defaults if missing)
     auto status = config.Load();
@@ -94,18 +94,27 @@ int main() {
 }
 ```
 
-### Generated JSON
+### Generated .conf
 
-```json
-{
-    "server": {
-        "port": 8080,
-        "host": "localhost"
-    },
-    "logging": {
-        "level": "info"
-    }
-}
+```conf
+server.port = 8080
+server.host = localhost
+logging.level = info
+```
+
+<details>
+<summary>Using JSON instead?</summary>
+
+```cpp
+#include <cppfig/cppfig.h>
+#include <cppfig/json.h>  // opt-in
+
+cppfig::Configuration<MySchema, cppfig::JsonSerializer> config("config.json");
+```
+
+Enable with `-DCPPFIG_ENABLE_JSON=ON` or vcpkg feature `"json"`.
+See [Serializers](docs/serializers.md) for details.
+</details>
 ```
 
 ## Installation
@@ -113,8 +122,13 @@ int main() {
 ### Requirements
 
 - C++20 compiler (GCC 11+, Clang 14+)
-- [nlohmann/json](https://github.com/nlohmann/json)
 - [Abseil](https://github.com/abseil/abseil-cpp) (for `absl::Status`)
+
+### Optional Dependencies
+
+| Dependency | Feature | CMake Option |
+|------------|---------|-------------|
+| [nlohmann/json](https://github.com/nlohmann/json) | JSON serializer | `CPPFIG_ENABLE_JSON` |
 
 ### Header-Only Integration
 
@@ -127,13 +141,30 @@ cp -r cppfig/src/cppfig your_project/include/
 ```cmake
 add_subdirectory(cppfig)
 target_link_libraries(your_target PRIVATE cppfig)
+
+# Optional: enable JSON support
+set(CPPFIG_ENABLE_JSON ON)
 ```
 
 ### vcpkg
 
+Core (`.conf` only, no extra dependencies):
+
 ```bash
-# Dependencies
-vcpkg install nlohmann-json abseil
+vcpkg install abseil
+```
+
+With JSON support:
+
+```json
+{
+    "dependencies": [
+        {
+            "name": "cppfig",
+            "features": ["json"]
+        }
+    ]
+}
 ```
 
 ## Documentation
@@ -156,8 +187,8 @@ By default, `Configuration` uses `SingleThreadedPolicy` (zero overhead). For con
 
 ```cpp
 // Thread-safe configuration:
-cppfig::Configuration<MySchema, cppfig::JsonSerializer, cppfig::MultiThreadedPolicy>
-    config("config.json");
+cppfig::Configuration<MySchema, cppfig::ConfSerializer, cppfig::MultiThreadedPolicy>
+    config("config.conf");
 ```
 
 | Policy | Overhead | Use case |
@@ -221,19 +252,32 @@ cppfig::Min(1).And(cppfig::Max(100))
 ```cpp
 struct Point {
     int x, y;
-
-    friend void to_json(nlohmann::json& j, const Point& p) {
-        j = {{"x", p.x}, {"y", p.y}};
-    }
-    friend void from_json(const nlohmann::json& j, Point& p) {
-        j.at("x").get_to(p.x);
-        j.at("y").get_to(p.y);
-    }
 };
 
-// Register with cppfig
+// Register with cppfig — works with any serializer
 template <>
-struct cppfig::ConfigTraits<Point> : cppfig::ConfigTraitsFromJsonAdl<Point> {};
+struct cppfig::ConfigTraits<Point> {
+    static auto Serialize(const Point& p) -> cppfig::Value {
+        auto obj = cppfig::Value::Object();
+        obj["x"] = cppfig::Value(p.x);
+        obj["y"] = cppfig::Value(p.y);
+        return obj;
+    }
+    static auto Deserialize(const cppfig::Value& v) -> std::optional<Point> {
+        try {
+            return Point{static_cast<int>(v["x"].Get<int64_t>()),
+                         static_cast<int>(v["y"].Get<int64_t>())};
+        } catch (...) {
+            return std::nullopt;
+        }
+    }
+    static auto ToString(const Point& p) -> std::string {
+        return "(" + std::to_string(p.x) + "," + std::to_string(p.y) + ")";
+    }
+    static auto FromString(std::string_view) -> std::optional<Point> {
+        return std::nullopt;
+    }
+};
 
 // Use in settings
 struct Origin {
@@ -241,6 +285,15 @@ struct Origin {
     using value_type = Point;
     static auto default_value() -> Point { return {0, 0}; }
 };
+```
+
+If you have the JSON feature enabled and your type already has nlohmann ADL functions, you can use the shortcut:
+
+```cpp
+#include <cppfig/json.h>
+
+template <>
+struct cppfig::ConfigTraits<Point> : cppfig::ConfigTraitsFromJsonAdl<Point> {};
 ```
 
 ### Testing
@@ -265,7 +318,7 @@ TEST(MyTest, UsesConfiguration) {
 
 ```cpp
 cppfig::Configuration<Schema,
-                       Serializer = JsonSerializer,
+                       Serializer = ConfSerializer,
                        ThreadPolicy = SingleThreadedPolicy>
 
 // Methods
@@ -280,6 +333,10 @@ auto GetFilePath() const -> std::string_view;
 // Thread policies
 cppfig::SingleThreadedPolicy   // Zero-overhead (default)
 cppfig::MultiThreadedPolicy    // std::shared_mutex reader-writer locking
+
+// Serializers
+cppfig::ConfSerializer         // Built-in flat .conf (default)
+cppfig::JsonSerializer         // Requires CPPFIG_ENABLE_JSON
 ```
 
 ### ConfigSchema
@@ -349,9 +406,12 @@ cppfig/
 │   ├── configuration.h   # Configuration class
 │   ├── schema.h          # ConfigSchema template
 │   ├── setting.h         # Setting concepts
-│   ├── traits.h          # Type traits
+│   ├── traits.h          # Type traits (Serialize/Deserialize)
+│   ├── value.h           # Core Value type
 │   ├── validator.h       # Validators
-│   ├── serializer.h      # Serialization
+│   ├── serializer.h      # Serializer concept
+│   ├── conf.h            # Built-in .conf serializer
+│   ├── json.h            # Optional JSON serializer
 │   ├── interface.h       # Mockable interfaces
 │   ├── diff.h            # Configuration diff
 │   ├── logging.h         # Logging utilities

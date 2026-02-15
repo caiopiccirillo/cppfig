@@ -21,11 +21,39 @@ add_subdirectory(cppfig)
 target_link_libraries(your_target PRIVATE cppfig)
 ```
 
+### vcpkg
+
+```json
+{
+    "dependencies": [
+        "cppfig"
+    ]
+}
+```
+
+To also enable the optional JSON serializer:
+
+```json
+{
+    "dependencies": [
+        {
+            "name": "cppfig",
+            "features": ["json"]
+        }
+    ]
+}
+```
+
 ### Requirements
 
 - C++20 compatible compiler (GCC 11+, Clang 14+)
-- [nlohmann/json](https://github.com/nlohmann/json) library
 - [Abseil](https://github.com/abseil/abseil-cpp) (for `absl::Status` and `absl::StatusOr`)
+
+#### Optional Dependencies
+
+| Dependency | Required For | CMake Option |
+|------------|-------------|--------------|
+| [nlohmann/json](https://github.com/nlohmann/json) | JSON serializer | `CPPFIG_ENABLE_JSON` |
 
 ## Quick Start
 
@@ -73,7 +101,8 @@ using MySchema = cppfig::ConfigSchema<
 ```cpp
 int main() {
     // Create configuration manager with file path
-    cppfig::Configuration<MySchema> config("config.json");
+    // Default serializer is ConfSerializer — no extra dependencies needed
+    cppfig::Configuration<MySchema> config("config.conf");
 
     // Load configuration (creates file with defaults if missing)
     auto status = config.Load();
@@ -95,6 +124,27 @@ int main() {
 }
 ```
 
+### Generated config.conf
+
+```conf
+server.port = 8080
+server.host = localhost
+logging.level = info
+```
+
+### Using JSON Instead
+
+If you prefer JSON files, enable the JSON feature and include the optional header:
+
+```cpp
+#include <cppfig/cppfig.h>
+#include <cppfig/json.h>  // opt-in
+
+cppfig::Configuration<MySchema, cppfig::JsonSerializer> config("config.json");
+```
+
+See [Serializers](serializers.md) for details on enabling JSON and other formats.
+
 ## Thread Safety
 
 By default, `Configuration` uses `SingleThreadedPolicy`, which has zero synchronization overhead. If you need to access the configuration from multiple threads concurrently, use `MultiThreadedPolicy`:
@@ -102,64 +152,25 @@ By default, `Configuration` uses `SingleThreadedPolicy`, which has zero synchron
 ```cpp
 #include <cppfig/cppfig.h>
 
-// Thread-safe configuration with reader-writer locking:
-cppfig::Configuration<MySchema, cppfig::JsonSerializer, cppfig::MultiThreadedPolicy>
-    config("config.json");
+// Thread-safe configuration (.conf format, multi-threaded)
+cppfig::Configuration<MySchema, cppfig::ConfSerializer, cppfig::MultiThreadedPolicy>
+    config("config.conf");
+
+// Thread-safe configuration (JSON format, multi-threaded)
+// #include <cppfig/json.h>
+// cppfig::Configuration<MySchema, cppfig::JsonSerializer, cppfig::MultiThreadedPolicy>
+//     config("config.json");
 ```
-
-With `MultiThreadedPolicy`:
-
-- **Multiple threads may call `Get` concurrently** — reads acquire a shared (reader) lock.
-- **`Set` and `Load` acquire an exclusive (writer) lock** — they mutate internal state and will block until all readers finish.
-- **`Save`, `Diff`, and `ValidateAll` acquire a shared (reader) lock** — they only read internal state.
-- **Validation in `Set` runs before the exclusive lock is acquired**, so invalid values never block readers.
-- **`GetFilePath` requires no lock** — the file path is immutable after construction.
-
-### Choosing a Policy
 
 | Policy | Overhead | Use case |
 |--------|----------|----------|
-| `SingleThreadedPolicy` (default) | None | Single-threaded applications, or when access is externally synchronized |
+| `SingleThreadedPolicy` (default) | None | Single-threaded or externally synchronized |
 | `MultiThreadedPolicy` | `std::shared_mutex` | Concurrent reads and writes from multiple threads |
-
-### Example
-
-```cpp
-#include <cppfig/cppfig.h>
-#include <thread>
-
-using SafeConfig = cppfig::Configuration<
-    MySchema, cppfig::JsonSerializer, cppfig::MultiThreadedPolicy>;
-
-int main() {
-    SafeConfig config("config.json");
-    config.Load();
-
-    // Reader threads — run concurrently
-    std::thread reader1([&] {
-        int port = config.Get<settings::ServerPort>();
-    });
-    std::thread reader2([&] {
-        std::string host = config.Get<settings::ServerHost>();
-    });
-
-    // Writer thread — acquires exclusive access
-    std::thread writer([&] {
-        config.Set<settings::ServerPort>(9000);
-        config.Save();
-    });
-
-    reader1.join();
-    reader2.join();
-    writer.join();
-}
-```
-
-> **Note:** `GetFileValues()` and `GetDefaults()` return references to internal data and are **not** protected after the call returns. In multi-threaded code, prefer `Get<Setting>()` for safe access to individual values.
 
 ## Next Steps
 
-- [Defining Settings](defining-settings.md) - Learn about all setting options
-- [Custom Types](custom-types.md) - Add support for your own types
-- [Validators](validators.md) - Validate configuration values
-- [Testing](testing.md) - Mock configuration in unit tests
+- [Defining Settings](defining-settings.md) — All setting options (validators, env vars)
+- [Custom Types](custom-types.md) — Use your own types in configuration
+- [Serializers](serializers.md) — JSON, custom formats, and the built-in `.conf`
+- [Validators](validators.md) — Built-in and custom validation
+- [Testing](testing.md) — Mock configuration in unit tests

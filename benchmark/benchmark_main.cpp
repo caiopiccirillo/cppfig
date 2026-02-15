@@ -1,5 +1,6 @@
 #include <benchmark/benchmark.h>
 #include <cppfig/cppfig.h>
+#include <cppfig/json.h>
 
 #include <cstdlib>
 #include <filesystem>
@@ -114,7 +115,7 @@ protected:
     {
         std::filesystem::path temp_path = std::filesystem::temp_directory_path() / "cppfig_benchmark";
         temp_path += std::to_string(reinterpret_cast<uintptr_t>(this));
-        temp_path += ".json";
+        temp_path += ".conf";
         return temp_path.string();
     }
 
@@ -457,82 +458,100 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, JsonSerializerParse);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, JsonSerializerStringify)(benchmark::State& state)
 {
-    nlohmann::json json = { { "benchmark",
-                              { { "string", "test" }, { "int", 42 }, { "double", 3.14159 }, { "bool", true }, { "validated", 50 } } } };
+    auto value = Value::Object();
+    auto benchmark_obj = Value::Object();
+    benchmark_obj["string"] = Value("test");
+    benchmark_obj["int"] = Value(42);
+    benchmark_obj["double"] = Value(3.14159);
+    benchmark_obj["bool"] = Value(true);
+    benchmark_obj["validated"] = Value(50);
+    value["benchmark"] = benchmark_obj;
 
     for (auto _ : state) {
-        auto result = JsonSerializer::Stringify(json);
+        auto result = JsonSerializer::Stringify(value);
         benchmark::DoNotOptimize(result);
     }
 }
 BENCHMARK_REGISTER_F(BenchmarkFixture, JsonSerializerStringify);
 
-BENCHMARK_DEFINE_F(BenchmarkFixture, JsonSerializerGetAtPath)(benchmark::State& state)
+BENCHMARK_DEFINE_F(BenchmarkFixture, ValueGetAtPath)(benchmark::State& state)
 {
-    nlohmann::json json = { { "database", { { "connection", { { "host", "localhost" }, { "port", 5432 } } } } } };
+    auto value = Value::Object();
+    auto database = Value::Object();
+    auto connection = Value::Object();
+    connection["host"] = Value("localhost");
+    connection["port"] = Value(5432);
+    database["connection"] = connection;
+    value["database"] = database;
     std::string path = "database.connection.host";
 
     for (auto _ : state) {
-        auto result = JsonSerializer::GetAtPath(json, path);
+        auto result = value.GetAtPath(path);
         benchmark::DoNotOptimize(result);
     }
 }
-BENCHMARK_REGISTER_F(BenchmarkFixture, JsonSerializerGetAtPath);
+BENCHMARK_REGISTER_F(BenchmarkFixture, ValueGetAtPath);
 
-BENCHMARK_DEFINE_F(BenchmarkFixture, JsonSerializerSetAtPath)(benchmark::State& state)
+BENCHMARK_DEFINE_F(BenchmarkFixture, ValueSetAtPath)(benchmark::State& state)
 {
-    nlohmann::json json = { { "database", { { "connection", { { "host", "localhost" }, { "port", 5432 } } } } } };
+    auto value = Value::Object();
+    auto database = Value::Object();
+    auto connection = Value::Object();
+    connection["host"] = Value("localhost");
+    connection["port"] = Value(5432);
+    database["connection"] = connection;
+    value["database"] = database;
     std::string path = "database.connection.host";
 
     for (auto _ : state) {
-        nlohmann::json json_copy = json;
-        JsonSerializer::SetAtPath(json_copy, path, "example.com");
-        benchmark::DoNotOptimize(json_copy);
+        Value value_copy = value;
+        value_copy.SetAtPath(path, Value("example.com"));
+        benchmark::DoNotOptimize(value_copy);
     }
 }
-BENCHMARK_REGISTER_F(BenchmarkFixture, JsonSerializerSetAtPath);
+BENCHMARK_REGISTER_F(BenchmarkFixture, ValueSetAtPath);
 
-BENCHMARK_DEFINE_F(BenchmarkFixture, TraitsToJsonInt)(benchmark::State& state)
+BENCHMARK_DEFINE_F(BenchmarkFixture, TraitsSerializeInt)(benchmark::State& state)
 {
     for (auto _ : state) {
-        auto json = ConfigTraits<int>::ToJson(42);
-        benchmark::DoNotOptimize(json);
+        auto val = ConfigTraits<int>::Serialize(42);
+        benchmark::DoNotOptimize(val);
     }
 }
-BENCHMARK_REGISTER_F(BenchmarkFixture, TraitsToJsonInt);
+BENCHMARK_REGISTER_F(BenchmarkFixture, TraitsSerializeInt);
 
-BENCHMARK_DEFINE_F(BenchmarkFixture, TraitsFromJsonInt)(benchmark::State& state)
+BENCHMARK_DEFINE_F(BenchmarkFixture, TraitsDeserializeInt)(benchmark::State& state)
 {
-    nlohmann::json json = 42;
+    Value val(42);
 
     for (auto _ : state) {
-        auto value = ConfigTraits<int>::FromJson(json);
-        benchmark::DoNotOptimize(value);
+        auto result = ConfigTraits<int>::Deserialize(val);
+        benchmark::DoNotOptimize(result);
     }
 }
-BENCHMARK_REGISTER_F(BenchmarkFixture, TraitsFromJsonInt);
+BENCHMARK_REGISTER_F(BenchmarkFixture, TraitsDeserializeInt);
 
-BENCHMARK_DEFINE_F(BenchmarkFixture, TraitsToJsonString)(benchmark::State& state)
+BENCHMARK_DEFINE_F(BenchmarkFixture, TraitsSerializeString)(benchmark::State& state)
 {
     std::string value = "benchmark_test_string";
 
     for (auto _ : state) {
-        auto json = ConfigTraits<std::string>::ToJson(value);
-        benchmark::DoNotOptimize(json);
+        auto val = ConfigTraits<std::string>::Serialize(value);
+        benchmark::DoNotOptimize(val);
     }
 }
-BENCHMARK_REGISTER_F(BenchmarkFixture, TraitsToJsonString);
+BENCHMARK_REGISTER_F(BenchmarkFixture, TraitsSerializeString);
 
-BENCHMARK_DEFINE_F(BenchmarkFixture, TraitsFromJsonString)(benchmark::State& state)
+BENCHMARK_DEFINE_F(BenchmarkFixture, TraitsDeserializeString)(benchmark::State& state)
 {
-    nlohmann::json json = "benchmark_test_string";
+    Value val("benchmark_test_string");
 
     for (auto _ : state) {
-        auto value = ConfigTraits<std::string>::FromJson(json);
-        benchmark::DoNotOptimize(value);
+        auto result = ConfigTraits<std::string>::Deserialize(val);
+        benchmark::DoNotOptimize(result);
     }
 }
-BENCHMARK_REGISTER_F(BenchmarkFixture, TraitsFromJsonString);
+BENCHMARK_REGISTER_F(BenchmarkFixture, TraitsDeserializeString);
 
 }  // namespace cppfig::bench
 

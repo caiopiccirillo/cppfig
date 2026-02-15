@@ -2,6 +2,7 @@
 
 #include "cppfig/configuration.h"  // IWYU pragma: export
 #include "cppfig/diff.h"           // IWYU pragma: export
+#include "cppfig/conf.h"           // IWYU pragma: export
 #include "cppfig/interface.h"      // IWYU pragma: export
 #include "cppfig/logging.h"        // IWYU pragma: export
 #include "cppfig/schema.h"         // IWYU pragma: export
@@ -10,6 +11,7 @@
 #include "cppfig/thread_policy.h"  // IWYU pragma: export
 #include "cppfig/traits.h"         // IWYU pragma: export
 #include "cppfig/validator.h"      // IWYU pragma: export
+#include "cppfig/value.h"          // IWYU pragma: export
 
 /// @namespace cppfig
 /// @brief C++20 compile-time type-safe configuration library.
@@ -20,7 +22,7 @@
 /// - Environment variable overrides
 /// - Validation with min/max ranges and custom validators
 /// - Schema migration (automatic addition of new settings)
-/// - Pluggable serialization (JSON by default, YAML/TOML possible)
+/// - Pluggable serialization (flat .conf by default, JSON opt-in, YAML/TOML possible)
 ///
 /// @section usage Basic Usage
 ///
@@ -87,8 +89,8 @@
 /// >;
 ///
 /// int main() {
-///     // Create configuration manager
-///     cppfig::Configuration<MySchema> config("config.json");
+///     // Create configuration manager (.conf format by default)
+///     cppfig::Configuration<MySchema> config("config.conf");
 ///
 ///     // Load configuration (creates file with defaults if it doesn't exist)
 ///     auto status = config.Load();
@@ -120,20 +122,37 @@
 /// struct DatabaseConfig {
 ///     std::string host;
 ///     int port;
+/// };
 ///
-///     friend void to_json(nlohmann::json& j, const DatabaseConfig& c) {
-///         j = nlohmann::json{{"host", c.host}, {"port", c.port}};
+/// template<>
+/// struct cppfig::ConfigTraits<DatabaseConfig> {
+///     static auto Serialize(const DatabaseConfig& c) -> cppfig::Value {
+///         auto obj = cppfig::Value::Object();
+///         obj["host"] = cppfig::Value(c.host);
+///         obj["port"] = cppfig::Value(c.port);
+///         return obj;
 ///     }
-///     friend void from_json(const nlohmann::json& j, DatabaseConfig& c) {
-///         j.at("host").get_to(c.host);
-///         j.at("port").get_to(c.port);
+///     static auto Deserialize(const cppfig::Value& v) -> std::optional<DatabaseConfig> {
+///         try {
+///             return DatabaseConfig{
+///                 v["host"].Get<std::string>(),
+///                 static_cast<int>(v["port"].Get<int64_t>())
+///             };
+///         } catch (...) { return std::nullopt; }
+///     }
+///     static auto ToString(const DatabaseConfig& c) -> std::string {
+///         return c.host + ":" + std::to_string(c.port);
+///     }
+///     static auto FromString(std::string_view) -> std::optional<DatabaseConfig> {
+///         return std::nullopt;
 ///     }
 /// };
 ///
-/// // Use the ADL helper
-/// template<>
-/// struct cppfig::ConfigTraits<DatabaseConfig>
-///     : cppfig::ConfigTraitsFromJsonAdl<DatabaseConfig> {};
+/// // If you have CPPFIG_ENABLE_JSON and nlohmann ADL functions instead:
+/// // #include <cppfig/json.h>
+/// // template<>
+/// // struct cppfig::ConfigTraits<DatabaseConfig>
+/// //     : cppfig::ConfigTraitsFromJsonAdl<DatabaseConfig> {};
 ///
 /// // Now define a setting using the custom type
 /// struct Database {

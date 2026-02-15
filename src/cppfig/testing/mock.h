@@ -3,7 +3,6 @@
 #include <absl/status/status.h>
 #include <gmock/gmock.h>
 
-#include <nlohmann/json.hpp>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -11,6 +10,7 @@
 #include "cppfig/interface.h"
 #include "cppfig/setting.h"
 #include "cppfig/traits.h"
+#include "cppfig/value.h"
 
 namespace cppfig::testing {
 
@@ -60,7 +60,7 @@ public:
 
         auto iter = values_.find(key);
         if (iter != values_.end()) {
-            auto parsed = ConfigTraits<value_type>::FromJson(iter->second);
+            auto parsed = ConfigTraits<value_type>::Deserialize(iter->second);
             if (parsed.has_value()) {
                 return *parsed;
             }
@@ -77,7 +77,7 @@ public:
     {
         using value_type = typename S::value_type;
         std::string key(S::path);
-        values_[key] = ConfigTraits<value_type>::ToJson(value);
+        values_[key] = ConfigTraits<value_type>::Serialize(value);
     }
 
     /// @brief Sets the value with validation.
@@ -108,13 +108,13 @@ public:
         BuildDefaults();
     }
 
-    /// @brief Sets a raw JSON value for testing parse failure scenarios.
+    /// @brief Sets a raw Value for testing parse failure scenarios.
     ///
-    /// This method allows tests to inject invalid JSON values that will
-    /// cause FromJson to fail, triggering the default value fallback path.
+    /// This method allows tests to inject invalid values that will
+    /// cause Deserialize to fail, triggering the default value fallback path.
     /// @param path The setting path (e.g., "app.name").
-    /// @param value The raw JSON value to set.
-    void SetRawJson(std::string_view path, nlohmann::json value) { values_[std::string(path)] = std::move(value); }
+    /// @param value The raw Value to set.
+    void SetRawValue(std::string_view path, Value value) { values_[std::string(path)] = std::move(value); }
 
     /// @brief Clears a value by path for testing scenarios where key is not found.
     ///
@@ -129,11 +129,11 @@ private:
         Schema::ForEachSetting([this]<typename S>() {
             using value_type = typename S::value_type;
             std::string key(S::path);
-            values_[key] = ConfigTraits<value_type>::ToJson(S::default_value());
+            values_[key] = ConfigTraits<value_type>::Serialize(S::default_value());
         });
     }
 
-    std::unordered_map<std::string, nlohmann::json> values_;
+    std::unordered_map<std::string, Value> values_;
 };
 
 /// @brief GMock-compatible mock for IConfigurationProviderVirtual.
@@ -166,7 +166,7 @@ public:
     /// @brief Creates a temporary file path for testing.
     [[nodiscard]] static auto CreateTempFilePath(std::string_view prefix = "test_config") -> std::string
     {
-        return std::string("/tmp/") + std::string(prefix) + "_" + std::to_string(std::rand()) + ".json";
+        return std::string("/tmp/") + std::string(prefix) + "_" + std::to_string(std::rand()) + ".conf";
     }
 
     /// @brief Removes a file if it exists.
