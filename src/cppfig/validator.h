@@ -32,7 +32,7 @@ concept ValidatorFor = requires(const V& validator, const T& value) {
 template <typename T>
 class Validator {
 public:
-    using ValidatorFn = std::function<ValidationResult(const T&)>;
+    using validator_fn = std::function<ValidationResult(const T&)>;
 
     /// @brief Creates an always-valid validator.
     Validator()
@@ -41,7 +41,7 @@ public:
     }
 
     /// @brief Creates a validator from a function.
-    explicit Validator(ValidatorFn fn)
+    explicit Validator(validator_fn fn)
         : fn_(std::move(fn))
     {
     }
@@ -78,7 +78,7 @@ public:
     }
 
 private:
-    ValidatorFn fn_;
+    validator_fn fn_;
 };
 
 /// @brief Creates a validator that checks if a numeric value is at least min.

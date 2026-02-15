@@ -1,15 +1,15 @@
 #pragma once
 
-#include "cppfig/configuration.h"
-#include "cppfig/diff.h"
-#include "cppfig/interface.h"
-#include "cppfig/logging.h"
-#include "cppfig/schema.h"
-#include "cppfig/serializer.h"
-#include "cppfig/setting.h"
-#include "cppfig/thread_policy.h"
-#include "cppfig/traits.h"
-#include "cppfig/validator.h"
+#include "cppfig/configuration.h"  // IWYU pragma: export
+#include "cppfig/diff.h"           // IWYU pragma: export
+#include "cppfig/interface.h"      // IWYU pragma: export
+#include "cppfig/logging.h"        // IWYU pragma: export
+#include "cppfig/schema.h"         // IWYU pragma: export
+#include "cppfig/serializer.h"     // IWYU pragma: export
+#include "cppfig/setting.h"        // IWYU pragma: export
+#include "cppfig/thread_policy.h"  // IWYU pragma: export
+#include "cppfig/traits.h"         // IWYU pragma: export
+#include "cppfig/validator.h"      // IWYU pragma: export
 
 /// @namespace cppfig
 /// @brief C++20 compile-time type-safe configuration library.
@@ -31,45 +31,45 @@
 /// namespace settings {
 ///
 /// struct AppName {
-///     static constexpr std::string_view kPath = "app.name";
-///     using ValueType = std::string;
-///     static auto DefaultValue() -> std::string { return "MyApplication"; }
+///     static constexpr std::string_view path = "app.name";
+///     using value_type = std::string;
+///     static auto default_value() -> std::string { return "MyApplication"; }
 /// };
 ///
 /// struct AppVersion {
-///     static constexpr std::string_view kPath = "app.version";
-///     using ValueType = std::string;
-///     static auto DefaultValue() -> std::string { return "1.0.0"; }
+///     static constexpr std::string_view path = "app.version";
+///     using value_type = std::string;
+///     static auto default_value() -> std::string { return "1.0.0"; }
 /// };
 ///
 /// struct ServerHost {
-///     static constexpr std::string_view kPath = "server.host";
-///     static constexpr std::string_view kEnvOverride = "SERVER_HOST";
-///     using ValueType = std::string;
-///     static auto DefaultValue() -> std::string { return "localhost"; }
+///     static constexpr std::string_view path = "server.host";
+///     static constexpr std::string_view env_override = "SERVER_HOST";
+///     using value_type = std::string;
+///     static auto default_value() -> std::string { return "localhost"; }
 /// };
 ///
 /// struct ServerPort {
-///     static constexpr std::string_view kPath = "server.port";
-///     static constexpr std::string_view kEnvOverride = "SERVER_PORT";
-///     using ValueType = int;
-///     static auto DefaultValue() -> int { return 8080; }
-///     static auto GetValidator() -> cppfig::Validator<int> {
+///     static constexpr std::string_view path = "server.port";
+///     static constexpr std::string_view env_override = "SERVER_PORT";
+///     using value_type = int;
+///     static auto default_value() -> int { return 8080; }
+///     static auto validator() -> cppfig::Validator<int> {
 ///         return cppfig::Range(1, 65535);
 ///     }
 /// };
 ///
 /// struct LoggingEnabled {
-///     static constexpr std::string_view kPath = "logging.enabled";
-///     using ValueType = bool;
-///     static auto DefaultValue() -> bool { return true; }
+///     static constexpr std::string_view path = "logging.enabled";
+///     using value_type = bool;
+///     static auto default_value() -> bool { return true; }
 /// };
 ///
 /// struct LoggingLevel {
-///     static constexpr std::string_view kPath = "logging.level";
-///     using ValueType = std::string;
-///     static auto DefaultValue() -> std::string { return "info"; }
-///     static auto GetValidator() -> cppfig::Validator<std::string> {
+///     static constexpr std::string_view path = "logging.level";
+///     using value_type = std::string;
+///     static auto default_value() -> std::string { return "info"; }
+///     static auto validator() -> cppfig::Validator<std::string> {
 ///         return cppfig::OneOf<std::string>({"debug", "info", "warn", "error"});
 ///     }
 /// };
@@ -137,9 +137,9 @@
 ///
 /// // Now define a setting using the custom type
 /// struct Database {
-///     static constexpr std::string_view kPath = "database";
-///     using ValueType = DatabaseConfig;
-///     static auto DefaultValue() -> DatabaseConfig {
+///     static constexpr std::string_view path = "database";
+///     using value_type = DatabaseConfig;
+///     static auto default_value() -> DatabaseConfig {
 ///         return DatabaseConfig{"localhost", 5432};
 ///     }
 /// };
@@ -168,14 +168,14 @@
 /// @code
 /// namespace settings::database {
 ///     struct Host {
-///         static constexpr std::string_view kPath = "database.host";
-///         using ValueType = std::string;
-///         static auto DefaultValue() -> std::string { return "localhost"; }
+///         static constexpr std::string_view path = "database.host";
+///         using value_type = std::string;
+///         static auto default_value() -> std::string { return "localhost"; }
 ///     };
 ///     struct Port {
-///         static constexpr std::string_view kPath = "database.port";
-///         using ValueType = int;
-///         static auto DefaultValue() -> int { return 5432; }
+///         static constexpr std::string_view path = "database.port";
+///         using value_type = int;
+///         static auto default_value() -> int { return 5432; }
 ///     };
 /// }
 ///

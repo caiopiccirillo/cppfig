@@ -40,9 +40,9 @@ struct cppfig::ConfigTraits<Point> : cppfig::ConfigTraitsFromJsonAdl<Point> {};
 
 ```cpp
 struct Origin {
-    static constexpr std::string_view kPath = "geometry.origin";
-    using ValueType = Point;
-    static auto DefaultValue() -> Point { return Point{0, 0}; }
+    static constexpr std::string_view path = "geometry.origin";
+    using value_type = Point;
+    static auto default_value() -> Point { return Point{0, 0}; }
 };
 ```
 
@@ -137,17 +137,17 @@ struct cppfig::ConfigTraits<ServerEndpoint>
 namespace settings {
 
 struct ApiServer {
-    static constexpr std::string_view kPath = "api.server";
-    using ValueType = ServerEndpoint;
-    static auto DefaultValue() -> ServerEndpoint {
+    static constexpr std::string_view path = "api.server";
+    using value_type = ServerEndpoint;
+    static auto default_value() -> ServerEndpoint {
         return {"api.example.com", 443, true};
     }
 };
 
 struct DatabaseServer {
-    static constexpr std::string_view kPath = "database.server";
-    using ValueType = ServerEndpoint;
-    static auto DefaultValue() -> ServerEndpoint {
+    static constexpr std::string_view path = "database.server";
+    using value_type = ServerEndpoint;
+    static auto default_value() -> ServerEndpoint {
         return {"localhost", 5432, false};
     }
 };
@@ -194,11 +194,11 @@ You can add validators for custom types:
 
 ```cpp
 struct ServerEndpoint {
-    static constexpr std::string_view kPath = "server";
-    using ValueType = ServerEndpoint;
-    static auto DefaultValue() -> ServerEndpoint { return {"localhost", 8080, false}; }
+    static constexpr std::string_view path = "server";
+    using value_type = ServerEndpoint;
+    static auto default_value() -> ServerEndpoint { return {"localhost", 8080, false}; }
 
-    static auto GetValidator() -> cppfig::Validator<ServerEndpoint> {
+    static auto validator() -> cppfig::Validator<ServerEndpoint> {
         return cppfig::Predicate<ServerEndpoint>(
             [](const ServerEndpoint& e) {
                 return !e.host.empty() && e.port > 0 && e.port < 65536;

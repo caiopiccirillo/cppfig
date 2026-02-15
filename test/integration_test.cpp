@@ -12,99 +12,99 @@ namespace cppfig::test {
 namespace settings {
 
     struct AppName {
-        static constexpr std::string_view kPath = "app.name";
-        using ValueType = std::string;
-        static auto DefaultValue() -> std::string { return "TestApp"; }
+        static constexpr std::string_view path = "app.name";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "TestApp"; }
     };
 
     struct AppPort {
-        static constexpr std::string_view kPath = "app.port";
-        using ValueType = int;
-        static auto DefaultValue() -> int { return 8080; }
+        static constexpr std::string_view path = "app.port";
+        using value_type = int;
+        static auto default_value() -> int { return 8080; }
     };
 
     struct AppVersion {
-        static constexpr std::string_view kPath = "app.version";
-        using ValueType = std::string;
-        static auto DefaultValue() -> std::string { return "1.0.0"; }
+        static constexpr std::string_view path = "app.version";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "1.0.0"; }
     };
 
     struct ServerPort {
-        static constexpr std::string_view kPath = "server.port";
-        using ValueType = int;
-        static auto DefaultValue() -> int { return 8080; }
-        static auto GetValidator() -> Validator<int> { return Range(1, 65535); }
+        static constexpr std::string_view path = "server.port";
+        using value_type = int;
+        static auto default_value() -> int { return 8080; }
+        static auto validator() -> Validator<int> { return Range(1, 65535); }
     };
 
     struct AppHost {
-        static constexpr std::string_view kPath = "app.host";
-        static constexpr std::string_view kEnvOverride = "TEST_APP_HOST";
-        using ValueType = std::string;
-        static auto DefaultValue() -> std::string { return "localhost"; }
+        static constexpr std::string_view path = "app.host";
+        static constexpr std::string_view env_override = "TEST_APP_HOST";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "localhost"; }
     };
 
     struct DatabaseHost {
-        static constexpr std::string_view kPath = "database.connection.host";
-        using ValueType = std::string;
-        static auto DefaultValue() -> std::string { return "localhost"; }
+        static constexpr std::string_view path = "database.connection.host";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "localhost"; }
     };
 
     struct DatabasePort {
-        static constexpr std::string_view kPath = "database.connection.port";
-        using ValueType = int;
-        static auto DefaultValue() -> int { return 5432; }
+        static constexpr std::string_view path = "database.connection.port";
+        using value_type = int;
+        static auto default_value() -> int { return 5432; }
     };
 
     struct DatabasePoolSize {
-        static constexpr std::string_view kPath = "database.pool.max_size";
-        using ValueType = int;
-        static auto DefaultValue() -> int { return 10; }
+        static constexpr std::string_view path = "database.pool.max_size";
+        using value_type = int;
+        static auto default_value() -> int { return 10; }
     };
 
     struct LoggingLevel {
-        static constexpr std::string_view kPath = "logging.level";
-        using ValueType = std::string;
-        static auto DefaultValue() -> std::string { return "info"; }
+        static constexpr std::string_view path = "logging.level";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "info"; }
     };
 
     // Setting for testing environment variable parse failure
     struct PortWithEnv {
-        static constexpr std::string_view kPath = "server.port";
-        static constexpr std::string_view kEnvOverride = "TEST_SERVER_PORT";
-        using ValueType = int;
-        static auto DefaultValue() -> int { return 8080; }
+        static constexpr std::string_view path = "server.port";
+        static constexpr std::string_view env_override = "TEST_SERVER_PORT";
+        using value_type = int;
+        static auto default_value() -> int { return 8080; }
     };
 
     // Bool setting with environment variable override
     struct DebugMode {
-        static constexpr std::string_view kPath = "app.debug";
-        static constexpr std::string_view kEnvOverride = "TEST_DEBUG_MODE";
-        using ValueType = bool;
-        static auto DefaultValue() -> bool { return false; }
+        static constexpr std::string_view path = "app.debug";
+        static constexpr std::string_view env_override = "TEST_DEBUG_MODE";
+        using value_type = bool;
+        static auto default_value() -> bool { return false; }
     };
 
     // Double setting with environment variable override
     struct Ratio {
-        static constexpr std::string_view kPath = "app.ratio";
-        static constexpr std::string_view kEnvOverride = "TEST_APP_RATIO";
-        using ValueType = double;
-        static auto DefaultValue() -> double { return 1.0; }
+        static constexpr std::string_view path = "app.ratio";
+        static constexpr std::string_view env_override = "TEST_APP_RATIO";
+        using value_type = double;
+        static auto default_value() -> double { return 1.0; }
     };
 
     // Float setting with environment variable override
     struct Scale {
-        static constexpr std::string_view kPath = "app.scale";
-        static constexpr std::string_view kEnvOverride = "TEST_APP_SCALE";
-        using ValueType = float;
-        static auto DefaultValue() -> float { return 1.0f; }
+        static constexpr std::string_view path = "app.scale";
+        static constexpr std::string_view env_override = "TEST_APP_SCALE";
+        using value_type = float;
+        static auto default_value() -> float { return 1.0f; }
     };
 
     // Int64 setting with environment variable override
     struct BigNumber {
-        static constexpr std::string_view kPath = "app.big_number";
-        static constexpr std::string_view kEnvOverride = "TEST_BIG_NUMBER";
-        using ValueType = std::int64_t;
-        static auto DefaultValue() -> std::int64_t { return 0; }
+        static constexpr std::string_view path = "app.big_number";
+        static constexpr std::string_view env_override = "TEST_BIG_NUMBER";
+        using value_type = std::int64_t;
+        static auto default_value() -> std::int64_t { return 0; }
     };
 
 }  // namespace settings
@@ -328,15 +328,15 @@ namespace cppfig::test {
 namespace custom_settings {
 
     struct Origin {
-        static constexpr std::string_view kPath = "origin";
-        using ValueType = Point;
-        static auto DefaultValue() -> Point { return Point { 0, 0 }; }
+        static constexpr std::string_view path = "origin";
+        using value_type = Point;
+        static auto default_value() -> Point { return Point { 0, 0 }; }
     };
 
     struct Target {
-        static constexpr std::string_view kPath = "target";
-        using ValueType = Point;
-        static auto DefaultValue() -> Point { return Point { 100, 100 }; }
+        static constexpr std::string_view path = "target";
+        using value_type = Point;
+        static auto default_value() -> Point { return Point { 100, 100 }; }
     };
 
 }  // namespace custom_settings
@@ -899,17 +899,17 @@ TEST_F(ConfigurationIntegrationTest, MT_ValidateAllWithInvalidValue)
 }
 
 struct ValidatedA {
-    static constexpr std::string_view kPath = "val.a";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 10; }
-    static auto GetValidator() -> Validator<int> { return Range(1, 100); }
+    static constexpr std::string_view path = "val.a";
+    using value_type = int;
+    static auto default_value() -> int { return 10; }
+    static auto validator() -> Validator<int> { return Range(1, 100); }
 };
 
 struct ValidatedB {
-    static constexpr std::string_view kPath = "val.b";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 20; }
-    static auto GetValidator() -> Validator<int> { return Range(1, 100); }
+    static constexpr std::string_view path = "val.b";
+    using value_type = int;
+    static auto default_value() -> int { return 20; }
+    static auto validator() -> Validator<int> { return Range(1, 100); }
 };
 
 TEST_F(ConfigurationIntegrationTest, ValidateAllStopsOnFirstError)
@@ -1086,9 +1086,9 @@ TEST_F(ConfigurationIntegrationTest, Int64Traits)
 }
 
 struct OrphanSetting {
-    static constexpr std::string_view kPath = "orphan.value";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "fallback"; }
+    static constexpr std::string_view path = "orphan.value";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "fallback"; }
 };
 
 TEST_F(ConfigurationIntegrationTest, ST_DefaultFallbackNoFileKey)

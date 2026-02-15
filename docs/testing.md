@@ -14,15 +14,15 @@ cppfig provides utilities for testing code that uses configuration. Include `<cp
 // Your settings
 namespace settings {
 struct ServerPort {
-    static constexpr std::string_view kPath = "server.port";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 8080; }
+    static constexpr std::string_view path = "server.port";
+    using value_type = int;
+    static auto default_value() -> int { return 8080; }
 };
 
 struct ServerHost {
-    static constexpr std::string_view kPath = "server.host";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "localhost"; }
+    static constexpr std::string_view path = "server.host";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "localhost"; }
 };
 }
 

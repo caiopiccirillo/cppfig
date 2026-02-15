@@ -22,7 +22,7 @@ namespace cppfig {
 template <typename Derived, typename Schema>
 class IConfigurationProvider {
 public:
-    using SchemaType = Schema;
+    using schema_type = Schema;
 
     /// @brief Gets the value for a setting type.
     ///
@@ -33,8 +33,8 @@ public:
     ///
     /// Usage: config.Get<MySettings::ServerPort>()
     template <IsSetting S>
-        requires(Schema::template HasSetting<S>)
-    [[nodiscard]] auto Get() const -> typename S::ValueType
+        requires(Schema::template has_setting<S>)
+    [[nodiscard]] auto Get() const -> typename S::value_type
     {
         return static_cast<const Derived*>(this)->template GetImpl<S>();
     }
@@ -45,8 +45,8 @@ public:
     ///
     /// Usage: config.Set<MySettings::ServerPort>(8080)
     template <IsSetting S>
-        requires(Schema::template HasSetting<S>)
-    auto Set(typename S::ValueType value) -> absl::Status
+        requires(Schema::template has_setting<S>)
+    auto Set(typename S::value_type value) -> absl::Status
     {
         return static_cast<Derived*>(this)->template SetImpl<S>(std::move(value));
     }

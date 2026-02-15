@@ -29,26 +29,26 @@ A modern, header-only C++20 configuration library with **compile-time type safet
 namespace settings {
 
 struct ServerPort {
-    static constexpr std::string_view kPath = "server.port";
-    static constexpr std::string_view kEnvOverride = "SERVER_PORT";  // Optional
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 8080; }
-    static auto GetValidator() -> cppfig::Validator<int> {  // Optional
+    static constexpr std::string_view path = "server.port";
+    static constexpr std::string_view env_override = "SERVER_PORT";  // Optional
+    using value_type = int;
+    static auto default_value() -> int { return 8080; }
+    static auto validator() -> cppfig::Validator<int> {  // Optional
         return cppfig::Range(1, 65535);
     }
 };
 
 struct ServerHost {
-    static constexpr std::string_view kPath = "server.host";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "localhost"; }
+    static constexpr std::string_view path = "server.host";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "localhost"; }
 };
 
 struct LogLevel {
-    static constexpr std::string_view kPath = "logging.level";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "info"; }
-    static auto GetValidator() -> cppfig::Validator<std::string> {
+    static constexpr std::string_view path = "logging.level";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "info"; }
+    static auto validator() -> cppfig::Validator<std::string> {
         return cppfig::OneOf<std::string>({"debug", "info", "warn", "error"});
     }
 };
@@ -177,21 +177,21 @@ Every setting is a struct with:
 ```cpp
 struct MySetting {
     // Required
-    static constexpr std::string_view kPath = "path.to.setting";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 42; }
+    static constexpr std::string_view path = "path.to.setting";
+    using value_type = int;
+    static auto default_value() -> int { return 42; }
 
     // Optional
-    static constexpr std::string_view kEnvOverride = "MY_SETTING";
-    static auto GetValidator() -> cppfig::Validator<int> { return cppfig::Min(0); }
+    static constexpr std::string_view env_override = "MY_SETTING";
+    static auto validator() -> cppfig::Validator<int> { return cppfig::Min(0); }
 };
 ```
 
 ### Value Resolution Order
 
-1. **Environment variable** (if `kEnvOverride` defined and env var set)
+1. **Environment variable** (if `env_override` defined and env var set)
 2. **File value** (if present in configuration file)
-3. **Default value** (from `DefaultValue()`)
+3. **Default value** (from `default_value()`)
 
 ### Built-in Validators
 
@@ -237,9 +237,9 @@ struct cppfig::ConfigTraits<Point> : cppfig::ConfigTraitsFromJsonAdl<Point> {};
 
 // Use in settings
 struct Origin {
-    static constexpr std::string_view kPath = "origin";
-    using ValueType = Point;
-    static auto DefaultValue() -> Point { return {0, 0}; }
+    static constexpr std::string_view path = "origin";
+    using value_type = Point;
+    static auto default_value() -> Point { return {0, 0}; }
 };
 ```
 
@@ -271,7 +271,7 @@ cppfig::Configuration<Schema,
 // Methods
 auto Load() -> absl::Status;
 auto Save() const -> absl::Status;
-auto Get<Setting>() const -> typename Setting::ValueType;
+auto Get<Setting>() const -> typename Setting::value_type;
 auto Set<Setting>(value) -> absl::Status;
 auto Diff() const -> ConfigDiff;
 auto ValidateAll() const -> absl::Status;
@@ -288,11 +288,11 @@ cppfig::MultiThreadedPolicy    // std::shared_mutex reader-writer locking
 cppfig::ConfigSchema<Settings...>
 
 // Compile-time checks
-static constexpr bool HasSetting<S>;
-static constexpr std::size_t kSize;
+static constexpr bool has_setting<S>;
+static constexpr std::size_t size;
 
 // Runtime utilities
-static auto GetPaths() -> std::array<std::string_view, kSize>;
+static auto GetPaths() -> std::array<std::string_view, size>;
 static void ForEachSetting(auto&& fn);
 ```
 

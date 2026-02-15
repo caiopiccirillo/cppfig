@@ -9,90 +9,90 @@ namespace cppfig::bench {
 namespace settings {
 
     struct StringSetting {
-        static constexpr std::string_view kPath = "benchmark.string";
-        using ValueType = std::string;
-        static auto DefaultValue() -> std::string { return "benchmark_value"; }
+        static constexpr std::string_view path = "benchmark.string";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "benchmark_value"; }
     };
 
     struct IntSetting {
-        static constexpr std::string_view kPath = "benchmark.int";
-        using ValueType = int;
-        static auto DefaultValue() -> int { return 42; }
+        static constexpr std::string_view path = "benchmark.int";
+        using value_type = int;
+        static auto default_value() -> int { return 42; }
     };
 
     struct DoubleSetting {
-        static constexpr std::string_view kPath = "benchmark.double";
-        using ValueType = double;
-        static auto DefaultValue() -> double { return 3.14159; }
+        static constexpr std::string_view path = "benchmark.double";
+        using value_type = double;
+        static auto default_value() -> double { return 3.14159; }
     };
 
     struct BoolSetting {
-        static constexpr std::string_view kPath = "benchmark.bool";
-        using ValueType = bool;
-        static auto DefaultValue() -> bool { return true; }
+        static constexpr std::string_view path = "benchmark.bool";
+        using value_type = bool;
+        static auto default_value() -> bool { return true; }
     };
 
     struct ValidatedSetting {
-        static constexpr std::string_view kPath = "benchmark.validated";
-        using ValueType = int;
-        static auto DefaultValue() -> int { return 50; }
-        static auto GetValidator() -> Validator<int> { return Range(0, 100); }
+        static constexpr std::string_view path = "benchmark.validated";
+        using value_type = int;
+        static auto default_value() -> int { return 50; }
+        static auto validator() -> Validator<int> { return Range(0, 100); }
     };
 
     struct EnvOverrideSetting {
-        static constexpr std::string_view kPath = "benchmark.env";
-        static constexpr std::string_view kEnvOverride = "BENCHMARK_ENV_SETTING";
-        using ValueType = std::string;
-        static auto DefaultValue() -> std::string { return "default"; }
+        static constexpr std::string_view path = "benchmark.env";
+        static constexpr std::string_view env_override = "BENCHMARK_ENV_SETTING";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "default"; }
     };
 
     // Hierarchical settings
     struct DatabaseHost {
-        static constexpr std::string_view kPath = "database.connection.host";
-        using ValueType = std::string;
-        static auto DefaultValue() -> std::string { return "localhost"; }
+        static constexpr std::string_view path = "database.connection.host";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "localhost"; }
     };
 
     struct DatabasePort {
-        static constexpr std::string_view kPath = "database.connection.port";
-        using ValueType = int;
-        static auto DefaultValue() -> int { return 5432; }
+        static constexpr std::string_view path = "database.connection.port";
+        using value_type = int;
+        static auto default_value() -> int { return 5432; }
     };
 
     struct DatabaseUser {
-        static constexpr std::string_view kPath = "database.connection.user";
-        using ValueType = std::string;
-        static auto DefaultValue() -> std::string { return "admin"; }
+        static constexpr std::string_view path = "database.connection.user";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "admin"; }
     };
 
     struct DatabasePass {
-        static constexpr std::string_view kPath = "database.connection.password";
-        using ValueType = std::string;
-        static auto DefaultValue() -> std::string { return "secret"; }
+        static constexpr std::string_view path = "database.connection.password";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "secret"; }
     };
 
     struct CacheEnabled {
-        static constexpr std::string_view kPath = "cache.enabled";
-        using ValueType = bool;
-        static auto DefaultValue() -> bool { return true; }
+        static constexpr std::string_view path = "cache.enabled";
+        using value_type = bool;
+        static auto default_value() -> bool { return true; }
     };
 
     struct CacheSize {
-        static constexpr std::string_view kPath = "cache.size_mb";
-        using ValueType = int;
-        static auto DefaultValue() -> int { return 128; }
+        static constexpr std::string_view path = "cache.size_mb";
+        using value_type = int;
+        static auto default_value() -> int { return 128; }
     };
 
     struct LogLevel {
-        static constexpr std::string_view kPath = "logging.level";
-        using ValueType = std::string;
-        static auto DefaultValue() -> std::string { return "info"; }
+        static constexpr std::string_view path = "logging.level";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "info"; }
     };
 
     struct LogPath {
-        static constexpr std::string_view kPath = "logging.path";
-        using ValueType = std::string;
-        static auto DefaultValue() -> std::string { return "/var/log/app.log"; }
+        static constexpr std::string_view path = "logging.path";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "/var/log/app.log"; }
     };
 
 }  // namespace settings

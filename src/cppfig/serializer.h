@@ -19,22 +19,22 @@ namespace cppfig {
 /// - Stringify: Convert a JSON-like structure to a string
 /// - Merge: Merge two JSON-like structures (for schema migration)
 template <typename S>
-concept Serializer = requires(const typename S::DataType& data, std::istream& is) {
-    typename S::DataType;
-    { S::Parse(is) } -> std::same_as<absl::StatusOr<typename S::DataType>>;
+concept Serializer = requires(const typename S::data_type& data, std::istream& is) {
+    typename S::data_type;
+    { S::Parse(is) } -> std::same_as<absl::StatusOr<typename S::data_type>>;
     { S::Stringify(data) } -> std::convertible_to<std::string>;
-    { S::Merge(data, data) } -> std::same_as<typename S::DataType>;
+    { S::Merge(data, data) } -> std::same_as<typename S::data_type>;
 };
 
 /// @brief JSON serializer using nlohmann::json.
 struct JsonSerializer {
-    using DataType = nlohmann::json;
+    using data_type = nlohmann::json;
 
     /// @brief Parses JSON from an input stream.
-    static auto Parse(std::istream& is) -> absl::StatusOr<DataType>
+    static auto Parse(std::istream& is) -> absl::StatusOr<data_type>
     {
         try {
-            DataType data;
+            data_type data;
             is >> data;
             return data;
         }
@@ -44,10 +44,10 @@ struct JsonSerializer {
     }
 
     /// @brief Parses JSON from a string.
-    static auto ParseString(std::string_view str) -> absl::StatusOr<DataType>
+    static auto ParseString(std::string_view str) -> absl::StatusOr<data_type>
     {
         try {
-            return DataType::parse(str);
+            return data_type::parse(str);
         }
         catch (const nlohmann::json::parse_error& e) {
             return absl::InvalidArgumentError(std::string("JSON parse error: ") + e.what());
@@ -55,20 +55,20 @@ struct JsonSerializer {
     }
 
     /// @brief Converts JSON to a formatted string.
-    static auto Stringify(const DataType& data, int indent = 4) -> std::string { return data.dump(indent); }
+    static auto Stringify(const data_type& data, int indent = 4) -> std::string { return data.dump(indent); }
 
     /// @brief Merges two JSON objects, with overlay taking precedence.
     ///
     /// This performs a deep merge where:
     /// - Objects are merged recursively
     /// - Arrays and primitives from overlay replace base
-    static auto Merge(const DataType& base, const DataType& overlay) -> DataType
+    static auto Merge(const data_type& base, const data_type& overlay) -> data_type
     {
         if (!base.is_object() || !overlay.is_object()) {
             return overlay;
         }
 
-        DataType result = base;
+        data_type result = base;
         for (auto& [key, value] : overlay.items()) {
             if (result.contains(key) && result[key].is_object() && value.is_object()) {
                 result[key] = Merge(result[key], value);
@@ -81,9 +81,9 @@ struct JsonSerializer {
     }
 
     /// @brief Gets a value at a dot-separated path.
-    static auto GetAtPath(const DataType& data, std::string_view path) -> absl::StatusOr<DataType>
+    static auto GetAtPath(const data_type& data, std::string_view path) -> absl::StatusOr<data_type>
     {
-        const DataType* current = &data;
+        const data_type* current = &data;
         std::string path_str(path);
         std::istringstream ss(path_str);
         std::string segment;
@@ -101,9 +101,9 @@ struct JsonSerializer {
     }
 
     /// @brief Sets a value at a dot-separated path, creating intermediate objects.
-    static void SetAtPath(DataType& data, std::string_view path, const DataType& value)
+    static void SetAtPath(data_type& data, std::string_view path, const data_type& value)
     {
-        DataType* current = &data;
+        data_type* current = &data;
         std::string path_str(path);
         std::istringstream ss(path_str);
         std::string segment;
@@ -115,7 +115,7 @@ struct JsonSerializer {
 
         for (std::size_t i = 0; i < segments.size() - 1; ++i) {
             if (!current->contains(segments[i]) || !(*current)[segments[i]].is_object()) {
-                (*current)[segments[i]] = DataType::object();
+                (*current)[segments[i]] = data_type::object();
             }
             current = &(*current)[segments[i]];
         }
@@ -126,7 +126,7 @@ struct JsonSerializer {
     }
 
     /// @brief Checks if a path exists in the data.
-    static auto HasPath(const DataType& data, std::string_view path) -> bool
+    static auto HasPath(const data_type& data, std::string_view path) -> bool
     {
         return GetAtPath(data, path).ok();
     }
@@ -134,7 +134,7 @@ struct JsonSerializer {
 
 /// @brief Helper to read a file into a serializer's data type.
 template <Serializer S>
-auto ReadFile(const std::string& path) -> absl::StatusOr<typename S::DataType>
+auto ReadFile(const std::string& path) -> absl::StatusOr<typename S::data_type>
 {
     std::ifstream file(path);
     if (!file.is_open()) {
@@ -145,7 +145,7 @@ auto ReadFile(const std::string& path) -> absl::StatusOr<typename S::DataType>
 
 /// @brief Helper to write a serializer's data type to a file.
 template <Serializer S>
-auto WriteFile(const std::string& path, const typename S::DataType& data) -> absl::Status
+auto WriteFile(const std::string& path, const typename S::data_type& data) -> absl::Status
 {
     std::ofstream file(path);
     if (!file.is_open()) {

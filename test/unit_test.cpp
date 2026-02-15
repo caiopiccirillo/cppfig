@@ -243,29 +243,29 @@ TEST(ValidatorTest, NonNegativeValidator)
 }
 
 struct TestStringSetting {
-    static constexpr std::string_view kPath = "test.string";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "default"; }
+    static constexpr std::string_view path = "test.string";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "default"; }
 };
 
 struct TestIntSetting {
-    static constexpr std::string_view kPath = "test.int";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 42; }
+    static constexpr std::string_view path = "test.int";
+    using value_type = int;
+    static auto default_value() -> int { return 42; }
 };
 
 struct TestSettingWithEnv {
-    static constexpr std::string_view kPath = "test.env";
-    static constexpr std::string_view kEnvOverride = "TEST_ENV_SETTING";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "from_default"; }
+    static constexpr std::string_view path = "test.env";
+    static constexpr std::string_view env_override = "TEST_ENV_SETTING";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "from_default"; }
 };
 
 struct TestSettingWithValidator {
-    static constexpr std::string_view kPath = "test.validated";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 50; }
-    static auto GetValidator() -> Validator<int> { return Range(1, 100); }
+    static constexpr std::string_view path = "test.validated";
+    using value_type = int;
+    static auto default_value() -> int { return 50; }
+    static auto validator() -> Validator<int> { return Range(1, 100); }
 };
 
 TEST(SettingTest, SettingConcept)
@@ -313,9 +313,9 @@ TEST(ConfigSchemaTest, SchemaSize)
 
 TEST(ConfigSchemaTest, HasSettingCheck)
 {
-    static_assert(TestSchema::HasSetting<TestStringSetting>);
-    static_assert(TestSchema::HasSetting<TestIntSetting>);
-    static_assert(!TestSchema::HasSetting<TestSettingWithEnv>);
+    static_assert(TestSchema::has_setting<TestStringSetting>);
+    static_assert(TestSchema::has_setting<TestIntSetting>);
+    static_assert(!TestSchema::has_setting<TestSettingWithEnv>);
 }
 
 TEST(ConfigSchemaTest, GetPaths)
@@ -486,13 +486,13 @@ TEST(ConfigDiffTest, ModifiedEntry)
 
 TEST(ConfigDiffTest, DiffEntryTypeString)
 {
-    DiffEntry added { DiffType::kAdded, "path", "", "value" };
+    DiffEntry added { DiffType::Added, "path", "", "value" };
     EXPECT_EQ(added.TypeString(), "ADDED");
 
-    DiffEntry removed { DiffType::kRemoved, "path", "value", "" };
+    DiffEntry removed { DiffType::Removed, "path", "value", "" };
     EXPECT_EQ(removed.TypeString(), "REMOVED");
 
-    DiffEntry modified { DiffType::kModified, "path", "old", "new" };
+    DiffEntry modified { DiffType::Modified, "path", "old", "new" };
     EXPECT_EQ(modified.TypeString(), "MODIFIED");
 }
 
@@ -515,7 +515,7 @@ TEST(ConfigDiffTest, ToStringNoDifferences)
 TEST(ConfigDiffTest, ToStringWithAdded)
 {
     ConfigDiff diff;
-    diff.entries.push_back({ DiffType::kAdded, "new.setting", "", "42" });
+    diff.entries.push_back({ DiffType::Added, "new.setting", "", "42" });
 
     auto str = diff.ToString();
     EXPECT_NE(str.find("ADDED"), std::string::npos);
@@ -526,7 +526,7 @@ TEST(ConfigDiffTest, ToStringWithAdded)
 TEST(ConfigDiffTest, ToStringWithRemoved)
 {
     ConfigDiff diff;
-    diff.entries.push_back({ DiffType::kRemoved, "old.setting", "\"value\"", "" });
+    diff.entries.push_back({ DiffType::Removed, "old.setting", "\"value\"", "" });
 
     auto str = diff.ToString();
     EXPECT_NE(str.find("REMOVED"), std::string::npos);
@@ -537,7 +537,7 @@ TEST(ConfigDiffTest, ToStringWithRemoved)
 TEST(ConfigDiffTest, ToStringWithModified)
 {
     ConfigDiff diff;
-    diff.entries.push_back({ DiffType::kModified, "changed.setting", "1", "2" });
+    diff.entries.push_back({ DiffType::Modified, "changed.setting", "1", "2" });
 
     auto str = diff.ToString();
     EXPECT_NE(str.find("MODIFIED"), std::string::npos);
@@ -548,14 +548,14 @@ TEST(ConfigDiffTest, ToStringWithModified)
 TEST(ConfigDiffTest, FilterByType)
 {
     ConfigDiff diff;
-    diff.entries.push_back({ DiffType::kAdded, "a", "", "1" });
-    diff.entries.push_back({ DiffType::kRemoved, "b", "2", "" });
-    diff.entries.push_back({ DiffType::kAdded, "c", "", "3" });
+    diff.entries.push_back({ DiffType::Added, "a", "", "1" });
+    diff.entries.push_back({ DiffType::Removed, "b", "2", "" });
+    diff.entries.push_back({ DiffType::Added, "c", "", "3" });
 
-    auto added = diff.Filter(DiffType::kAdded);
+    auto added = diff.Filter(DiffType::Added);
     EXPECT_EQ(added.size(), 2);
 
-    auto removed = diff.Filter(DiffType::kRemoved);
+    auto removed = diff.Filter(DiffType::Removed);
     EXPECT_EQ(removed.size(), 1);
 }
 
@@ -580,15 +580,15 @@ TEST(ConfigDiffTest, DiffFileFromDefaults)
 }
 
 struct MockAppName {
-    static constexpr std::string_view kPath = "app.name";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "MyApp"; }
+    static constexpr std::string_view path = "app.name";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "MyApp"; }
 };
 
 struct MockAppPort {
-    static constexpr std::string_view kPath = "app.port";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 8080; }
+    static constexpr std::string_view path = "app.port";
+    using value_type = int;
+    static auto default_value() -> int { return 8080; }
 };
 
 using MockSchema = ConfigSchema<MockAppName, MockAppPort>;
@@ -632,10 +632,10 @@ TEST(MockConfigurationTest, Reset)
 }
 
 struct MockValidatedPort {
-    static constexpr std::string_view kPath = "app.validated_port";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 8080; }
-    static auto GetValidator() -> Validator<int> { return Range(1, 65535); }
+    static constexpr std::string_view path = "app.validated_port";
+    using value_type = int;
+    static auto default_value() -> int { return 8080; }
+    static auto validator() -> Validator<int> { return Range(1, 65535); }
 };
 
 using MockSchemaWithValidation = ConfigSchema<MockAppName, MockValidatedPort>;
@@ -652,9 +652,9 @@ TEST(MockConfigurationTest, SetWithValidationSuccess)
 // Test for mock Get returning default when value exists but fails to parse
 // This covers line 70 in mock.h
 struct MockPointSetting {
-    static constexpr std::string_view kPath = "mock.point";
-    using ValueType = int;  // We'll store a non-int JSON to trigger parse failure
-    static auto DefaultValue() -> int { return 42; }
+    static constexpr std::string_view path = "mock.point";
+    using value_type = int;  // We'll store a non-int JSON to trigger parse failure
+    static auto default_value() -> int { return 42; }
 };
 
 TEST(MockConfigurationTest, SetWithValidationFailure)
@@ -675,7 +675,7 @@ TEST(MockConfigurationTest, GetReturnsDefaultWhenKeyNotFound)
     testing::MockConfiguration<MockSchema> config;
 
     // Clear the value to simulate key not found
-    config.ClearValue(MockAppPort::kPath);
+    config.ClearValue(MockAppPort::path);
 
     // Get should return the default value
     EXPECT_EQ(config.Get<MockAppPort>(), 8080);
@@ -688,7 +688,7 @@ TEST(MockConfigurationTest, GetReturnsDefaultWhenParseFailsWithInvalidType)
     testing::MockConfiguration<MockSchema> config;
 
     // Inject a string where an int is expected - FromJson will fail
-    config.SetRawJson(std::string(MockAppPort::kPath), "not_an_integer");
+    config.SetRawJson(std::string(MockAppPort::path), "not_an_integer");
 
     // Get should return the default value since parsing fails
     EXPECT_EQ(config.Get<MockAppPort>(), 8080);
@@ -1012,7 +1012,7 @@ TEST(MockConfigurationTest, LoadAndSaveAreNoOps)
 TEST(MockConfigurationTest, SetRawJsonAndGet)
 {
     testing::MockConfiguration<MockSchema> config;
-    config.SetRawJson(std::string(MockAppName::kPath), nlohmann::json("CustomName"));
+    config.SetRawJson(std::string(MockAppName::path), nlohmann::json("CustomName"));
     EXPECT_EQ(config.Get<MockAppName>(), "CustomName");
 }
 
@@ -1020,7 +1020,7 @@ TEST(MockConfigurationTest, ClearValueAndGetDefault)
 {
     testing::MockConfiguration<MockSchema> config;
     config.SetValue<MockAppPort>(9000);
-    config.ClearValue(MockAppPort::kPath);
+    config.ClearValue(MockAppPort::path);
     EXPECT_EQ(config.Get<MockAppPort>(), 8080);  // default
 }
 

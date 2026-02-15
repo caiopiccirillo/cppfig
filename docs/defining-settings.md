@@ -11,13 +11,13 @@ Every setting must have these three members:
 ```cpp
 struct MySetting {
     // Path in the config file (dot-separated for hierarchy)
-    static constexpr std::string_view kPath = "category.subcategory.name";
+    static constexpr std::string_view path = "category.subcategory.name";
 
     // The value type
-    using ValueType = int;
+    using value_type = int;
 
     // Default value factory function
-    static auto DefaultValue() -> int { return 42; }
+    static auto default_value() -> int { return 42; }
 };
 ```
 
@@ -29,10 +29,10 @@ Allow the setting to be overridden via environment variable:
 
 ```cpp
 struct ServerHost {
-    static constexpr std::string_view kPath = "server.host";
-    static constexpr std::string_view kEnvOverride = "SERVER_HOST";  // Optional
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "localhost"; }
+    static constexpr std::string_view path = "server.host";
+    static constexpr std::string_view env_override = "SERVER_HOST";  // Optional
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "localhost"; }
 };
 ```
 
@@ -44,12 +44,12 @@ Add validation to ensure values are within acceptable bounds:
 
 ```cpp
 struct ServerPort {
-    static constexpr std::string_view kPath = "server.port";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 8080; }
+    static constexpr std::string_view path = "server.port";
+    using value_type = int;
+    static auto default_value() -> int { return 8080; }
 
     // Optional: Validator for this setting
-    static auto GetValidator() -> cppfig::Validator<int> {
+    static auto validator() -> cppfig::Validator<int> {
         return cppfig::Range(1, 65535);
     }
 };
@@ -64,56 +64,56 @@ namespace settings {
 
 // Simple setting
 struct AppName {
-    static constexpr std::string_view kPath = "app.name";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "MyApplication"; }
+    static constexpr std::string_view path = "app.name";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "MyApplication"; }
 };
 
 // Setting with environment override
 struct DatabaseUrl {
-    static constexpr std::string_view kPath = "database.url";
-    static constexpr std::string_view kEnvOverride = "DATABASE_URL";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string {
+    static constexpr std::string_view path = "database.url";
+    static constexpr std::string_view env_override = "DATABASE_URL";
+    using value_type = std::string;
+    static auto default_value() -> std::string {
         return "postgresql://localhost:5432/mydb";
     }
 };
 
 // Setting with validator
 struct MaxConnections {
-    static constexpr std::string_view kPath = "database.pool.max_connections";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 10; }
-    static auto GetValidator() -> cppfig::Validator<int> {
+    static constexpr std::string_view path = "database.pool.max_connections";
+    using value_type = int;
+    static auto default_value() -> int { return 10; }
+    static auto validator() -> cppfig::Validator<int> {
         return cppfig::Range(1, 100);
     }
 };
 
 // Setting with environment override AND validator
 struct ServerPort {
-    static constexpr std::string_view kPath = "server.port";
-    static constexpr std::string_view kEnvOverride = "PORT";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 8080; }
-    static auto GetValidator() -> cppfig::Validator<int> {
+    static constexpr std::string_view path = "server.port";
+    static constexpr std::string_view env_override = "PORT";
+    using value_type = int;
+    static auto default_value() -> int { return 8080; }
+    static auto validator() -> cppfig::Validator<int> {
         return cppfig::Range(1, 65535);
     }
 };
 
 // Boolean setting
 struct DebugMode {
-    static constexpr std::string_view kPath = "app.debug";
-    static constexpr std::string_view kEnvOverride = "DEBUG";
-    using ValueType = bool;
-    static auto DefaultValue() -> bool { return false; }
+    static constexpr std::string_view path = "app.debug";
+    static constexpr std::string_view env_override = "DEBUG";
+    using value_type = bool;
+    static auto default_value() -> bool { return false; }
 };
 
 // Enum-like string setting
 struct LogLevel {
-    static constexpr std::string_view kPath = "logging.level";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "info"; }
-    static auto GetValidator() -> cppfig::Validator<std::string> {
+    static constexpr std::string_view path = "logging.level";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "info"; }
+    static auto validator() -> cppfig::Validator<std::string> {
         return cppfig::OneOf<std::string>({"debug", "info", "warn", "error"});
     }
 };
@@ -142,17 +142,17 @@ Use dot-separated paths to create hierarchical JSON structure:
 
 ```cpp
 struct DatabaseHost {
-    static constexpr std::string_view kPath = "database.connection.host";
+    static constexpr std::string_view path = "database.connection.host";
     // ...
 };
 
 struct DatabasePort {
-    static constexpr std::string_view kPath = "database.connection.port";
+    static constexpr std::string_view path = "database.connection.port";
     // ...
 };
 
 struct DatabasePoolSize {
-    static constexpr std::string_view kPath = "database.pool.max_size";
+    static constexpr std::string_view path = "database.pool.max_size";
     // ...
 };
 ```
@@ -177,8 +177,8 @@ This generates JSON like:
 
 When calling `config.Get<MySetting>()`, values are resolved in this order:
 
-1. **Environment variable** (if `kEnvOverride` is defined and the env var is set)
+1. **Environment variable** (if `env_override` is defined and the env var is set)
 2. **File value** (if present in the configuration file)
-3. **Default value** (from `DefaultValue()`)
+3. **Default value** (from `default_value()`)
 
 This means environment variables always take precedence, making it easy to override configuration in production without modifying files.

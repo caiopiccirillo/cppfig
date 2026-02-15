@@ -52,17 +52,17 @@ namespace cppfig {
 /// @code
 /// // Define settings
 /// struct AppName {
-///     static constexpr std::string_view kPath = "app.name";
-///     using ValueType = std::string;
-///     static auto DefaultValue() -> std::string { return "MyApp"; }
+///     static constexpr std::string_view path = "app.name";
+///     using value_type = std::string;
+///     static auto default_value() -> std::string { return "MyApp"; }
 /// };
 ///
 /// struct ServerPort {
-///     static constexpr std::string_view kPath = "server.port";
-///     static constexpr std::string_view kEnvOverride = "SERVER_PORT";
-///     using ValueType = int;
-///     static auto DefaultValue() -> int { return 8080; }
-///     static auto GetValidator() -> Validator<int> { return Range(1, 65535); }
+///     static constexpr std::string_view path = "server.port";
+///     static constexpr std::string_view env_override = "SERVER_PORT";
+///     using value_type = int;
+///     static auto default_value() -> int { return 8080; }
+///     static auto validator() -> Validator<int> { return Range(1, 65535); }
 /// };
 ///
 /// // Create schema and configuration
@@ -84,15 +84,15 @@ template <typename Schema, Serializer SerializerT = JsonSerializer, typename Thr
 class Configuration : public IConfigurationProvider<Configuration<Schema, SerializerT, ThreadPolicy>, Schema>,
                       public IConfigurationProviderVirtual {
 public:
-    using SerializerType = SerializerT;
-    using DataType = typename SerializerT::DataType;
+    using serializer_type = SerializerT;
+    using data_type = typename SerializerT::data_type;
 
     /// @brief Creates a configuration manager with a file path.
     ///
     /// @param file_path Path to the configuration file.
     explicit Configuration(std::string file_path)
         : file_path_(std::move(file_path))
-        , file_values_(DataType::object())
+        , file_values_(data_type::object())
     {
         BuildDefaults();
     }
@@ -106,16 +106,16 @@ public:
     ///
     /// Thread safety: acquires a shared (reader) lock when reading file values.
     template <IsSetting S>
-        requires(Schema::template HasSetting<S>)
-    [[nodiscard]] auto GetImpl() const -> typename S::ValueType
+        requires(Schema::template has_setting<S>)
+    [[nodiscard]] auto GetImpl() const -> typename S::value_type
     {
-        using ValueType = typename S::ValueType;
+        using value_type = typename S::value_type;
 
         // 1. Check environment variable (no lock needed — no mutable state accessed)
         constexpr auto env_override = GetEnvOverride<S>();
         if constexpr (!env_override.empty()) {
             if (const char* env_value = std::getenv(std::string(env_override).c_str())) {
-                auto parsed = ConfigTraits<ValueType>::FromString(env_value);
+                auto parsed = ConfigTraits<value_type>::FromString(env_value);
                 if (parsed.has_value()) {
                     return *parsed;
                 }
@@ -126,20 +126,20 @@ public:
 
         // 2. Check file value (shared lock — concurrent readers allowed)
         {
-            typename ThreadPolicy::SharedLock lock(mutex_);
-            auto file_result = SerializerT::GetAtPath(file_values_, S::kPath);
+            typename ThreadPolicy::shared_lock lock(mutex_);
+            auto file_result = SerializerT::GetAtPath(file_values_, S::path);
             if (file_result.ok()) {
-                auto parsed = ConfigTraits<ValueType>::FromJson(*file_result);
+                auto parsed = ConfigTraits<value_type>::FromJson(*file_result);
                 if (parsed.has_value()) {
                     return *parsed;
                 }
                 Logger::WarnF("Failed to parse file value for '%.*s', using default",
-                              static_cast<int>(S::kPath.size()), S::kPath.data());
+                              static_cast<int>(S::path.size()), S::path.data());
             }
         }
 
         // 3. Return default value (immutable after construction — no lock needed)
-        return S::DefaultValue();
+        return S::default_value();
     }
 
     /// @brief Sets the value for a setting type.
@@ -147,10 +147,10 @@ public:
     /// Thread safety: validation runs without holding any lock; the actual
     /// mutation of internal state acquires an exclusive (writer) lock.
     template <IsSetting S>
-        requires(Schema::template HasSetting<S>)
-    auto SetImpl(typename S::ValueType value) -> absl::Status
+        requires(Schema::template has_setting<S>)
+    auto SetImpl(typename S::value_type value) -> absl::Status
     {
-        using ValueType = typename S::ValueType;
+        using value_type = typename S::value_type;
 
         // Validate the value *before* acquiring the exclusive lock
         auto validator = GetSettingValidator<S>();
@@ -160,9 +160,9 @@ public:
         }
 
         // Set the value under exclusive lock
-        typename ThreadPolicy::UniqueLock lock(mutex_);
-        auto json_value = ConfigTraits<ValueType>::ToJson(value);
-        SerializerT::SetAtPath(file_values_, S::kPath, json_value);
+        typename ThreadPolicy::unique_lock lock(mutex_);
+        auto json_value = ConfigTraits<value_type>::ToJson(value);
+        SerializerT::SetAtPath(file_values_, S::path, json_value);
 
         return absl::OkStatus();
     }
@@ -173,7 +173,7 @@ public:
     /// operation because it mutates @c file_values_.
     [[nodiscard]] auto LoadImpl() -> absl::Status
     {
-        typename ThreadPolicy::UniqueLock lock(mutex_);
+        typename ThreadPolicy::unique_lock lock(mutex_);
         return LoadUnlocked();
     }
 
@@ -183,7 +183,7 @@ public:
     /// @c file_values_ (file I/O is serialized by the OS for the same path).
     [[nodiscard]] auto SaveImpl() const -> absl::Status
     {
-        typename ThreadPolicy::SharedLock lock(mutex_);
+        typename ThreadPolicy::shared_lock lock(mutex_);
         return SaveUnlocked();
     }
 
@@ -192,7 +192,7 @@ public:
     /// Thread safety: acquires a shared (reader) lock.
     [[nodiscard]] auto DiffImpl() const -> ConfigDiff
     {
-        typename ThreadPolicy::SharedLock lock(mutex_);
+        typename ThreadPolicy::shared_lock lock(mutex_);
         return DiffFileFromDefaults(defaults_, file_values_);
     }
 
@@ -201,7 +201,7 @@ public:
     /// Thread safety: acquires a shared (reader) lock.
     [[nodiscard]] auto ValidateAllImpl() const -> absl::Status
     {
-        typename ThreadPolicy::SharedLock lock(mutex_);
+        typename ThreadPolicy::shared_lock lock(mutex_);
         return ValidateAllUnlocked();
     }
 
@@ -214,13 +214,13 @@ public:
     ///
     /// @warning The returned reference is *not* protected after the call returns.
     ///          In multi-threaded code, prefer @c Get<Setting>() for safe access.
-    [[nodiscard]] auto GetFileValues() const -> const DataType& { return file_values_; }
+    [[nodiscard]] auto GetFileValues() const -> const data_type& { return file_values_; }
 
     /// @brief Returns the default values as JSON.
     ///
     /// Thread safety: @c defaults_ is immutable after construction — safe to call
     /// concurrently without synchronization.
-    [[nodiscard]] auto GetDefaults() const -> const DataType& { return defaults_; }
+    [[nodiscard]] auto GetDefaults() const -> const data_type& { return defaults_; }
 
     [[nodiscard]] auto Load() -> absl::Status override { return LoadImpl(); }
 
@@ -284,10 +284,10 @@ private:
         // Create parent directories if needed
         fs::path path(file_path_);
         if (path.has_parent_path()) {
-            std::error_code ec;
-            fs::create_directories(path.parent_path(), ec);
-            if (ec) {
-                return absl::InternalError("Failed to create directory: " + ec.message());
+            std::error_code error_code;
+            fs::create_directories(path.parent_path(), error_code);
+            if (error_code) {
+                return absl::InternalError("Failed to create directory: " + error_code.message());
             }
         }
 
@@ -304,16 +304,16 @@ private:
                 return;  // Stop on first error
             }
 
-            using ValueType = typename S::ValueType;
-            auto file_result = SerializerT::GetAtPath(file_values_, S::kPath);
+            using value_type = typename S::value_type;
+            auto file_result = SerializerT::GetAtPath(file_values_, S::path);
 
             if (file_result.ok()) {
-                auto parsed = ConfigTraits<ValueType>::FromJson(*file_result);
+                auto parsed = ConfigTraits<value_type>::FromJson(*file_result);
                 if (parsed.has_value()) {
                     auto validator = GetSettingValidator<S>();
                     auto validation = validator(*parsed);
                     if (!validation) {
-                        status = absl::InvalidArgumentError(std::string(S::kPath) + ": " + validation.error_message);
+                        status = absl::InvalidArgumentError(std::string(S::path) + ": " + validation.error_message);
                     }
                 }
             }
@@ -324,19 +324,19 @@ private:
 
     void BuildDefaults()
     {
-        defaults_ = DataType::object();
+        defaults_ = data_type::object();
 
         Schema::ForEachSetting([this]<typename S>() {
-            using ValueType = typename S::ValueType;
-            auto json_value = ConfigTraits<ValueType>::ToJson(S::DefaultValue());
-            SerializerT::SetAtPath(defaults_, S::kPath, json_value);
+            using value_type = typename S::value_type;
+            auto json_value = ConfigTraits<value_type>::ToJson(S::default_value());
+            SerializerT::SetAtPath(defaults_, S::path, json_value);
         });
     }
 
     std::string file_path_;
-    DataType file_values_;
-    DataType defaults_;
-    mutable typename ThreadPolicy::MutexType mutex_;
+    data_type file_values_;
+    data_type defaults_;
+    mutable typename ThreadPolicy::mutex_type mutex_;
 };
 
 }  // namespace cppfig

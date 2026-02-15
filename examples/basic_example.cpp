@@ -1,6 +1,3 @@
-/// @file basic_example.cpp
-/// @brief Basic example demonstrating cppfig usage.
-
 #include <cppfig/cppfig.h>
 
 #include <iostream>
@@ -8,56 +5,56 @@
 namespace settings {
 
 struct AppName {
-    static constexpr std::string_view kPath = "app.name";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "MyApplication"; }
+    static constexpr std::string_view path = "app.name";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "MyApplication"; }
 };
 
 struct AppVersion {
-    static constexpr std::string_view kPath = "app.version";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "1.0.0"; }
+    static constexpr std::string_view path = "app.version";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "1.0.0"; }
 };
 
 struct ServerHost {
-    static constexpr std::string_view kPath = "server.host";
-    static constexpr std::string_view kEnvOverride = "SERVER_HOST";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "localhost"; }
+    static constexpr std::string_view path = "server.host";
+    static constexpr std::string_view env_override = "SERVER_HOST";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "localhost"; }
 };
 
 struct ServerPort {
-    static constexpr std::string_view kPath = "server.port";
-    static constexpr std::string_view kEnvOverride = "SERVER_PORT";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 8080; }
-    static auto GetValidator() -> cppfig::Validator<int> { return cppfig::Range(1, 65535); }
+    static constexpr std::string_view path = "server.port";
+    static constexpr std::string_view env_override = "SERVER_PORT";
+    using value_type = int;
+    static auto default_value() -> int { return 8080; }
+    static auto validator() -> cppfig::Validator<int> { return cppfig::Range(1, 65535); }
 };
 
 struct ServerMaxConnections {
-    static constexpr std::string_view kPath = "server.max_connections";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 100; }
-    static auto GetValidator() -> cppfig::Validator<int> { return cppfig::Range(1, 10000); }
+    static constexpr std::string_view path = "server.max_connections";
+    using value_type = int;
+    static auto default_value() -> int { return 100; }
+    static auto validator() -> cppfig::Validator<int> { return cppfig::Range(1, 10000); }
 };
 
 struct LoggingEnabled {
-    static constexpr std::string_view kPath = "logging.enabled";
-    using ValueType = bool;
-    static auto DefaultValue() -> bool { return true; }
+    static constexpr std::string_view path = "logging.enabled";
+    using value_type = bool;
+    static auto default_value() -> bool { return true; }
 };
 
 struct LoggingLevel {
-    static constexpr std::string_view kPath = "logging.level";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "info"; }
+    static constexpr std::string_view path = "logging.level";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "info"; }
 };
 
 struct FeaturesExperimental {
-    static constexpr std::string_view kPath = "features.experimental";
-    static constexpr std::string_view kEnvOverride = "ENABLE_EXPERIMENTAL";
-    using ValueType = bool;
-    static auto DefaultValue() -> bool { return false; }
+    static constexpr std::string_view path = "features.experimental";
+    static constexpr std::string_view env_override = "ENABLE_EXPERIMENTAL";
+    using value_type = bool;
+    static auto default_value() -> bool { return false; }
 };
 
 }  // namespace settings

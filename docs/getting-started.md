@@ -44,13 +44,13 @@ namespace settings {
 
 struct ServerPort {
     // Required: The path in the configuration file (dot-separated for hierarchy)
-    static constexpr std::string_view kPath = "server.port";
+    static constexpr std::string_view path = "server.port";
 
     // Required: The value type
-    using ValueType = int;
+    using value_type = int;
 
     // Required: Default value factory
-    static auto DefaultValue() -> int { return 8080; }
+    static auto default_value() -> int { return 8080; }
 };
 
 }  // namespace settings

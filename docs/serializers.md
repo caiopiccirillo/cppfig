@@ -22,10 +22,10 @@ To create a custom serializer, implement a struct that satisfies the `Serializer
 
 struct YamlSerializer {
     // The data type used internally (usually the library's document type)
-    using DataType = YAML::Node;  // Example using yaml-cpp
+    using data_type = YAML::Node;  // Example using yaml-cpp
 
     // Parse from input stream
-    static auto Parse(std::istream& is) -> absl::StatusOr<DataType> {
+    static auto Parse(std::istream& is) -> absl::StatusOr<data_type> {
         try {
             return YAML::Load(is);
         } catch (const YAML::Exception& e) {
@@ -36,37 +36,37 @@ struct YamlSerializer {
     }
 
     // Convert to string for saving
-    static auto Stringify(const DataType& data, int indent = 2) -> std::string {
+    static auto Stringify(const data_type& data, int indent = 2) -> std::string {
         YAML::Emitter out;
         out << data;
         return out.c_str();
     }
 
     // Merge two data structures (for schema migration)
-    static auto Merge(const DataType& base, const DataType& overlay) -> DataType {
+    static auto Merge(const data_type& base, const data_type& overlay) -> data_type {
         // Deep merge implementation
-        DataType result = Clone(base);
+        data_type result = Clone(base);
         MergeNodes(result, overlay);
         return result;
     }
 
     // Get value at dot-separated path
-    static auto GetAtPath(const DataType& data, std::string_view path)
-        -> absl::StatusOr<DataType> {
+    static auto GetAtPath(const data_type& data, std::string_view path)
+        -> absl::StatusOr<data_type> {
         // Navigate path like "server.port"
-        DataType current = data;
+        data_type current = data;
         // ... path navigation logic
         return current;
     }
 
     // Set value at dot-separated path
-    static void SetAtPath(DataType& data, std::string_view path,
-                          const DataType& value) {
+    static void SetAtPath(data_type& data, std::string_view path,
+                          const data_type& value) {
         // Navigate and set
     }
 
     // Check if path exists
-    static auto HasPath(const DataType& data, std::string_view path) -> bool {
+    static auto HasPath(const data_type& data, std::string_view path) -> bool {
         return GetAtPath(data, path).ok();
     }
 };
@@ -78,10 +78,10 @@ A serializer must provide:
 
 | Function | Signature | Purpose |
 |----------|-----------|---------|
-| `DataType` | type alias | Internal data representation |
-| `Parse` | `(istream&) -> StatusOr<DataType>` | Parse from stream |
-| `Stringify` | `(DataType) -> string` | Convert to string |
-| `Merge` | `(DataType, DataType) -> DataType` | Deep merge for migration |
+| `data_type` | type alias | Internal data representation |
+| `Parse` | `(istream&) -> StatusOr<data_type>` | Parse from stream |
+| `Stringify` | `(data_type) -> string` | Convert to string |
+| `Merge` | `(data_type, data_type) -> data_type` | Deep merge for migration |
 
 Additionally, these are used by Configuration internally:
 | Function | Purpose |
@@ -109,30 +109,30 @@ The built-in `JsonSerializer` provides:
 
 ```cpp
 struct JsonSerializer {
-    using DataType = nlohmann::json;
+    using data_type = nlohmann::json;
 
     // Parse from stream
-    static auto Parse(std::istream& is) -> absl::StatusOr<DataType>;
+    static auto Parse(std::istream& is) -> absl::StatusOr<data_type>;
 
     // Parse from string (convenience)
-    static auto ParseString(std::string_view str) -> absl::StatusOr<DataType>;
+    static auto ParseString(std::string_view str) -> absl::StatusOr<data_type>;
 
     // Convert to formatted string
-    static auto Stringify(const DataType& data, int indent = 4) -> std::string;
+    static auto Stringify(const data_type& data, int indent = 4) -> std::string;
 
     // Deep merge two JSON objects
-    static auto Merge(const DataType& base, const DataType& overlay) -> DataType;
+    static auto Merge(const data_type& base, const data_type& overlay) -> data_type;
 
     // Get value at dot-separated path
-    static auto GetAtPath(const DataType& data, std::string_view path)
-        -> absl::StatusOr<DataType>;
+    static auto GetAtPath(const data_type& data, std::string_view path)
+        -> absl::StatusOr<data_type>;
 
     // Set value at dot-separated path (creates intermediate objects)
-    static void SetAtPath(DataType& data, std::string_view path,
-                          const DataType& value);
+    static void SetAtPath(data_type& data, std::string_view path,
+                          const data_type& value);
 
     // Check if path exists
-    static auto HasPath(const DataType& data, std::string_view path) -> bool;
+    static auto HasPath(const data_type& data, std::string_view path) -> bool;
 };
 ```
 
@@ -160,9 +160,9 @@ absl::Status status = cppfig::WriteFile<cppfig::JsonSerializer>(
 #include <toml++/toml.h>
 
 struct TomlSerializer {
-    using DataType = toml::table;
+    using data_type = toml::table;
 
-    static auto Parse(std::istream& is) -> absl::StatusOr<DataType> {
+    static auto Parse(std::istream& is) -> absl::StatusOr<data_type> {
         try {
             return toml::parse(is);
         } catch (const toml::parse_error& e) {
@@ -170,14 +170,14 @@ struct TomlSerializer {
         }
     }
 
-    static auto Stringify(const DataType& data, int = 0) -> std::string {
+    static auto Stringify(const data_type& data, int = 0) -> std::string {
         std::ostringstream ss;
         ss << data;
         return ss.str();
     }
 
-    static auto Merge(const DataType& base, const DataType& overlay) -> DataType {
-        DataType result = base;
+    static auto Merge(const data_type& base, const data_type& overlay) -> data_type {
+        data_type result = base;
         for (auto&& [k, v] : overlay) {
             if (auto* base_table = result[k].as_table();
                 base_table && v.is_table()) {
@@ -200,10 +200,10 @@ Serializers work with `ConfigTraits<T>` for type conversion:
 ```cpp
 // In Configuration::Get<Setting>():
 // 1. Get raw value from serializer's data type
-auto json_value = Serializer::GetAtPath(data_, Setting::kPath);
+auto json_value = Serializer::GetAtPath(data_, Setting::path);
 
 // 2. Convert to Setting's value type using ConfigTraits
-auto value = ConfigTraits<ValueType>::FromJson(*json_value);
+auto value = ConfigTraits<value_type>::FromJson(*json_value);
 ```
 
-Ensure your custom types' `ConfigTraits` can work with your serializer's `DataType`. For non-JSON serializers, you may need to implement custom conversion logic.
+Ensure your custom types' `ConfigTraits` can work with your serializer's `data_type`. For non-JSON serializers, you may need to implement custom conversion logic.

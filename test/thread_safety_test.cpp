@@ -19,41 +19,41 @@ namespace cppfig::test {
 namespace settings {
 
 struct Counter {
-    static constexpr std::string_view kPath = "app.counter";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 0; }
+    static constexpr std::string_view path = "app.counter";
+    using value_type = int;
+    static auto default_value() -> int { return 0; }
 };
 
 struct Name {
-    static constexpr std::string_view kPath = "app.name";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "default"; }
+    static constexpr std::string_view path = "app.name";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "default"; }
 };
 
 struct Ratio {
-    static constexpr std::string_view kPath = "app.ratio";
-    using ValueType = double;
-    static auto DefaultValue() -> double { return 1.0; }
+    static constexpr std::string_view path = "app.ratio";
+    using value_type = double;
+    static auto default_value() -> double { return 1.0; }
 };
 
 struct Enabled {
-    static constexpr std::string_view kPath = "app.enabled";
-    using ValueType = bool;
-    static auto DefaultValue() -> bool { return true; }
+    static constexpr std::string_view path = "app.enabled";
+    using value_type = bool;
+    static auto default_value() -> bool { return true; }
 };
 
 struct ValidatedPort {
-    static constexpr std::string_view kPath = "server.port";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 8080; }
-    static auto GetValidator() -> cppfig::Validator<int> { return cppfig::Range(1, 65535); }
+    static constexpr std::string_view path = "server.port";
+    using value_type = int;
+    static auto default_value() -> int { return 8080; }
+    static auto validator() -> cppfig::Validator<int> { return cppfig::Range(1, 65535); }
 };
 
 struct HostWithEnv {
-    static constexpr std::string_view kPath = "server.host";
-    static constexpr std::string_view kEnvOverride = "CPPFIG_TEST_HOST";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "localhost"; }
+    static constexpr std::string_view path = "server.host";
+    static constexpr std::string_view env_override = "CPPFIG_TEST_HOST";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "localhost"; }
 };
 
 }  // namespace settings
@@ -678,42 +678,42 @@ TEST_F(ThreadSafetyTest, DefaultPolicyIsSingleThreaded)
 namespace edge_settings {
 
 struct PortWithEnv {
-    static constexpr std::string_view kPath = "server.port";
-    static constexpr std::string_view kEnvOverride = "CPPFIG_EDGE_PORT";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 8080; }
+    static constexpr std::string_view path = "server.port";
+    static constexpr std::string_view env_override = "CPPFIG_EDGE_PORT";
+    using value_type = int;
+    static auto default_value() -> int { return 8080; }
 };
 
 struct HostWithEnv {
-    static constexpr std::string_view kPath = "server.host";
-    static constexpr std::string_view kEnvOverride = "CPPFIG_EDGE_HOST";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "localhost"; }
+    static constexpr std::string_view path = "server.host";
+    static constexpr std::string_view env_override = "CPPFIG_EDGE_HOST";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "localhost"; }
 };
 
 struct AppName {
-    static constexpr std::string_view kPath = "app.name";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "EdgeApp"; }
+    static constexpr std::string_view path = "app.name";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "EdgeApp"; }
 };
 
 struct AppPort {
-    static constexpr std::string_view kPath = "app.port";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 3000; }
+    static constexpr std::string_view path = "app.port";
+    using value_type = int;
+    static auto default_value() -> int { return 3000; }
 };
 
 struct AppVersion {
-    static constexpr std::string_view kPath = "app.version";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "1.0.0"; }
+    static constexpr std::string_view path = "app.version";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "1.0.0"; }
 };
 
 struct ValidatedPort {
-    static constexpr std::string_view kPath = "validated.port";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 8080; }
-    static auto GetValidator() -> cppfig::Validator<int> { return cppfig::Range(1, 65535); }
+    static constexpr std::string_view path = "validated.port";
+    using value_type = int;
+    static auto default_value() -> int { return 8080; }
+    static auto validator() -> cppfig::Validator<int> { return cppfig::Range(1, 65535); }
 };
 
 }  // namespace edge_settings

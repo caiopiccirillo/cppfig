@@ -18,7 +18,7 @@ namespace detail {
     template <typename... Settings>
     consteval auto AllPathsUnique() -> bool
     {
-        constexpr std::array<std::string_view, sizeof...(Settings)> paths = { Settings::kPath... };
+        constexpr std::array<std::string_view, sizeof...(Settings)> paths = { Settings::path... };
         for (std::size_t i = 0; i < paths.size(); ++i) {
             for (std::size_t j = i + 1; j < paths.size(); ++j) {
                 if (paths[i] == paths[j]) {
@@ -40,15 +40,15 @@ namespace detail {
 /// Usage:
 /// @code
 /// struct AppName {
-///     static constexpr std::string_view kPath = "app.name";
-///     using ValueType = std::string;
-///     static auto DefaultValue() -> std::string { return "MyApp"; }
+///     static constexpr std::string_view path = "app.name";
+///     using value_type = std::string;
+///     static auto default_value() -> std::string { return "MyApp"; }
 /// };
 ///
 /// struct AppPort {
-///     static constexpr std::string_view kPath = "app.port";
-///     using ValueType = int;
-///     static auto DefaultValue() -> int { return 8080; }
+///     static constexpr std::string_view path = "app.port";
+///     using value_type = int;
+///     static auto default_value() -> int { return 8080; }
 /// };
 ///
 /// using MySchema = ConfigSchema<AppName, AppPort>;
@@ -58,22 +58,22 @@ namespace detail {
 template <IsSetting... Settings>
 class ConfigSchema {
 public:
-    static constexpr std::size_t kSize = sizeof...(Settings);
+    static constexpr std::size_t size = sizeof...(Settings);
 
     static_assert(detail::AllPathsUnique<Settings...>(), "All paths in ConfigSchema must be unique");
 
     /// @brief Checks if a setting type is in this schema.
     template <typename S>
-    static constexpr bool HasSetting = detail::IsOneOf<S, Settings...>::value;
+    static constexpr bool has_setting = detail::IsOneOf<S, Settings...>::value;
 
     /// @brief Returns all paths as a compile-time array.
-    [[nodiscard]] static constexpr auto GetPaths() -> std::array<std::string_view, kSize>
+    [[nodiscard]] static constexpr auto GetPaths() -> std::array<std::string_view, size>
     {
-        return { Settings::kPath... };
+        return { Settings::path... };
     }
 
     /// @brief Returns the number of settings in the schema.
-    [[nodiscard]] static constexpr auto Size() -> std::size_t { return kSize; }
+    [[nodiscard]] static constexpr auto Size() -> std::size_t { return size; }
 
     /// @brief Iterates over all setting types with a callable.
     ///
@@ -88,6 +88,6 @@ public:
 
 /// @brief Helper alias to get the value type for a setting.
 template <IsSetting S>
-using SettingValueType = typename S::ValueType;
+using setting_value_type = typename S::value_type;
 
 }  // namespace cppfig

@@ -16,34 +16,34 @@ namespace cppfig {
 /// cppfig::Configuration<MySchema> config("config.json");
 /// @endcode
 struct SingleThreadedPolicy {
-    /// @brief No-op mutex type.
-    struct MutexType {
-        void lock() {}         // LCOV_EXCL_LINE
-        void unlock() {}       // LCOV_EXCL_LINE
-        void lock_shared() {}  // LCOV_EXCL_LINE
-        void unlock_shared() {} // LCOV_EXCL_LINE
+    /// @brief No-op mutex type (lower_case to satisfy C++ BasicLockable/SharedLockable).
+    struct mutex_type {  // NOLINT(readability-identifier-naming)
+        void lock() {}         // NOLINT(readability-identifier-naming) LCOV_EXCL_LINE
+        void unlock() {}       // NOLINT(readability-identifier-naming) LCOV_EXCL_LINE
+        void lock_shared() {}  // NOLINT(readability-identifier-naming) LCOV_EXCL_LINE
+        void unlock_shared() {} // NOLINT(readability-identifier-naming) LCOV_EXCL_LINE
     };
 
-    /// @brief No-op shared (reader) lock.
-    struct SharedLock {
-        explicit SharedLock(MutexType& /*unused*/) {}
-        ~SharedLock() = default;
+    /// @brief No-op shared (reader) lock (mirrors std::shared_lock).
+    struct shared_lock {  // NOLINT(readability-identifier-naming)
+        explicit shared_lock(mutex_type& /*unused*/) {}
+        ~shared_lock() = default;
 
-        SharedLock(const SharedLock&) = delete;
-        auto operator=(const SharedLock&) -> SharedLock& = delete;
-        SharedLock(SharedLock&&) = delete;
-        auto operator=(SharedLock&&) -> SharedLock& = delete;
+        shared_lock(const shared_lock&) = delete;
+        auto operator=(const shared_lock&) -> shared_lock& = delete;
+        shared_lock(shared_lock&&) = delete;
+        auto operator=(shared_lock&&) -> shared_lock& = delete;
     };
 
-    /// @brief No-op unique (writer) lock.
-    struct UniqueLock {
-        explicit UniqueLock(MutexType& /*unused*/) {}
-        ~UniqueLock() = default;
+    /// @brief No-op unique (writer) lock (mirrors std::unique_lock).
+    struct unique_lock {  // NOLINT(readability-identifier-naming)
+        explicit unique_lock(mutex_type& /*unused*/) {}
+        ~unique_lock() = default;
 
-        UniqueLock(const UniqueLock&) = delete;
-        auto operator=(const UniqueLock&) -> UniqueLock& = delete;
-        UniqueLock(UniqueLock&&) = delete;
-        auto operator=(UniqueLock&&) -> UniqueLock& = delete;
+        unique_lock(const unique_lock&) = delete;
+        auto operator=(const unique_lock&) -> unique_lock& = delete;
+        unique_lock(unique_lock&&) = delete;
+        auto operator=(unique_lock&&) -> unique_lock& = delete;
     };
 };
 
@@ -60,13 +60,13 @@ struct SingleThreadedPolicy {
 /// @endcode
 struct MultiThreadedPolicy {
     /// @brief Standard shared mutex for reader-writer locking.
-    using MutexType = std::shared_mutex;
+    using mutex_type = std::shared_mutex;
 
     /// @brief Shared (reader) lock — multiple threads may hold simultaneously.
-    using SharedLock = std::shared_lock<std::shared_mutex>;
+    using shared_lock = std::shared_lock<std::shared_mutex>;
 
     /// @brief Unique (writer) lock — exclusive access.
-    using UniqueLock = std::unique_lock<std::shared_mutex>;
+    using unique_lock = std::unique_lock<std::shared_mutex>;
 };
 
 }  // namespace cppfig

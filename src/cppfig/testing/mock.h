@@ -23,15 +23,15 @@ namespace cppfig::testing {
 /// @code
 /// // Define settings
 /// struct AppName {
-///     static constexpr std::string_view kPath = "app.name";
-///     using ValueType = std::string;
-///     static auto DefaultValue() -> std::string { return "MyApp"; }
+///     static constexpr std::string_view path = "app.name";
+///     using value_type = std::string;
+///     static auto default_value() -> std::string { return "MyApp"; }
 /// };
 ///
 /// struct AppPort {
-///     static constexpr std::string_view kPath = "app.port";
-///     using ValueType = int;
-///     static auto DefaultValue() -> int { return 8080; }
+///     static constexpr std::string_view path = "app.port";
+///     using value_type = int;
+///     static auto default_value() -> int { return 8080; }
 /// };
 ///
 /// using Schema = ConfigSchema<AppName, AppPort>;
@@ -46,44 +46,44 @@ namespace cppfig::testing {
 template <typename Schema>
 class MockConfiguration {
 public:
-    using SchemaType = Schema;
+    using schema_type = Schema;
 
     MockConfiguration() { BuildDefaults(); }
 
     /// @brief Gets the value for a setting type.
     template <IsSetting S>
-        requires(Schema::template HasSetting<S>)
-    [[nodiscard]] auto Get() const -> typename S::ValueType
+        requires(Schema::template has_setting<S>)
+    [[nodiscard]] auto Get() const -> typename S::value_type
     {
-        using ValueType = typename S::ValueType;
-        std::string key(S::kPath);
+        using value_type = typename S::value_type;
+        std::string key(S::path);
 
-        auto it = values_.find(key);
-        if (it != values_.end()) {
-            auto parsed = ConfigTraits<ValueType>::FromJson(it->second);
+        auto iter = values_.find(key);
+        if (iter != values_.end()) {
+            auto parsed = ConfigTraits<value_type>::FromJson(iter->second);
             if (parsed.has_value()) {
                 return *parsed;
             }
         }
 
         // Return default
-        return S::DefaultValue();
+        return S::default_value();
     }
 
     /// @brief Sets the value for a setting type (bypasses validation for testing).
     template <IsSetting S>
-        requires(Schema::template HasSetting<S>)
-    void SetValue(typename S::ValueType value)
+        requires(Schema::template has_setting<S>)
+    void SetValue(typename S::value_type value)
     {
-        using ValueType = typename S::ValueType;
-        std::string key(S::kPath);
-        values_[key] = ConfigTraits<ValueType>::ToJson(value);
+        using value_type = typename S::value_type;
+        std::string key(S::path);
+        values_[key] = ConfigTraits<value_type>::ToJson(value);
     }
 
     /// @brief Sets the value with validation.
     template <IsSetting S>
-        requires(Schema::template HasSetting<S>)
-    auto Set(typename S::ValueType value) -> absl::Status
+        requires(Schema::template has_setting<S>)
+    auto Set(typename S::value_type value) -> absl::Status
     {
         auto validator = GetSettingValidator<S>();
         auto validation = validator(value);
@@ -127,9 +127,9 @@ private:
     void BuildDefaults()
     {
         Schema::ForEachSetting([this]<typename S>() {
-            using ValueType = typename S::ValueType;
-            std::string key(S::kPath);
-            values_[key] = ConfigTraits<ValueType>::ToJson(S::DefaultValue());
+            using value_type = typename S::value_type;
+            std::string key(S::path);
+            values_[key] = ConfigTraits<value_type>::ToJson(S::default_value());
         });
     }
 

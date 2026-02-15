@@ -96,35 +96,35 @@ auto password_validator = MinLength(8)
 
 ## Using Validators in Settings
 
-Add a `GetValidator()` static function to your setting:
+Add a `validator()` static function to your setting:
 
 ```cpp
 struct ServerPort {
-    static constexpr std::string_view kPath = "server.port";
-    using ValueType = int;
-    static auto DefaultValue() -> int { return 8080; }
+    static constexpr std::string_view path = "server.port";
+    using value_type = int;
+    static auto default_value() -> int { return 8080; }
 
-    static auto GetValidator() -> cppfig::Validator<int> {
+    static auto validator() -> cppfig::Validator<int> {
         return cppfig::Range(1, 65535);
     }
 };
 
 struct LogLevel {
-    static constexpr std::string_view kPath = "logging.level";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return "info"; }
+    static constexpr std::string_view path = "logging.level";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "info"; }
 
-    static auto GetValidator() -> cppfig::Validator<std::string> {
+    static auto validator() -> cppfig::Validator<std::string> {
         return cppfig::OneOf<std::string>({"debug", "info", "warn", "error"});
     }
 };
 
 struct ApiKey {
-    static constexpr std::string_view kPath = "api.key";
-    using ValueType = std::string;
-    static auto DefaultValue() -> std::string { return ""; }
+    static constexpr std::string_view path = "api.key";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return ""; }
 
-    static auto GetValidator() -> cppfig::Validator<std::string> {
+    static auto validator() -> cppfig::Validator<std::string> {
         return cppfig::MinLength(32).And(cppfig::MaxLength(64));
     }
 };

@@ -8,9 +8,9 @@
 namespace cppfig {
 
 /// @brief Type of change detected in a diff.
-enum class DiffType { kAdded,
-                      kRemoved,
-                      kModified };
+enum class DiffType { Added,
+                      Removed,
+                      Modified };
 
 /// @brief Represents a single difference between two configurations.
 struct DiffEntry {
@@ -22,11 +22,11 @@ struct DiffEntry {
     [[nodiscard]] auto TypeString() const -> std::string
     {
         switch (type) {
-        case DiffType::kAdded:
+        case DiffType::Added:
             return "ADDED";
-        case DiffType::kRemoved:
+        case DiffType::Removed:
             return "REMOVED";
-        case DiffType::kModified:
+        case DiffType::Modified:
             return "MODIFIED";
         }
         return "UNKNOWN";  // LCOV_EXCL_LINE
@@ -57,13 +57,13 @@ public:
     }
 
     /// @brief Returns entries that were added.
-    [[nodiscard]] auto Added() const -> std::vector<DiffEntry> { return Filter(DiffType::kAdded); }
+    [[nodiscard]] auto Added() const -> std::vector<DiffEntry> { return Filter(DiffType::Added); }
 
     /// @brief Returns entries that were removed.
-    [[nodiscard]] auto Removed() const -> std::vector<DiffEntry> { return Filter(DiffType::kRemoved); }
+    [[nodiscard]] auto Removed() const -> std::vector<DiffEntry> { return Filter(DiffType::Removed); }
 
     /// @brief Returns entries that were modified.
-    [[nodiscard]] auto Modified() const -> std::vector<DiffEntry> { return Filter(DiffType::kModified); }
+    [[nodiscard]] auto Modified() const -> std::vector<DiffEntry> { return Filter(DiffType::Modified); }
 
     /// @brief Converts the diff to a human-readable string.
     [[nodiscard]] auto ToString() const -> std::string
@@ -78,13 +78,13 @@ public:
         for (const auto& entry : entries) {
             ss << "  [" << entry.TypeString() << "] " << entry.path;
             switch (entry.type) {
-            case DiffType::kAdded:
+            case DiffType::Added:
                 ss << " = " << entry.new_value;
                 break;
-            case DiffType::kRemoved:
+            case DiffType::Removed:
                 ss << " (was: " << entry.old_value << ")";
                 break;
-            case DiffType::kModified:
+            case DiffType::Modified:
                 ss << ": " << entry.old_value << " -> " << entry.new_value;
                 break;
             }
@@ -107,14 +107,14 @@ namespace detail {
                 std::string path = prefix.empty() ? key : prefix + "." + key;
 
                 if (!base.is_object() || !base.contains(key)) {
-                    diff.entries.push_back({ DiffType::kAdded, path, "", value.dump() });
+                    diff.entries.push_back({ DiffType::Added, path, "", value.dump() });
                 }
                 else if (base[key] != value) {
                     if (base[key].is_object() && value.is_object()) {
                         CompareJsonRecursive(base[key], value, path, diff);
                     }
                     else {
-                        diff.entries.push_back({ DiffType::kModified, path, base[key].dump(), value.dump() });
+                        diff.entries.push_back({ DiffType::Modified, path, base[key].dump(), value.dump() });
                     }
                 }
             }
@@ -126,7 +126,7 @@ namespace detail {
                 std::string path = prefix.empty() ? key : prefix + "." + key;
 
                 if (!target.is_object() || !target.contains(key)) {
-                    diff.entries.push_back({ DiffType::kRemoved, path, value.dump(), "" });
+                    diff.entries.push_back({ DiffType::Removed, path, value.dump(), "" });
                 }
             }
         }

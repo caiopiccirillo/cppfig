@@ -6,24 +6,46 @@ Checks: >
   performance-*,
   portability-*,
   readability-*,
-  -modernize-use-trailing-return-type
+  -modernize-use-trailing-return-type,
+  -misc-include-cleaner,
+  -readability-identifier-length
 
 CheckOptions:
+  # Namespaces: lower_case
   - { key: readability-identifier-naming.NamespaceCase,          value: lower_case }
+
+  # Types: CamelCase (classes, structs, template params, enums)
   - { key: readability-identifier-naming.ClassCase,              value: CamelCase  }
   - { key: readability-identifier-naming.StructCase,             value: CamelCase  }
   - { key: readability-identifier-naming.TemplateParameterCase,  value: CamelCase  }
+  - { key: readability-identifier-naming.EnumConstantCase,       value: CamelCase  }
+
+  # Type aliases: CamelCase (matching type naming convention)
+  # STL-style trait aliases (value_type, data_type, etc.) are excluded via regex.
+  - { key: readability-identifier-naming.TypeAliasCase,          value: CamelCase  }
+  - { key: readability-identifier-naming.TypeAliasIgnoredRegexp, value: "^(value_type|data_type|serializer_type|schema_type|mutex_type|shared_lock|unique_lock|validator_fn|setting_value_type)$" }
+  - { key: readability-identifier-naming.TypedefCase,            value: CamelCase  }
+
+  # Functions: CamelCase for public API (Get, Set, Load, Save, etc.)
+  # Setting trait functions (default_value, validator) are excluded via regex.
   - { key: readability-identifier-naming.FunctionCase,           value: CamelCase  }
+  - { key: readability-identifier-naming.FunctionIgnoredRegexp,  value: "^(default_value|validator)$" }
+
+  # Variables and members: lower_case with _ suffix for private/protected
   - { key: readability-identifier-naming.VariableCase,           value: lower_case }
   - { key: readability-identifier-naming.PublicMemberCase,       value: lower_case }
   - { key: readability-identifier-naming.PrivateMemberCase,      value: lower_case }
   - { key: readability-identifier-naming.ProtectedMemberCase,    value: lower_case }
   - { key: readability-identifier-naming.PrivateMemberSuffix,    value: _          }
   - { key: readability-identifier-naming.ProtectedMemberSuffix,  value: _          }
+
+  # Constants: lower_case (STL trait convention: path, env_override, size)
+  - { key: readability-identifier-naming.ConstexprVariableCase,  value: lower_case }
+  - { key: readability-identifier-naming.GlobalConstantCase,     value: lower_case }
+  - { key: readability-identifier-naming.MemberConstantCase,     value: lower_case }
+  - { key: readability-identifier-naming.StaticConstantCase,     value: lower_case }
+
+  # Macros: UPPER_CASE
   - { key: readability-identifier-naming.MacroDefinitionCase,    value: UPPER_CASE }
-  - { key: readability-identifier-naming.EnumConstantCase,       value: CamelCase  }
-  - { key: readability-identifier-naming.ConstexprVariableCase,  value: CamelCase  }
-  - { key: readability-identifier-naming.GlobalConstantCase,     value: CamelCase  }
-  - { key: readability-identifier-naming.MemberConstantCase,     value: CamelCase  }
-  - { key: readability-identifier-naming.StaticConstantCase,     value: CamelCase  }
+
 # Reference: https://clang.llvm.org/extra/clang-tidy/checks/readability/identifier-naming.html
