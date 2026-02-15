@@ -8,7 +8,9 @@ IndentAccessModifiers: false
 AlignEscapedNewlines: Right
 AlignOperands:   DontAlign
 AlignTrailingComments:
-  Kind:            Never
+  Kind: Always
+  OverEmptyLines: 1
+ReflowComments: true
 AllowShortBlocksOnASingleLine: Empty
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
@@ -28,5 +30,6 @@ PenaltyBreakBeforeFirstCallParameter: 19
 PenaltyReturnTypeOnItsOwnLine: 60
 SpaceBeforeCpp11BracedList: true
 SpaceInEmptyBlock: true
-SpacesBeforeTrailingComments: 1
+SpacesBeforeTrailingComments: 2
 Standard:        Latest
+QualifierAlignment: Left

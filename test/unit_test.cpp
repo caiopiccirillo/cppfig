@@ -1,871 +1,770 @@
+#include <cppfig/cppfig.h>
+#include <cppfig/testing/mock.h>
 #include <gtest/gtest.h>
 
-#include <filesystem>
-#include <stdexcept>
+namespace cppfig::test {
 
-#include "cppfig.h"
+TEST(ConfigTraitsTest, BoolToJson)
+{
+    EXPECT_EQ(ConfigTraits<bool>::ToJson(true), true);
+    EXPECT_EQ(ConfigTraits<bool>::ToJson(false), false);
+}
 
-namespace cppfig_unit_test {
+TEST(ConfigTraitsTest, BoolFromJson)
+{
+    EXPECT_EQ(ConfigTraits<bool>::FromJson(nlohmann::json(true)), true);
+    EXPECT_EQ(ConfigTraits<bool>::FromJson(nlohmann::json(false)), false);
+    EXPECT_EQ(ConfigTraits<bool>::FromJson(nlohmann::json("invalid")), std::nullopt);
+}
 
-// Define comprehensive test configuration enum
-enum class ConfigKey : uint8_t {
-    DatabaseUrl,
-    MaxConnections,
-    EnableLogging,
-    LogLevel,
-    ApiTimeout,
-    ServerPort,
-    DebugMode,
-    CacheSize,
-    RetryCount,
-    CompressionRatio
+TEST(ConfigTraitsTest, BoolFromString)
+{
+    EXPECT_EQ(ConfigTraits<bool>::FromString("true"), true);
+    EXPECT_EQ(ConfigTraits<bool>::FromString("false"), false);
+    EXPECT_EQ(ConfigTraits<bool>::FromString("1"), true);
+    EXPECT_EQ(ConfigTraits<bool>::FromString("0"), false);
+    EXPECT_EQ(ConfigTraits<bool>::FromString("yes"), true);
+    EXPECT_EQ(ConfigTraits<bool>::FromString("no"), false);
+    EXPECT_EQ(ConfigTraits<bool>::FromString("invalid"), std::nullopt);
+}
+
+TEST(ConfigTraitsTest, IntToJson)
+{
+    EXPECT_EQ(ConfigTraits<int>::ToJson(42), 42);
+    EXPECT_EQ(ConfigTraits<int>::ToJson(-1), -1);
+}
+
+TEST(ConfigTraitsTest, IntFromJson)
+{
+    EXPECT_EQ(ConfigTraits<int>::FromJson(nlohmann::json(42)), 42);
+    EXPECT_EQ(ConfigTraits<int>::FromJson(nlohmann::json("invalid")), std::nullopt);
+}
+
+TEST(ConfigTraitsTest, IntFromString)
+{
+    EXPECT_EQ(ConfigTraits<int>::FromString("42"), 42);
+    EXPECT_EQ(ConfigTraits<int>::FromString("-1"), -1);
+    EXPECT_EQ(ConfigTraits<int>::FromString("abc"), std::nullopt);
+    EXPECT_EQ(ConfigTraits<int>::FromString("42abc"), std::nullopt);
+}
+
+TEST(ConfigTraitsTest, DoubleToJson)
+{
+    EXPECT_DOUBLE_EQ(ConfigTraits<double>::ToJson(3.14).get<double>(), 3.14);
+}
+
+TEST(ConfigTraitsTest, DoubleFromJson)
+{
+    auto result = ConfigTraits<double>::FromJson(nlohmann::json(3.14));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_DOUBLE_EQ(*result, 3.14);
+
+    // Test invalid type returns nullopt
+    EXPECT_EQ(ConfigTraits<double>::FromJson(nlohmann::json("invalid")), std::nullopt);
+}
+
+TEST(ConfigTraitsTest, StringToJson)
+{
+    EXPECT_EQ(ConfigTraits<std::string>::ToJson("hello"), "hello");
+}
+
+TEST(ConfigTraitsTest, StringFromJson)
+{
+    EXPECT_EQ(ConfigTraits<std::string>::FromJson(nlohmann::json("hello")), "hello");
+    EXPECT_EQ(ConfigTraits<std::string>::FromJson(nlohmann::json(42)), std::nullopt);
+}
+
+// Additional traits tests for coverage
+TEST(ConfigTraitsTest, DoubleFromString)
+{
+    EXPECT_DOUBLE_EQ(*ConfigTraits<double>::FromString("3.14"), 3.14);
+    EXPECT_DOUBLE_EQ(*ConfigTraits<double>::FromString("-2.5"), -2.5);
+    EXPECT_EQ(ConfigTraits<double>::FromString("abc"), std::nullopt);
+    EXPECT_EQ(ConfigTraits<double>::FromString("3.14abc"), std::nullopt);
+}
+
+TEST(ConfigTraitsTest, DoubleToString)
+{
+    auto str = ConfigTraits<double>::ToString(3.14);
+    EXPECT_FALSE(str.empty());
+}
+
+TEST(ConfigTraitsTest, FloatToJson)
+{
+    EXPECT_FLOAT_EQ(ConfigTraits<float>::ToJson(3.14f).get<float>(), 3.14f);
+}
+
+TEST(ConfigTraitsTest, FloatFromJson)
+{
+    auto result = ConfigTraits<float>::FromJson(nlohmann::json(3.14f));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FLOAT_EQ(*result, 3.14f);
+    EXPECT_EQ(ConfigTraits<float>::FromJson(nlohmann::json("invalid")), std::nullopt);
+}
+
+TEST(ConfigTraitsTest, FloatFromString)
+{
+    EXPECT_FLOAT_EQ(*ConfigTraits<float>::FromString("3.14"), 3.14f);
+    EXPECT_EQ(ConfigTraits<float>::FromString("abc"), std::nullopt);
+    EXPECT_EQ(ConfigTraits<float>::FromString("3.14abc"), std::nullopt);
+}
+
+TEST(ConfigTraitsTest, FloatToString)
+{
+    auto str = ConfigTraits<float>::ToString(3.14f);
+    EXPECT_FALSE(str.empty());
+}
+
+TEST(ConfigTraitsTest, StringToString)
+{
+    EXPECT_EQ(ConfigTraits<std::string>::ToString("hello"), "hello");
+}
+
+TEST(ConfigTraitsTest, StringFromString)
+{
+    EXPECT_EQ(ConfigTraits<std::string>::FromString("hello"), "hello");
+}
+
+TEST(ValidatorTest, MinValidator)
+{
+    auto validator = Min(5);
+    EXPECT_TRUE(validator(5));
+    EXPECT_TRUE(validator(10));
+    EXPECT_FALSE(validator(4));
+}
+
+TEST(ValidatorTest, MaxValidator)
+{
+    auto validator = Max(10);
+    EXPECT_TRUE(validator(10));
+    EXPECT_TRUE(validator(5));
+    EXPECT_FALSE(validator(11));
+}
+
+TEST(ValidatorTest, RangeValidator)
+{
+    auto validator = Range(1, 100);
+    EXPECT_TRUE(validator(1));
+    EXPECT_TRUE(validator(50));
+    EXPECT_TRUE(validator(100));
+    EXPECT_FALSE(validator(0));
+    EXPECT_FALSE(validator(101));
+}
+
+TEST(ValidatorTest, NotEmptyValidator)
+{
+    auto validator = NotEmpty();
+    EXPECT_TRUE(validator("hello"));
+    EXPECT_FALSE(validator(""));
+}
+
+TEST(ValidatorTest, MaxLengthValidator)
+{
+    auto validator = MaxLength(5);
+    EXPECT_TRUE(validator("hello"));
+    EXPECT_TRUE(validator("hi"));
+    EXPECT_FALSE(validator("hello world"));
+}
+
+TEST(ValidatorTest, OneOfValidator)
+{
+    auto validator = OneOf<std::string>({ "debug", "info", "warn", "error" });
+    EXPECT_TRUE(validator("debug"));
+    EXPECT_TRUE(validator("info"));
+    EXPECT_FALSE(validator("trace"));
+}
+
+TEST(ValidatorTest, AndCombinator)
+{
+    auto validator = Min(1).And(Max(10));
+    EXPECT_TRUE(validator(5));
+    EXPECT_FALSE(validator(0));
+    EXPECT_FALSE(validator(11));
+}
+
+TEST(ValidatorTest, OrCombinator)
+{
+    auto validator = Predicate<int>([](int v) { return v == 0; }, "Must be 0")
+                         .Or(Predicate<int>([](int v) { return v == 100; }, "Must be 100"));
+    EXPECT_TRUE(validator(0));
+    EXPECT_TRUE(validator(100));
+    EXPECT_FALSE(validator(50));
+}
+
+TEST(ValidatorTest, PredicateValidatorSuccess)
+{
+    // Test predicate returning true (covers the success path at line 197)
+    auto validator = Predicate<int>([](int v) { return v > 0; }, "Must be positive");
+    auto result = validator(42);
+    EXPECT_TRUE(result);
+    EXPECT_TRUE(result.error_message.empty());
+}
+
+TEST(ValidatorTest, PredicateValidatorFailure)
+{
+    auto validator = Predicate<int>([](int v) { return v > 0; }, "Must be positive");
+    auto result = validator(-1);
+    EXPECT_FALSE(result);
+    EXPECT_EQ(result.error_message, "Must be positive");
+}
+
+TEST(ValidatorTest, AlwaysValidValidator)
+{
+    auto validator = AlwaysValid<int>();
+    EXPECT_TRUE(validator(0));
+    EXPECT_TRUE(validator(-1000));
+    EXPECT_TRUE(validator(1000));
+}
+
+TEST(ValidatorTest, MinLengthValidator)
+{
+    auto validator = MinLength(3);
+    EXPECT_TRUE(validator("hello"));
+    EXPECT_TRUE(validator("abc"));
+    EXPECT_FALSE(validator("ab"));
+    EXPECT_FALSE(validator(""));
+}
+
+TEST(ValidatorTest, PositiveValidator)
+{
+    auto validator = Positive<int>();
+    EXPECT_TRUE(validator(1));
+    EXPECT_TRUE(validator(100));
+    EXPECT_FALSE(validator(0));
+    EXPECT_FALSE(validator(-1));
+}
+
+TEST(ValidatorTest, NonNegativeValidator)
+{
+    auto validator = NonNegative<int>();
+    EXPECT_TRUE(validator(0));
+    EXPECT_TRUE(validator(100));
+    EXPECT_FALSE(validator(-1));
+}
+
+struct TestStringSetting {
+    static constexpr std::string_view kPath = "test.string";
+    using ValueType = std::string;
+    static auto DefaultValue() -> std::string { return "default"; }
 };
 
-// Implement string conversion functions for JSON serialization
-inline std::string ToString(ConfigKey key)
-{
-    switch (key) {
-    case ConfigKey::DatabaseUrl:
-        return "database_url";
-    case ConfigKey::MaxConnections:
-        return "max_connections";
-    case ConfigKey::EnableLogging:
-        return "enable_logging";
-    case ConfigKey::LogLevel:
-        return "log_level";
-    case ConfigKey::ApiTimeout:
-        return "api_timeout";
-    case ConfigKey::ServerPort:
-        return "server_port";
-    case ConfigKey::DebugMode:
-        return "debug_mode";
-    case ConfigKey::CacheSize:
-        return "cache_size";
-    case ConfigKey::RetryCount:
-        return "retry_count";
-    case ConfigKey::CompressionRatio:
-        return "compression_ratio";
-    default:
-        return "unknown";
-    }
-}
-
-inline ConfigKey FromString(const std::string& str)
-{
-    if (str == "database_url")
-        return ConfigKey::DatabaseUrl;
-    if (str == "max_connections")
-        return ConfigKey::MaxConnections;
-    if (str == "enable_logging")
-        return ConfigKey::EnableLogging;
-    if (str == "log_level")
-        return ConfigKey::LogLevel;
-    if (str == "api_timeout")
-        return ConfigKey::ApiTimeout;
-    if (str == "server_port")
-        return ConfigKey::ServerPort;
-    if (str == "debug_mode")
-        return ConfigKey::DebugMode;
-    if (str == "cache_size")
-        return ConfigKey::CacheSize;
-    if (str == "retry_count")
-        return ConfigKey::RetryCount;
-    if (str == "compression_ratio")
-        return ConfigKey::CompressionRatio;
-    throw std::runtime_error("Invalid configuration key: " + str);
-}
-
-} // namespace cppfig_unit_test
-
-// Declare compile-time type mappings for strong type safety
-namespace config {
-DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::DatabaseUrl, std::string);
-DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::MaxConnections, int);
-DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::EnableLogging, bool);
-DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::LogLevel, std::string);
-DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::ApiTimeout, double);
-DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::ServerPort, int);
-DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::DebugMode, bool);
-DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::CacheSize, int);
-DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::RetryCount, int);
-DECLARE_CONFIG_TYPE(cppfig_unit_test::ConfigKey, cppfig_unit_test::ConfigKey::CompressionRatio, float);
-} // namespace config
-
-// Template specializations for JSON serializer
-namespace config {
-template <>
-inline std::string JsonSerializer<cppfig_unit_test::ConfigKey, BasicSettingVariant<cppfig_unit_test::ConfigKey>>::ToString(cppfig_unit_test::ConfigKey enumValue)
-{
-    return cppfig_unit_test::ToString(enumValue);
-}
-
-template <>
-inline cppfig_unit_test::ConfigKey JsonSerializer<cppfig_unit_test::ConfigKey, BasicSettingVariant<cppfig_unit_test::ConfigKey>>::FromString(const std::string& str)
-{
-    return cppfig_unit_test::FromString(str);
-}
-} // namespace config
-
-namespace cppfig_unit_test {
-
-using TestConfig = config::BasicJsonConfiguration<ConfigKey>;
-
-class CppfigUnitTest : public ::testing::Test {
-protected:
-    void SetUp() override
-    {
-        test_config_path_ = std::filesystem::temp_directory_path() / "cppfig_unit_test.json";
-
-        if (std::filesystem::exists(test_config_path_)) {
-            std::filesystem::remove(test_config_path_);
-        }
-    }
-
-    void TearDown() override
-    {
-        if (std::filesystem::exists(test_config_path_)) {
-            std::filesystem::remove(test_config_path_);
-        }
-    }
-
-    TestConfig::DefaultConfigMap CreateDefaultConfig()
-    {
-        return {
-            { ConfigKey::DatabaseUrl,
-              ::config::ConfigHelpers<ConfigKey>::CreateStringSetting<ConfigKey::DatabaseUrl>(
-                  "postgresql://localhost:5432/app", "Database connection URL") },
-            { ConfigKey::MaxConnections,
-              ::config::ConfigHelpers<ConfigKey>::CreateIntSetting<ConfigKey::MaxConnections>(
-                  100, 1, 1000, "Maximum database connections", "connections") },
-            { ConfigKey::EnableLogging,
-              ::config::ConfigHelpers<ConfigKey>::CreateBoolSetting<ConfigKey::EnableLogging>(
-                  true, "Enable application logging") },
-            { ConfigKey::LogLevel,
-              ::config::ConfigHelpers<ConfigKey>::CreateStringSetting<ConfigKey::LogLevel>(
-                  "info", "Logging level (debug, info, warn, error)") },
-            { ConfigKey::ApiTimeout,
-              ::config::ConfigHelpers<ConfigKey>::CreateDoubleSetting<ConfigKey::ApiTimeout>(
-                  30.0, 0.1, 300.0, "API request timeout", "seconds") },
-            { ConfigKey::ServerPort,
-              ::config::ConfigHelpers<ConfigKey>::CreateIntSetting<ConfigKey::ServerPort>(
-                  8080, 1024, 65535, "Server port number", "port") },
-            { ConfigKey::DebugMode,
-              ::config::ConfigHelpers<ConfigKey>::CreateBoolSetting<ConfigKey::DebugMode>(
-                  false, "Enable debug mode") },
-            { ConfigKey::CacheSize,
-              ::config::ConfigHelpers<ConfigKey>::CreateIntSetting<ConfigKey::CacheSize>(
-                  1024, 16, 65536, "Cache size", "MB") },
-            { ConfigKey::RetryCount,
-              ::config::ConfigHelpers<ConfigKey>::CreateIntSetting<ConfigKey::RetryCount>(
-                  3, 0, 10, "Number of retry attempts", "attempts") },
-            { ConfigKey::CompressionRatio,
-              ::config::ConfigHelpers<ConfigKey>::CreateFloatSetting<ConfigKey::CompressionRatio>(
-                  0.8f, 0.1f, 1.0f, "Compression ratio", "ratio") }
-        };
-    }
-
-    std::filesystem::path test_config_path_;
+struct TestIntSetting {
+    static constexpr std::string_view kPath = "test.int";
+    using ValueType = int;
+    static auto DefaultValue() -> int { return 42; }
 };
 
-// ============================================================================
-// BASIC FUNCTIONALITY TESTS
-// ============================================================================
+struct TestSettingWithEnv {
+    static constexpr std::string_view kPath = "test.env";
+    static constexpr std::string_view kEnvOverride = "TEST_ENV_SETTING";
+    using ValueType = std::string;
+    static auto DefaultValue() -> std::string { return "from_default"; }
+};
 
-TEST_F(CppfigUnitTest, BasicConfigurationCreation)
+struct TestSettingWithValidator {
+    static constexpr std::string_view kPath = "test.validated";
+    using ValueType = int;
+    static auto DefaultValue() -> int { return 50; }
+    static auto GetValidator() -> Validator<int> { return Range(1, 100); }
+};
+
+TEST(SettingTest, SettingConcept)
 {
-    auto defaults = CreateDefaultConfig();
-    EXPECT_NO_THROW(TestConfig config(test_config_path_, defaults));
+    static_assert(IsSetting<TestStringSetting>);
+    static_assert(IsSetting<TestIntSetting>);
+    static_assert(IsSetting<TestSettingWithEnv>);
+    static_assert(IsSetting<TestSettingWithValidator>);
 }
 
-TEST_F(CppfigUnitTest, DefaultValueAccess)
+TEST(SettingTest, HasEnvOverrideConcept)
 {
-    auto defaults = CreateDefaultConfig();
-    TestConfig config(test_config_path_, defaults);
-
-    // Test access to default values
-    auto db_url_setting = config.template GetSetting<ConfigKey::DatabaseUrl>();
-    auto max_conn_setting = config.template GetSetting<ConfigKey::MaxConnections>();
-    auto logging_setting = config.template GetSetting<ConfigKey::EnableLogging>();
-    auto timeout_setting = config.template GetSetting<ConfigKey::ApiTimeout>();
-
-    auto db_url = db_url_setting.Value();
-    auto max_conn = max_conn_setting.Value();
-    auto logging = logging_setting.Value();
-    auto timeout = timeout_setting.Value();
-    auto compression_setting = config.template GetSetting<ConfigKey::CompressionRatio>();
-    auto compression = compression_setting.Value();
-
-    EXPECT_EQ(db_url, "postgresql://localhost:5432/app");
-    EXPECT_EQ(max_conn, 100);
-    EXPECT_TRUE(logging);
-    EXPECT_DOUBLE_EQ(timeout, 30.0);
-    EXPECT_FLOAT_EQ(compression, 0.8f);
+    static_assert(!HasEnvOverride<TestStringSetting>);
+    static_assert(HasEnvOverride<TestSettingWithEnv>);
 }
 
-// ============================================================================
-// ERGONOMIC API TESTS
-// ============================================================================
-
-TEST_F(CppfigUnitTest, ErgonomicAPIBasics)
+TEST(SettingTest, HasValidatorConcept)
 {
-    auto defaults = CreateDefaultConfig();
-    TestConfig config(test_config_path_, defaults);
-
-    // Test ergonomic API - types automatically deduced
-    auto db_setting = config.template GetSetting<ConfigKey::DatabaseUrl>();
-    auto connections_setting = config.template GetSetting<ConfigKey::MaxConnections>();
-    auto logging_setting = config.template GetSetting<ConfigKey::EnableLogging>();
-    auto timeout_setting = config.template GetSetting<ConfigKey::ApiTimeout>();
-    auto compression_setting = config.GetSetting<ConfigKey::CompressionRatio>();
-
-    // Values should be correctly typed and accessible
-    auto db_url = db_setting.Value(); // std::string
-    auto max_conn = connections_setting.Value(); // int
-    auto log_enabled = logging_setting.Value(); // bool
-    auto timeout = timeout_setting.Value(); // double
-    auto compression = compression_setting.Value(); // float
-
-    EXPECT_EQ(db_url, "postgresql://localhost:5432/app");
-    EXPECT_EQ(max_conn, 100);
-    EXPECT_TRUE(log_enabled);
-    EXPECT_DOUBLE_EQ(timeout, 30.0);
-    EXPECT_FLOAT_EQ(compression, 0.8f);
+    static_assert(!HasValidator<TestStringSetting>);
+    static_assert(HasValidator<TestSettingWithValidator>);
 }
 
-TEST_F(CppfigUnitTest, ErgonomicAPITypeInformation)
+TEST(SettingTest, GetEnvOverrideHelper)
 {
-    auto defaults = CreateDefaultConfig();
-    TestConfig config(test_config_path_, defaults);
-
-    auto db_setting = config.GetSetting<ConfigKey::DatabaseUrl>();
-    auto connections_setting = config.GetSetting<ConfigKey::MaxConnections>();
-    auto logging_setting = config.GetSetting<ConfigKey::EnableLogging>();
-    auto timeout_setting = config.GetSetting<ConfigKey::ApiTimeout>();
-    auto compression_setting = config.GetSetting<ConfigKey::CompressionRatio>();
-
-    // Test type information
-    EXPECT_EQ(db_setting.GetTypeName(), "string");
-    EXPECT_EQ(connections_setting.GetTypeName(), "int");
-    EXPECT_EQ(logging_setting.GetTypeName(), "bool");
-    EXPECT_EQ(timeout_setting.GetTypeName(), "double");
-    EXPECT_EQ(compression_setting.GetTypeName(), "float");
+    EXPECT_EQ(GetEnvOverride<TestStringSetting>(), "");
+    EXPECT_EQ(GetEnvOverride<TestSettingWithEnv>(), "TEST_ENV_SETTING");
 }
 
-TEST_F(CppfigUnitTest, ErgonomicAPIValueModification)
+TEST(SettingTest, GetValidatorHelper)
 {
-    auto defaults = CreateDefaultConfig();
-    TestConfig config(test_config_path_, defaults);
+    auto validator1 = GetSettingValidator<TestStringSetting>();
+    EXPECT_TRUE(validator1("any value"));  // AlwaysValid
 
-    // Test setting values with ergonomic API
-    auto port_setting = config.GetSetting<ConfigKey::ServerPort>();
-    auto debug_setting = config.GetSetting<ConfigKey::DebugMode>();
-    auto timeout_setting = config.GetSetting<ConfigKey::ApiTimeout>();
-
-    // Modify values using clean API
-    port_setting.SetValue(9090);
-    debug_setting.SetValue(true);
-    timeout_setting.SetValue(45.5);
-
-    // Verify changes
-    EXPECT_EQ(port_setting.Value(), 9090);
-    EXPECT_TRUE(debug_setting.Value());
-    EXPECT_DOUBLE_EQ(timeout_setting.Value(), 45.5);
-
-    // Test modification tracking
-    EXPECT_TRUE(config.IsModified<ConfigKey::ServerPort>());
-    EXPECT_TRUE(config.IsModified<ConfigKey::DebugMode>());
-    EXPECT_TRUE(config.IsModified<ConfigKey::ApiTimeout>());
-    EXPECT_FALSE(config.IsModified<ConfigKey::DatabaseUrl>());
+    auto validator2 = GetSettingValidator<TestSettingWithValidator>();
+    EXPECT_TRUE(validator2(50));
+    EXPECT_FALSE(validator2(0));
 }
 
-// ============================================================================
-// METADATA TESTS
-// ============================================================================
+using TestSchema = ConfigSchema<TestStringSetting, TestIntSetting, TestSettingWithValidator>;
 
-TEST_F(CppfigUnitTest, MetadataAccess)
+TEST(ConfigSchemaTest, SchemaSize)
 {
-    auto defaults = CreateDefaultConfig();
-    TestConfig config(test_config_path_, defaults);
-
-    auto cache_setting = config.GetSetting<ConfigKey::CacheSize>();
-    auto retry_setting = config.GetSetting<ConfigKey::RetryCount>();
-    auto timeout_setting = config.GetSetting<ConfigKey::ApiTimeout>();
-
-    // Test metadata access
-    EXPECT_TRUE(cache_setting.HasDescription());
-    EXPECT_EQ(cache_setting.Description().value(), "Cache size");
-    EXPECT_TRUE(cache_setting.HasUnit());
-    EXPECT_EQ(cache_setting.Unit().value(), "MB");
-    EXPECT_TRUE(cache_setting.HasMinValue());
-    EXPECT_TRUE(cache_setting.HasMaxValue());
-    EXPECT_EQ(cache_setting.MinValue().value(), 16);
-    EXPECT_EQ(cache_setting.MaxValue().value(), 65536);
-
-    EXPECT_TRUE(retry_setting.HasDescription());
-    EXPECT_EQ(retry_setting.Description().value(), "Number of retry attempts");
-    EXPECT_TRUE(retry_setting.HasUnit());
-    EXPECT_EQ(retry_setting.Unit().value(), "attempts");
-
-    EXPECT_TRUE(timeout_setting.HasDescription());
-    EXPECT_EQ(timeout_setting.Description().value(), "API request timeout");
-    EXPECT_TRUE(timeout_setting.HasUnit());
-    EXPECT_EQ(timeout_setting.Unit().value(), "seconds");
+    EXPECT_EQ(TestSchema::Size(), 3);
 }
 
-TEST_F(CppfigUnitTest, ToStringFunctionality)
+TEST(ConfigSchemaTest, HasSettingCheck)
 {
-    auto defaults = CreateDefaultConfig();
-    TestConfig config(test_config_path_, defaults);
-
-    auto port_setting = config.GetSetting<ConfigKey::ServerPort>();
-    auto debug_setting = config.GetSetting<ConfigKey::DebugMode>();
-    auto timeout_setting = config.GetSetting<ConfigKey::ApiTimeout>();
-
-    // Test ToString method
-    auto port_str = port_setting.ToString();
-    auto debug_str = debug_setting.ToString();
-    auto timeout_str = timeout_setting.ToString();
-
-    EXPECT_TRUE(port_str.find("int setting") != std::string::npos);
-    EXPECT_TRUE(port_str.find("8080") != std::string::npos);
-    EXPECT_TRUE(port_str.find("port") != std::string::npos);
-
-    EXPECT_TRUE(debug_str.find("bool setting") != std::string::npos);
-    EXPECT_TRUE(debug_str.find("false") != std::string::npos);
-
-    EXPECT_TRUE(timeout_str.find("double setting") != std::string::npos);
-    EXPECT_TRUE(timeout_str.find("30") != std::string::npos);
-    EXPECT_TRUE(timeout_str.find("seconds") != std::string::npos);
+    static_assert(TestSchema::HasSetting<TestStringSetting>);
+    static_assert(TestSchema::HasSetting<TestIntSetting>);
+    static_assert(!TestSchema::HasSetting<TestSettingWithEnv>);
 }
 
-// ============================================================================
-// VALIDATION TESTS
-// ============================================================================
-
-TEST_F(CppfigUnitTest, ValidationSuccess)
+TEST(ConfigSchemaTest, GetPaths)
 {
-    auto defaults = CreateDefaultConfig();
-    TestConfig config(test_config_path_, defaults);
-
-    // All default values should be valid
-    EXPECT_TRUE(config.ValidateAll());
-
-    auto port_setting = config.GetSetting<ConfigKey::ServerPort>();
-    auto connections_setting = config.GetSetting<ConfigKey::MaxConnections>();
-    auto compression_setting = config.GetSetting<ConfigKey::CompressionRatio>();
-
-    // Test valid values within constraints
-    port_setting.SetValue(8443); // Valid port
-    EXPECT_TRUE(port_setting.IsValid());
-
-    connections_setting.SetValue(500); // Valid connection count
-    EXPECT_TRUE(connections_setting.IsValid());
-
-    compression_setting.SetValue(0.5f); // Valid compression ratio
-    EXPECT_TRUE(compression_setting.IsValid());
-
-    EXPECT_TRUE(config.ValidateAll());
+    auto paths = TestSchema::GetPaths();
+    EXPECT_EQ(paths.size(), 3);
+    EXPECT_EQ(paths[0], "test.string");
+    EXPECT_EQ(paths[1], "test.int");
+    EXPECT_EQ(paths[2], "test.validated");
 }
 
-TEST_F(CppfigUnitTest, ValidationFailures)
+TEST(ConfigSchemaTest, ForEachSetting)
 {
-    auto defaults = CreateDefaultConfig();
-    TestConfig config(test_config_path_, defaults);
-
-    auto port_setting = config.GetSetting<ConfigKey::ServerPort>();
-    auto connections_setting = config.GetSetting<ConfigKey::MaxConnections>();
-    auto compression_setting = config.GetSetting<ConfigKey::CompressionRatio>();
-    auto retry_setting = config.GetSetting<ConfigKey::RetryCount>();
-
-    // Test values outside valid ranges
-    port_setting.SetValue(100); // Below minimum (1024)
-    EXPECT_FALSE(port_setting.IsValid());
-    EXPECT_FALSE(config.ValidateAll());
-
-    port_setting.SetValue(70000); // Above maximum (65535)
-    EXPECT_FALSE(port_setting.IsValid());
-    EXPECT_FALSE(config.ValidateAll());
-
-    // Reset to valid value
-    port_setting.SetValue(8080);
-    EXPECT_TRUE(port_setting.IsValid());
-
-    // Test other constraints
-    connections_setting.SetValue(0); // Below minimum (1)
-    EXPECT_FALSE(connections_setting.IsValid());
-    EXPECT_FALSE(config.ValidateAll());
-
-    connections_setting.SetValue(2000); // Above maximum (1000)
-    EXPECT_FALSE(connections_setting.IsValid());
-    EXPECT_FALSE(config.ValidateAll());
-
-    // Reset to valid value
-    connections_setting.SetValue(100);
-    EXPECT_TRUE(connections_setting.IsValid());
-
-    // Test float constraints
-    compression_setting.SetValue(0.05f); // Below minimum (0.1)
-    EXPECT_FALSE(compression_setting.IsValid());
-    EXPECT_FALSE(config.ValidateAll());
-
-    compression_setting.SetValue(1.5f); // Above maximum (1.0)
-    EXPECT_FALSE(compression_setting.IsValid());
-    EXPECT_FALSE(config.ValidateAll());
-
-    // Reset to valid value
-    compression_setting.SetValue(0.8f);
-    EXPECT_TRUE(compression_setting.IsValid());
-
-    // Test retry count
-    retry_setting.SetValue(-1); // Below minimum (0)
-    EXPECT_FALSE(retry_setting.IsValid());
-    EXPECT_FALSE(config.ValidateAll());
-
-    retry_setting.SetValue(15); // Above maximum (10)
-    EXPECT_FALSE(retry_setting.IsValid());
-    EXPECT_FALSE(config.ValidateAll());
-
-    // Reset to valid value
-    retry_setting.SetValue(3);
-    EXPECT_TRUE(retry_setting.IsValid());
-    EXPECT_TRUE(config.ValidateAll());
+    int count = 0;
+    TestSchema::ForEachSetting([&count]<typename S>() { ++count; });
+    EXPECT_EQ(count, 3);
 }
 
-TEST_F(CppfigUnitTest, ValidationErrorMessages)
+TEST(JsonSerializerTest, ParseAndStringify)
 {
-    auto defaults = CreateDefaultConfig();
-    TestConfig config(test_config_path_, defaults);
+    std::string json_str = R"({"key": "value", "number": 42})";
+    std::istringstream stream(json_str);
 
-    auto port_setting = config.GetSetting<ConfigKey::ServerPort>();
-    auto connections_setting = config.GetSetting<ConfigKey::MaxConnections>();
+    auto result = JsonSerializer::Parse(stream);
+    ASSERT_TRUE(result.ok());
 
-    // Set invalid values and check error messages
-    port_setting.SetValue(100);
-    EXPECT_FALSE(port_setting.IsValid());
-    auto error_msg = port_setting.GetValidationError();
-    EXPECT_TRUE(error_msg.find("minimum") != std::string::npos || error_msg.find("range") != std::string::npos);
+    auto data = *result;
+    EXPECT_EQ(data["key"], "value");
+    EXPECT_EQ(data["number"], 42);
 
-    connections_setting.SetValue(2000);
-    EXPECT_FALSE(connections_setting.IsValid());
-    error_msg = connections_setting.GetValidationError();
-    EXPECT_TRUE(error_msg.find("maximum") != std::string::npos || error_msg.find("range") != std::string::npos);
+    auto output = JsonSerializer::Stringify(data);
+    EXPECT_FALSE(output.empty());
 }
 
-TEST_F(CppfigUnitTest, BoundaryValues)
+TEST(JsonSerializerTest, Merge)
 {
-    auto defaults = CreateDefaultConfig();
-    TestConfig config(test_config_path_, defaults);
+    nlohmann::json base = { { "a", 1 }, { "b", { { "c", 2 } } } };
+    nlohmann::json overlay = { { "b", { { "d", 3 } } }, { "e", 4 } };
 
-    auto port_setting = config.GetSetting<ConfigKey::ServerPort>();
-    auto connections_setting = config.GetSetting<ConfigKey::MaxConnections>();
-    auto compression_setting = config.GetSetting<ConfigKey::CompressionRatio>();
-    auto retry_setting = config.GetSetting<ConfigKey::RetryCount>();
+    auto merged = JsonSerializer::Merge(base, overlay);
 
-    // Test exact boundary values - should be valid
-    port_setting.SetValue(1024); // Minimum
-    EXPECT_TRUE(port_setting.IsValid());
-
-    port_setting.SetValue(65535); // Maximum
-    EXPECT_TRUE(port_setting.IsValid());
-
-    connections_setting.SetValue(1); // Minimum
-    EXPECT_TRUE(connections_setting.IsValid());
-
-    connections_setting.SetValue(1000); // Maximum
-    EXPECT_TRUE(connections_setting.IsValid());
-
-    compression_setting.SetValue(0.1f); // Minimum
-    EXPECT_TRUE(compression_setting.IsValid());
-
-    compression_setting.SetValue(1.0f); // Maximum
-    EXPECT_TRUE(compression_setting.IsValid());
-
-    retry_setting.SetValue(0); // Minimum
-    EXPECT_TRUE(retry_setting.IsValid());
-
-    retry_setting.SetValue(10); // Maximum
-    EXPECT_TRUE(retry_setting.IsValid());
-
-    EXPECT_TRUE(config.ValidateAll());
+    EXPECT_EQ(merged["a"], 1);
+    EXPECT_EQ(merged["b"]["c"], 2);
+    EXPECT_EQ(merged["b"]["d"], 3);
+    EXPECT_EQ(merged["e"], 4);
 }
 
-// ============================================================================
-// SERIALIZATION TESTS
-// ============================================================================
-
-TEST_F(CppfigUnitTest, SerializationRoundTrip)
+TEST(JsonSerializerTest, GetAtPath)
 {
-    auto defaults = CreateDefaultConfig();
-    TestConfig config1(test_config_path_, defaults);
+    nlohmann::json data = { { "a", { { "b", { { "c", 42 } } } } } };
 
-    // Modify various settings
-    auto db_setting = config1.GetSetting<ConfigKey::DatabaseUrl>();
-    auto port_setting = config1.GetSetting<ConfigKey::ServerPort>();
-    auto debug_setting = config1.GetSetting<ConfigKey::DebugMode>();
-    auto timeout_setting = config1.GetSetting<ConfigKey::ApiTimeout>();
-    auto compression_setting = config1.GetSetting<ConfigKey::CompressionRatio>();
+    auto result = JsonSerializer::GetAtPath(data, "a.b.c");
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ(*result, 42);
 
-    db_setting.SetValue(std::string("mysql://localhost:3306/myapp"));
-    port_setting.SetValue(443);
-    debug_setting.SetValue(true);
-    timeout_setting.SetValue(60.0);
-    compression_setting.SetValue(0.9f);
-
-    // Save and verify file exists
-    EXPECT_TRUE(config1.Save());
-    EXPECT_TRUE(std::filesystem::exists(test_config_path_));
-
-    // Load into new configuration
-    TestConfig config2(test_config_path_, defaults);
-
-    // Verify all values are preserved
-    auto db2 = config2.GetSetting<ConfigKey::DatabaseUrl>();
-    auto port2 = config2.GetSetting<ConfigKey::ServerPort>();
-    auto debug2 = config2.GetSetting<ConfigKey::DebugMode>();
-    auto timeout2 = config2.GetSetting<ConfigKey::ApiTimeout>();
-    auto compression2 = config2.GetSetting<ConfigKey::CompressionRatio>();
-
-    EXPECT_EQ(db2.Value(), "mysql://localhost:3306/myapp");
-    EXPECT_EQ(port2.Value(), 443);
-    EXPECT_TRUE(debug2.Value());
-    EXPECT_DOUBLE_EQ(timeout2.Value(), 60.0);
-    EXPECT_FLOAT_EQ(compression2.Value(), 0.9f);
+    auto not_found = JsonSerializer::GetAtPath(data, "a.b.d");
+    EXPECT_FALSE(not_found.ok());
 }
 
-// ============================================================================
-// MODIFICATION TRACKING TESTS
-// ============================================================================
-
-TEST_F(CppfigUnitTest, ModificationTracking)
+TEST(JsonSerializerTest, SetAtPath)
 {
-    auto defaults = CreateDefaultConfig();
-    TestConfig config(test_config_path_, defaults);
+    nlohmann::json data = nlohmann::json::object();
 
-    // Initially, nothing should be modified
-    EXPECT_FALSE(config.IsModified<ConfigKey::ServerPort>());
-    EXPECT_FALSE(config.IsModified<ConfigKey::ServerPort>());
+    JsonSerializer::SetAtPath(data, "a.b.c", 42);
 
-    // Modify a setting using clean API
-    auto port_setting = config.GetSetting<ConfigKey::ServerPort>();
-    port_setting.SetValue(9090);
-    EXPECT_TRUE(config.IsModified<ConfigKey::ServerPort>());
-    EXPECT_FALSE(config.IsModified<ConfigKey::DatabaseUrl>());
-
-    // Reset all to defaults
-    config.ResetAllToDefaults();
-    EXPECT_FALSE(config.IsModified<ConfigKey::ServerPort>());
-    EXPECT_FALSE(config.IsModified<ConfigKey::DatabaseUrl>());
+    EXPECT_EQ(data["a"]["b"]["c"], 42);
 }
 
-TEST_F(CppfigUnitTest, ResetFunctionality)
+TEST(JsonSerializerTest, HasPath)
 {
-    auto defaults = CreateDefaultConfig();
-    TestConfig config(test_config_path_, defaults);
+    nlohmann::json data = { { "a", { { "b", 1 } } } };
 
-    // Modify a setting using clean API
-    auto port_setting = config.GetSetting<ConfigKey::ServerPort>();
-    port_setting.SetValue(9090);
-    auto modified_port = port_setting.Value();
-    EXPECT_EQ(modified_port, 9090);
-    EXPECT_TRUE(config.IsModified<ConfigKey::ServerPort>());
-
-    // Reset to default
-    config.ResetToDefault<ConfigKey::ServerPort>();
-    auto reset_port = port_setting.Value();
-    EXPECT_EQ(reset_port, 8080);
-    EXPECT_FALSE(config.IsModified<ConfigKey::ServerPort>());
+    EXPECT_TRUE(JsonSerializer::HasPath(data, "a.b"));
+    EXPECT_FALSE(JsonSerializer::HasPath(data, "a.c"));
 }
 
-TEST_F(CppfigUnitTest, ResetAfterInvalidValues)
+TEST(JsonSerializerTest, ParseStringSuccess)
 {
-    auto defaults = CreateDefaultConfig();
-    TestConfig config(test_config_path_, defaults);
-
-    auto port_setting = config.GetSetting<ConfigKey::ServerPort>();
-
-    // Set invalid value
-    port_setting.SetValue(100);
-    EXPECT_FALSE(port_setting.IsValid());
-    EXPECT_TRUE(config.IsModified<ConfigKey::ServerPort>());
-
-    // Reset to default
-    config.ResetToDefault<ConfigKey::ServerPort>();
-    EXPECT_TRUE(port_setting.IsValid());
-    EXPECT_FALSE(config.IsModified<ConfigKey::ServerPort>());
-    EXPECT_EQ(port_setting.Value(), 8080);
+    auto result = JsonSerializer::ParseString(R"({"key": "value"})");
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ((*result)["key"], "value");
 }
 
-// ============================================================================
-// COMPILE-TIME SAFETY TESTS
-// ============================================================================
-
-TEST_F(CppfigUnitTest, CompileTimeSafetyVerification)
+TEST(JsonSerializerTest, ParseStringError)
 {
-    auto defaults = CreateDefaultConfig();
-    TestConfig config(test_config_path_, defaults);
-
-    // These should compile successfully - types are automatically deduced
-    auto db_setting = config.GetSetting<ConfigKey::DatabaseUrl>();
-    auto port_setting = config.GetSetting<ConfigKey::ServerPort>();
-    auto debug_setting = config.GetSetting<ConfigKey::DebugMode>();
-    auto timeout_setting = config.GetSetting<ConfigKey::ApiTimeout>();
-    auto compression_setting = config.GetSetting<ConfigKey::CompressionRatio>();
-
-    // Verify that we get the correct types
-    static_assert(std::is_same_v<decltype(db_setting.Value()), const std::string&>);
-    static_assert(std::is_same_v<decltype(port_setting.Value()), const int&>);
-    static_assert(std::is_same_v<decltype(debug_setting.Value()), const bool&>);
-    static_assert(std::is_same_v<decltype(timeout_setting.Value()), const double&>);
-    static_assert(std::is_same_v<decltype(compression_setting.Value()), const float&>);
-
-    // Verify enum values are correct
-    static_assert(db_setting.GetEnumValue() == ConfigKey::DatabaseUrl);
-    static_assert(port_setting.GetEnumValue() == ConfigKey::ServerPort);
-    static_assert(debug_setting.GetEnumValue() == ConfigKey::DebugMode);
-    static_assert(timeout_setting.GetEnumValue() == ConfigKey::ApiTimeout);
-    static_assert(compression_setting.GetEnumValue() == ConfigKey::CompressionRatio);
-
-    // Actual test - just verify we can access values
-    EXPECT_NO_THROW(db_setting.Value());
-    EXPECT_NO_THROW(port_setting.Value());
-    EXPECT_NO_THROW(debug_setting.Value());
-    EXPECT_NO_THROW(timeout_setting.Value());
-    EXPECT_NO_THROW(compression_setting.Value());
+    auto result = JsonSerializer::ParseString("not valid json {{{");
+    EXPECT_FALSE(result.ok());
+    EXPECT_TRUE(absl::IsInvalidArgument(result.status()));
 }
 
-// ============================================================================
-// LEGACY API COMPATIBILITY TESTS
-// ============================================================================
-
-TEST_F(CppfigUnitTest, LegacyAPICompatibility)
+TEST(JsonSerializerTest, ParseStreamError)
 {
-    auto defaults = CreateDefaultConfig();
-    TestConfig config(test_config_path_, defaults);
-
-    // Test legacy GetValue/SetValue API still works
-    auto db_url = config.GetValue<ConfigKey::DatabaseUrl, std::string>();
-    auto max_conn = config.GetValue<ConfigKey::MaxConnections, int>();
-    auto logging = config.GetValue<ConfigKey::EnableLogging, bool>();
-
-    EXPECT_EQ(db_url, "postgresql://localhost:5432/app");
-    EXPECT_EQ(max_conn, 100);
-    EXPECT_TRUE(logging);
-
-    // Test legacy SetValue
-    config.SetValue<ConfigKey::ServerPort, int>(9090);
-    auto port = config.GetValue<ConfigKey::ServerPort, int>();
-    EXPECT_EQ(port, 9090);
+    std::istringstream stream("invalid json {{{");
+    auto result = JsonSerializer::Parse(stream);
+    EXPECT_FALSE(result.ok());
+    EXPECT_TRUE(absl::IsInvalidArgument(result.status()));
 }
 
-// ============================================================================
-// ERROR HANDLING TESTS
-// ============================================================================
-
-TEST_F(CppfigUnitTest, FileHandlingErrors)
+TEST(JsonSerializerTest, MergeNonObject)
 {
-    auto defaults = CreateDefaultConfig();
+    // When base is not an object, overlay replaces it entirely
+    nlohmann::json base = 42;
+    nlohmann::json overlay = { { "key", "value" } };
 
-    // Test with invalid file path
-    std::filesystem::path invalid_path = "/invalid/path/config.json";
-    EXPECT_NO_THROW(TestConfig config(invalid_path, defaults));
-
-    TestConfig config(invalid_path, defaults);
-    // Save should fail gracefully
-    EXPECT_FALSE(config.Save());
+    auto merged = JsonSerializer::Merge(base, overlay);
+    EXPECT_EQ(merged["key"], "value");
 }
 
-TEST_F(CppfigUnitTest, ValidationErrorCollection)
+TEST(JsonSerializerTest, MergeNonObjectOverlay)
 {
-    auto defaults = CreateDefaultConfig();
-    TestConfig config(test_config_path_, defaults);
+    // When overlay is not an object, it replaces base
+    nlohmann::json base = { { "key", "value" } };
+    nlohmann::json overlay = 42;
 
-    // Set multiple invalid values
-    auto port_setting = config.GetSetting<ConfigKey::ServerPort>();
-    auto connections_setting = config.GetSetting<ConfigKey::MaxConnections>();
-
-    port_setting.SetValue(100); // Invalid
-    connections_setting.SetValue(2000); // Invalid
-
-    EXPECT_FALSE(config.ValidateAll());
-
-    auto errors = config.GetValidationErrors();
-    EXPECT_GT(errors.size(), 0);
+    auto merged = JsonSerializer::Merge(base, overlay);
+    EXPECT_EQ(merged, 42);
 }
 
-// ============================================================================
-// SCHEMA MIGRATION TESTS
-// ============================================================================
-
-TEST_F(CppfigUnitTest, SchemaMigrationAutomatic)
+TEST(JsonSerializerTest, GetAtPathNotAnObject)
 {
-    auto defaults = CreateDefaultConfig();
-
-    // Create a minimal config file with only some settings
-    std::ofstream file(test_config_path_);
-    file << R"([
-    {
-        "description": "Database connection URL",
-        "name": "database_url",
-        "value": "postgresql://localhost:5432/testdb"
-    },
-    {
-        "description": "Enable application logging",
-        "name": "enable_logging",
-        "value": true
-    }
-])";
-    file.close();
-
-    // Load with auto-migration (default behavior)
-    TestConfig config(test_config_path_, defaults);
-
-    // Verify that all settings are now present
-    auto missing = config.GetMissingSettings();
-    EXPECT_EQ(missing.size(), 0);
-
-    // Verify that original settings preserve their values
-    EXPECT_EQ(config.GetSetting<ConfigKey::DatabaseUrl>().Value(), "postgresql://localhost:5432/testdb");
-    EXPECT_EQ(config.GetSetting<ConfigKey::EnableLogging>().Value(), true);
-
-    // Verify that new settings have default values
-    EXPECT_EQ(config.GetSetting<ConfigKey::MaxConnections>().Value(), 100);
-    EXPECT_EQ(config.GetSetting<ConfigKey::ServerPort>().Value(), 8080);
+    nlohmann::json data = { { "a", 42 } };
+    auto result = JsonSerializer::GetAtPath(data, "a.b");
+    EXPECT_FALSE(result.ok());
+    EXPECT_TRUE(absl::IsNotFound(result.status()));
 }
 
-TEST_F(CppfigUnitTest, SchemaMigrationManual)
+TEST(ConfigDiffTest, NoDifferences)
 {
-    auto defaults = CreateDefaultConfig();
+    nlohmann::json a = { { "key", "value" } };
+    nlohmann::json b = { { "key", "value" } };
 
-    // Create a minimal config file
-    std::ofstream file(test_config_path_);
-    file << R"([
-    {
-        "description": "Database connection URL",
-        "name": "database_url",
-        "value": "postgresql://localhost:5432/testdb"
-    }
-])";
-    file.close();
-
-    // Create config with the minimal file first
-    TestConfig config(test_config_path_, defaults);
-
-    // Replace the file with minimal content to simulate missing settings
-    std::filesystem::remove(test_config_path_);
-    std::ofstream minimal_file(test_config_path_);
-    minimal_file << R"([
-    {
-        "description": "Database connection URL",
-        "name": "database_url",
-        "value": "postgresql://localhost:5432/testdb"
-    }
-])";
-    minimal_file.close();
-
-    // Load without auto-migration
-    EXPECT_TRUE(config.Load(false));
-
-    // Check for missing settings
-    auto missing = config.GetMissingSettings();
-    EXPECT_GT(missing.size(), 0);
-
-    // Manually sync schema
-    EXPECT_TRUE(config.SyncSchemaWithDefaults());
-
-    // Verify no more missing settings
-    auto after_sync = config.GetMissingSettings();
-    EXPECT_EQ(after_sync.size(), 0);
+    auto diff = DiffJson(a, b);
+    EXPECT_FALSE(diff.HasDifferences());
 }
 
-TEST_F(CppfigUnitTest, SchemaMigrationPreservesUserValues)
+TEST(ConfigDiffTest, AddedEntry)
 {
-    auto defaults = CreateDefaultConfig();
+    nlohmann::json base = { { "a", 1 } };
+    nlohmann::json target = { { "a", 1 }, { "b", 2 } };
 
-    // Create config with user-modified values
-    TestConfig config1(test_config_path_, defaults);
-    config1.GetSetting<ConfigKey::DatabaseUrl>().SetValue(std::string("custom://modified:1234/db"));
-    config1.GetSetting<ConfigKey::MaxConnections>().SetValue(500);
-    config1.Save();
-
-    // Simulate adding new settings by creating a new defaults map with additional settings
-    auto extended_defaults = defaults;
-    // All settings are already in defaults for this test, but we can verify preservation
-
-    // Load again - should preserve user values
-    TestConfig config2(test_config_path_, extended_defaults);
-
-    EXPECT_EQ(config2.GetSetting<ConfigKey::DatabaseUrl>().Value(), "custom://modified:1234/db");
-    EXPECT_EQ(config2.GetSetting<ConfigKey::MaxConnections>().Value(), 500);
+    auto diff = DiffJson(base, target);
+    EXPECT_TRUE(diff.HasDifferences());
+    EXPECT_EQ(diff.Added().size(), 1);
+    EXPECT_EQ(diff.Added()[0].path, "b");
 }
 
-TEST_F(CppfigUnitTest, SchemaMigrationMissingSettingsDetection)
+TEST(ConfigDiffTest, RemovedEntry)
 {
-    auto defaults = CreateDefaultConfig();
+    nlohmann::json base = { { "a", 1 }, { "b", 2 } };
+    nlohmann::json target = { { "a", 1 } };
 
-    // Create config with only half the settings
-    std::ofstream file(test_config_path_);
-    file << R"([
-    {
-        "description": "Database connection URL",
-        "name": "database_url",
-        "value": "postgresql://localhost:5432/testdb"
-    },
-    {
-        "description": "Maximum database connections",
-        "max_value": 500,
-        "min_value": 1,
-        "name": "max_connections",
-        "unit": "connections",
-        "value": 100
-    },
-    {
-        "description": "Enable application logging",
-        "name": "enable_logging",
-        "value": true
-    }
-])";
-    file.close();
-
-    // Create config with the partial file first
-    TestConfig config(test_config_path_, defaults);
-
-    // Replace with even more minimal content to ensure missing settings
-    std::filesystem::remove(test_config_path_);
-    std::ofstream minimal_file(test_config_path_);
-    minimal_file << R"([
-    {
-        "description": "Database connection URL",
-        "name": "database_url",
-        "value": "postgresql://localhost:5432/testdb"
-    },
-    {
-        "description": "Enable application logging",
-        "name": "enable_logging",
-        "value": true
-    }
-])";
-    minimal_file.close();
-
-    // Load without auto-migration
-    EXPECT_TRUE(config.Load(false));
-
-    auto missing = config.GetMissingSettings();
-
-    // Should have several missing settings
-    EXPECT_GT(missing.size(), 0);
-
-    // Check that specific settings are detected as missing
-    bool found_log_level = false;
-    bool found_server_port = false;
-    for (const auto& setting : missing) {
-        if (setting == ConfigKey::LogLevel)
-            found_log_level = true;
-        if (setting == ConfigKey::ServerPort)
-            found_server_port = true;
-    }
-
-    EXPECT_TRUE(found_log_level);
-    EXPECT_TRUE(found_server_port);
+    auto diff = DiffJson(base, target);
+    EXPECT_TRUE(diff.HasDifferences());
+    EXPECT_EQ(diff.Removed().size(), 1);
+    EXPECT_EQ(diff.Removed()[0].path, "b");
 }
 
-} // namespace cppfig_unit_test
+TEST(ConfigDiffTest, ModifiedEntry)
+{
+    nlohmann::json base = { { "a", 1 } };
+    nlohmann::json target = { { "a", 2 } };
+
+    auto diff = DiffJson(base, target);
+    EXPECT_TRUE(diff.HasDifferences());
+    EXPECT_EQ(diff.Modified().size(), 1);
+    EXPECT_EQ(diff.Modified()[0].path, "a");
+}
+
+TEST(ConfigDiffTest, DiffEntryTypeString)
+{
+    DiffEntry added { DiffType::kAdded, "path", "", "value" };
+    EXPECT_EQ(added.TypeString(), "ADDED");
+
+    DiffEntry removed { DiffType::kRemoved, "path", "value", "" };
+    EXPECT_EQ(removed.TypeString(), "REMOVED");
+
+    DiffEntry modified { DiffType::kModified, "path", "old", "new" };
+    EXPECT_EQ(modified.TypeString(), "MODIFIED");
+}
+
+TEST(ConfigDiffTest, DiffSize)
+{
+    nlohmann::json base = { { "a", 1 } };
+    nlohmann::json target = { { "a", 2 }, { "b", 3 } };
+
+    auto diff = DiffJson(base, target);
+    EXPECT_EQ(diff.Size(), 2);  // modified + added
+}
+
+TEST(ConfigDiffTest, ToStringNoDifferences)
+{
+    ConfigDiff diff;
+    auto str = diff.ToString();
+    EXPECT_EQ(str, "No differences found.\n");
+}
+
+TEST(ConfigDiffTest, ToStringWithAdded)
+{
+    ConfigDiff diff;
+    diff.entries.push_back({ DiffType::kAdded, "new.setting", "", "42" });
+
+    auto str = diff.ToString();
+    EXPECT_NE(str.find("ADDED"), std::string::npos);
+    EXPECT_NE(str.find("new.setting"), std::string::npos);
+    EXPECT_NE(str.find("= 42"), std::string::npos);
+}
+
+TEST(ConfigDiffTest, ToStringWithRemoved)
+{
+    ConfigDiff diff;
+    diff.entries.push_back({ DiffType::kRemoved, "old.setting", "\"value\"", "" });
+
+    auto str = diff.ToString();
+    EXPECT_NE(str.find("REMOVED"), std::string::npos);
+    EXPECT_NE(str.find("old.setting"), std::string::npos);
+    EXPECT_NE(str.find("was:"), std::string::npos);
+}
+
+TEST(ConfigDiffTest, ToStringWithModified)
+{
+    ConfigDiff diff;
+    diff.entries.push_back({ DiffType::kModified, "changed.setting", "1", "2" });
+
+    auto str = diff.ToString();
+    EXPECT_NE(str.find("MODIFIED"), std::string::npos);
+    EXPECT_NE(str.find("changed.setting"), std::string::npos);
+    EXPECT_NE(str.find("->"), std::string::npos);
+}
+
+TEST(ConfigDiffTest, FilterByType)
+{
+    ConfigDiff diff;
+    diff.entries.push_back({ DiffType::kAdded, "a", "", "1" });
+    diff.entries.push_back({ DiffType::kRemoved, "b", "2", "" });
+    diff.entries.push_back({ DiffType::kAdded, "c", "", "3" });
+
+    auto added = diff.Filter(DiffType::kAdded);
+    EXPECT_EQ(added.size(), 2);
+
+    auto removed = diff.Filter(DiffType::kRemoved);
+    EXPECT_EQ(removed.size(), 1);
+}
+
+TEST(ConfigDiffTest, DiffDefaultsFromFile)
+{
+    nlohmann::json defaults = { { "a", 1 }, { "b", 2 } };
+    nlohmann::json file_values = { { "a", 1 } };
+
+    auto diff = DiffDefaultsFromFile(defaults, file_values);
+    // "b" is in defaults but not in file - shows as Added from perspective of file->defaults
+    EXPECT_TRUE(diff.HasDifferences());
+}
+
+TEST(ConfigDiffTest, DiffFileFromDefaults)
+{
+    nlohmann::json defaults = { { "a", 1 } };
+    nlohmann::json file_values = { { "a", 1 }, { "b", 2 } };
+
+    auto diff = DiffFileFromDefaults(defaults, file_values);
+    // "b" is in file but not in defaults
+    EXPECT_TRUE(diff.HasDifferences());
+}
+
+struct MockAppName {
+    static constexpr std::string_view kPath = "app.name";
+    using ValueType = std::string;
+    static auto DefaultValue() -> std::string { return "MyApp"; }
+};
+
+struct MockAppPort {
+    static constexpr std::string_view kPath = "app.port";
+    using ValueType = int;
+    static auto DefaultValue() -> int { return 8080; }
+};
+
+using MockSchema = ConfigSchema<MockAppName, MockAppPort>;
+
+TEST(MockConfigurationTest, GetDefault)
+{
+    testing::MockConfiguration<MockSchema> config;
+
+    // These should return defaults since nothing was set
+    EXPECT_EQ(config.Get<MockAppName>(), "MyApp");
+    EXPECT_EQ(config.Get<MockAppPort>(), 8080);
+}
+
+TEST(MockConfigurationTest, GetAfterSetReturnsSetValue)
+{
+    testing::MockConfiguration<MockSchema> config;
+
+    // First get default
+    EXPECT_EQ(config.Get<MockAppPort>(), 8080);
+
+    // Then set and get
+    config.SetValue<MockAppPort>(9000);
+    EXPECT_EQ(config.Get<MockAppPort>(), 9000);
+}
+
+TEST(MockConfigurationTest, SetValue)
+{
+    testing::MockConfiguration<MockSchema> config;
+    config.SetValue<MockAppPort>(9000);
+
+    EXPECT_EQ(config.Get<MockAppPort>(), 9000);
+}
+
+TEST(MockConfigurationTest, Reset)
+{
+    testing::MockConfiguration<MockSchema> config;
+    config.SetValue<MockAppPort>(9000);
+    config.Reset();
+
+    EXPECT_EQ(config.Get<MockAppPort>(), 8080);
+}
+
+struct MockValidatedPort {
+    static constexpr std::string_view kPath = "app.validated_port";
+    using ValueType = int;
+    static auto DefaultValue() -> int { return 8080; }
+    static auto GetValidator() -> Validator<int> { return Range(1, 65535); }
+};
+
+using MockSchemaWithValidation = ConfigSchema<MockAppName, MockValidatedPort>;
+
+TEST(MockConfigurationTest, SetWithValidationSuccess)
+{
+    testing::MockConfiguration<MockSchemaWithValidation> config;
+
+    auto status = config.Set<MockValidatedPort>(9000);
+    EXPECT_TRUE(status.ok());
+    EXPECT_EQ(config.Get<MockValidatedPort>(), 9000);
+}
+
+// Test for mock Get returning default when value exists but fails to parse
+// This covers line 70 in mock.h
+struct MockPointSetting {
+    static constexpr std::string_view kPath = "mock.point";
+    using ValueType = int;  // We'll store a non-int JSON to trigger parse failure
+    static auto DefaultValue() -> int { return 42; }
+};
+
+TEST(MockConfigurationTest, SetWithValidationFailure)
+{
+    testing::MockConfiguration<MockSchemaWithValidation> config;
+
+    auto status = config.Set<MockValidatedPort>(99999);
+    EXPECT_FALSE(status.ok());
+    EXPECT_TRUE(absl::IsInvalidArgument(status));
+    // Value should not be changed
+    EXPECT_EQ(config.Get<MockValidatedPort>(), 8080);
+}
+
+TEST(MockConfigurationTest, GetReturnsDefaultWhenKeyNotFound)
+{
+    // Test that Get returns default when the key is not in the values map
+    // This covers the fallback path at mock.h line 70
+    testing::MockConfiguration<MockSchema> config;
+
+    // Clear the value to simulate key not found
+    config.ClearValue(MockAppPort::kPath);
+
+    // Get should return the default value
+    EXPECT_EQ(config.Get<MockAppPort>(), 8080);
+}
+
+TEST(MockConfigurationTest, GetReturnsDefaultWhenParseFailsWithInvalidType)
+{
+    // Test that Get returns default when FromJson fails
+    // This covers the parse failure branch at mock.h line 70
+    testing::MockConfiguration<MockSchema> config;
+
+    // Inject a string where an int is expected - FromJson will fail
+    config.SetRawJson(std::string(MockAppPort::kPath), "not_an_integer");
+
+    // Get should return the default value since parsing fails
+    EXPECT_EQ(config.Get<MockAppPort>(), 8080);
+}
+
+TEST(LoggerTest, InfoLog)
+{
+    // Just verify it doesn't crash - output goes to stdout
+    ::testing::internal::CaptureStdout();
+    Logger::Info("test info message");
+    auto output = ::testing::internal::GetCapturedStdout();
+    EXPECT_NE(output.find("INFO"), std::string::npos);
+    EXPECT_NE(output.find("test info message"), std::string::npos);
+}
+
+TEST(LoggerTest, WarnLog)
+{
+    ::testing::internal::CaptureStderr();
+    Logger::Warn("test warn message");
+    auto output = ::testing::internal::GetCapturedStderr();
+    EXPECT_NE(output.find("WARN"), std::string::npos);
+    EXPECT_NE(output.find("test warn message"), std::string::npos);
+}
+
+TEST(LoggerTest, ErrorLog)
+{
+    ::testing::internal::CaptureStderr();
+    Logger::Error("test error message");
+    auto output = ::testing::internal::GetCapturedStderr();
+    EXPECT_NE(output.find("ERROR"), std::string::npos);
+    EXPECT_NE(output.find("test error message"), std::string::npos);
+}
+
+TEST(LoggerTest, LogWithLevel)
+{
+    ::testing::internal::CaptureStdout();
+    Logger::Log(LogLevel::Info, "info via Log");
+    auto stdout_output = ::testing::internal::GetCapturedStdout();
+    EXPECT_NE(stdout_output.find("INFO"), std::string::npos);
+
+    ::testing::internal::CaptureStderr();
+    Logger::Log(LogLevel::Warning, "warn via Log");
+    auto stderr_warn = ::testing::internal::GetCapturedStderr();
+    EXPECT_NE(stderr_warn.find("WARN"), std::string::npos);
+
+    ::testing::internal::CaptureStderr();
+    Logger::Log(LogLevel::Error, "error via Log");
+    auto stderr_error = ::testing::internal::GetCapturedStderr();
+    EXPECT_NE(stderr_error.find("ERROR"), std::string::npos);
+}
+
+TEST(LoggerTest, InfoFFormatted)
+{
+    ::testing::internal::CaptureStdout();
+    Logger::InfoF("Value is %d", 42);
+    auto output = ::testing::internal::GetCapturedStdout();
+    EXPECT_NE(output.find("INFO"), std::string::npos);
+    EXPECT_NE(output.find("Value is 42"), std::string::npos);
+}
+
+TEST(LoggerTest, WarnFFormatted)
+{
+    ::testing::internal::CaptureStderr();
+    Logger::WarnF("Warning: %s", "test");
+    auto output = ::testing::internal::GetCapturedStderr();
+    EXPECT_NE(output.find("WARN"), std::string::npos);
+    EXPECT_NE(output.find("Warning: test"), std::string::npos);
+}
+
+TEST(LoggerTest, ErrorFFormatted)
+{
+    ::testing::internal::CaptureStderr();
+    Logger::ErrorF("Error code: %d", 500);
+    auto output = ::testing::internal::GetCapturedStderr();
+    EXPECT_NE(output.find("ERROR"), std::string::npos);
+    EXPECT_NE(output.find("Error code: 500"), std::string::npos);
+}
+
+}  // namespace cppfig::test
