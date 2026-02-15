@@ -25,17 +25,17 @@ The benchmarks measure all critical aspects of the library's performance:
 
 ```bash
 # Build in release mode for accurate performance measurements
-cmake --workflow --preset=release-dev
+cmake --workflow --preset=release-clang
 
 # Or build just the benchmark
-cd build/release/dev
-make cppfig_benchmark  # or ninja cppfig_benchmark
+cd build/release/clang
+ninja cppfig_benchmark
 ```
 
 ### Running Benchmarks
 
 ```bash
-cd build/release/dev
+cd build/release/clang
 
 # Run all benchmarks
 ./benchmark/cppfig_benchmark

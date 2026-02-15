@@ -112,7 +112,7 @@ int main() {
 
 ### Requirements
 
-- C++20 compiler (GCC 11+, Clang 14+, MSVC 2022+)
+- C++20 compiler (GCC 11+, Clang 14+)
 - [nlohmann/json](https://github.com/nlohmann/json)
 - [Abseil](https://github.com/abseil/abseil-cpp) (for `absl::Status`)
 
@@ -301,20 +301,23 @@ static void ForEachSetting(auto&& fn);
 ### Building
 
 ```bash
-# Debug build
-cmake --workflow --preset=debug-dev
+# Debug build (Clang)
+cmake --workflow --preset=debug-clang
 
-# Release build
-cmake --workflow --preset=release-dev
+# Debug build (GCC)
+cmake --workflow --preset=debug-gcc
+
+# Release build (Clang)
+cmake --workflow --preset=release-clang
 
 # Run tests
-ctest --test-dir build/debug/dev --output-on-failure
+ctest --test-dir build/debug/clang --output-on-failure
 
 # Run example
-./build/debug/dev/examples/cppfig_example
+./build/debug/clang/examples/cppfig_example
 
 # Run benchmarks
-./build/release/dev/benchmark/cppfig_benchmark
+./build/release/clang/benchmark/cppfig_benchmark
 ```
 
 ### Code Coverage

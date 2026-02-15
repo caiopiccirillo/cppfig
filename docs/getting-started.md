@@ -23,7 +23,7 @@ target_link_libraries(your_target PRIVATE cppfig)
 
 ### Requirements
 
-- C++20 compatible compiler (GCC 11+, Clang 14+, MSVC 2022+)
+- C++20 compatible compiler (GCC 11+, Clang 14+)
 - [nlohmann/json](https://github.com/nlohmann/json) library
 - [Abseil](https://github.com/abseil/abseil-cpp) (for `absl::Status` and `absl::StatusOr`)
 

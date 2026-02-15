@@ -2,10 +2,10 @@
     "version": 10,
     "configurePresets": [
         {
-            "name": "config-debug-dev",
-            "displayName": "Debug Dev",
-            "description": "Configure debug build for development",
-            "binaryDir": "${sourceDir}/build/debug/dev",
+            "name": "config-debug-clang",
+            "displayName": "Debug Clang",
+            "description": "Configure debug build with Clang",
+            "binaryDir": "${sourceDir}/build/debug/clang",
             "generator": "Ninja",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
@@ -17,10 +17,10 @@
             }
         },
         {
-            "name": "config-release-dev",
-            "displayName": "Release Dev",
-            "description": "Configure release build for development",
-            "binaryDir": "${sourceDir}/build/release/dev",
+            "name": "config-release-clang",
+            "displayName": "Release Clang",
+            "description": "Configure release build with Clang",
+            "binaryDir": "${sourceDir}/build/release/clang",
             "generator": "Ninja",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
@@ -32,10 +32,10 @@
             }
         },
         {
-            "name": "config-debug-prod",
-            "displayName": "Debug Production",
-            "description": "Configure debug build for production",
-            "binaryDir": "${sourceDir}/build/debug/prod",
+            "name": "config-debug-gcc",
+            "displayName": "Debug GCC",
+            "description": "Configure debug build with GCC",
+            "binaryDir": "${sourceDir}/build/debug/gcc",
             "generator": "Ninja",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
@@ -47,10 +47,10 @@
             }
         },
         {
-            "name": "config-release-prod",
-            "displayName": "Release Production",
-            "description": "Configure release build for production",
-            "binaryDir": "${sourceDir}/build/release/prod",
+            "name": "config-release-gcc",
+            "displayName": "Release GCC",
+            "description": "Configure release build with GCC",
+            "binaryDir": "${sourceDir}/build/release/gcc",
             "generator": "Ninja",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
@@ -80,28 +80,28 @@
     ],
     "buildPresets": [
         {
-            "name": "build-debug-dev",
-            "configurePreset": "config-debug-dev",
-            "displayName": "Debug Dev",
-            "description": "Build debug version for development"
+            "name": "build-debug-clang",
+            "configurePreset": "config-debug-clang",
+            "displayName": "Debug Clang",
+            "description": "Build debug version with Clang"
         },
         {
-            "name": "build-release-dev",
-            "configurePreset": "config-release-dev",
-            "displayName": "Release Dev",
-            "description": "Build release version for development"
+            "name": "build-release-clang",
+            "configurePreset": "config-release-clang",
+            "displayName": "Release Clang",
+            "description": "Build release version with Clang"
         },
         {
-            "name": "build-debug-prod",
-            "configurePreset": "config-debug-prod",
-            "displayName": "Debug Production",
-            "description": "Build debug version for production"
+            "name": "build-debug-gcc",
+            "configurePreset": "config-debug-gcc",
+            "displayName": "Debug GCC",
+            "description": "Build debug version with GCC"
         },
         {
-            "name": "build-release-prod",
-            "configurePreset": "config-release-prod",
-            "displayName": "Release Production",
-            "description": "Build release version for production"
+            "name": "build-release-gcc",
+            "configurePreset": "config-release-gcc",
+            "displayName": "Release GCC",
+            "description": "Build release version with GCC"
         },
         {
             "name": "build-coverage",
@@ -112,28 +112,28 @@
     ],
     "testPresets": [
         {
-            "name": "test-debug-dev",
-            "configurePreset": "config-debug-dev",
-            "displayName": "Test Debug Dev",
-            "description": "Test debug version for development"
+            "name": "test-debug-clang",
+            "configurePreset": "config-debug-clang",
+            "displayName": "Test Debug Clang",
+            "description": "Test debug version with Clang"
         },
         {
-            "name": "test-release-dev",
-            "configurePreset": "config-release-dev",
-            "displayName": "Test Release Dev",
-            "description": "Test release version for development"
+            "name": "test-release-clang",
+            "configurePreset": "config-release-clang",
+            "displayName": "Test Release Clang",
+            "description": "Test release version with Clang"
         },
         {
-            "name": "test-debug-prod",
-            "configurePreset": "config-debug-prod",
-            "displayName": "Test Debug Production",
-            "description": "Test debug version for production"
+            "name": "test-debug-gcc",
+            "configurePreset": "config-debug-gcc",
+            "displayName": "Test Debug GCC",
+            "description": "Test debug version with GCC"
         },
         {
-            "name": "test-release-prod",
-            "configurePreset": "config-release-prod",
-            "displayName": "Test Release Production",
-            "description": "Test release version for production"
+            "name": "test-release-gcc",
+            "configurePreset": "config-release-gcc",
+            "displayName": "Test Release GCC",
+            "description": "Test release version with GCC"
         },
         {
             "name": "test-coverage",
@@ -147,54 +147,54 @@
     ],
     "workflowPresets": [
         {
-            "name": "debug-dev",
+            "name": "debug-clang",
             "steps": [
                 {
                     "type": "configure",
-                    "name": "config-debug-dev"
+                    "name": "config-debug-clang"
                 },
                 {
                     "type": "build",
-                    "name": "build-debug-dev"
+                    "name": "build-debug-clang"
                 }
             ]
         },
         {
-            "name": "release-dev",
+            "name": "release-clang",
             "steps": [
                 {
                     "type": "configure",
-                    "name": "config-release-dev"
+                    "name": "config-release-clang"
                 },
                 {
                     "type": "build",
-                    "name": "build-release-dev"
+                    "name": "build-release-clang"
                 }
             ]
         },
         {
-            "name": "debug-prod",
+            "name": "debug-gcc",
             "steps": [
                 {
                     "type": "configure",
-                    "name": "config-debug-prod"
+                    "name": "config-debug-gcc"
                 },
                 {
                     "type": "build",
-                    "name": "build-debug-prod"
+                    "name": "build-debug-gcc"
                 }
             ]
         },
         {
-            "name": "release-prod",
+            "name": "release-gcc",
             "steps": [
                 {
                     "type": "configure",
-                    "name": "config-release-prod"
+                    "name": "config-release-gcc"
                 },
                 {
                     "type": "build",
-                    "name": "build-release-prod"
+                    "name": "build-release-gcc"
                 }
             ]
         },
