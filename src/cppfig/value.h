@@ -1,7 +1,5 @@
 #pragma once
 
-#include <absl/status/statusor.h>
-
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -11,6 +9,8 @@
 #include <type_traits>
 #include <variant>
 #include <vector>
+
+#include "cppfig/status.h"
 
 namespace cppfig {
 
@@ -262,7 +262,7 @@ public:
     }
 
     /// @brief Gets a value at a dot-separated path.
-    [[nodiscard]] auto GetAtPath(std::string_view path) const -> absl::StatusOr<Value>
+    [[nodiscard]] auto GetAtPath(std::string_view path) const -> StatusOr<Value>
     {
         const Value* current = this;
         std::string path_str(path);
@@ -271,10 +271,10 @@ public:
 
         while (std::getline(stream, segment, '.')) {
             if (!current->IsObject()) {
-                return absl::NotFoundError("Path segment '" + segment + "' not found: parent is not an object");
+                return NotFoundError("Path segment '" + segment + "' not found: parent is not an object");
             }
             if (!current->Contains(segment)) {
-                return absl::NotFoundError("Path segment '" + segment + "' not found");
+                return NotFoundError("Path segment '" + segment + "' not found");
             }
             current = &(*current)[segment];
         }

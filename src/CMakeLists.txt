@@ -12,6 +12,7 @@ target_sources(cppfig
     ${CMAKE_CURRENT_LIST_DIR}/cppfig/schema.h
     ${CMAKE_CURRENT_LIST_DIR}/cppfig/serializer.h
     ${CMAKE_CURRENT_LIST_DIR}/cppfig/setting.h
+    ${CMAKE_CURRENT_LIST_DIR}/cppfig/status.h
     ${CMAKE_CURRENT_LIST_DIR}/cppfig/traits.h
     ${CMAKE_CURRENT_LIST_DIR}/cppfig/validator.h
     ${CMAKE_CURRENT_LIST_DIR}/cppfig/value.h
@@ -21,14 +22,6 @@ target_sources(cppfig
 target_include_directories(cppfig
     INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}
-)
-
-# Core library only requires abseil.
-# nlohmann-json is optional and needed only when users include <cppfig/json.h>.
-target_link_libraries(cppfig
-    INTERFACE
-    absl::status
-    absl::statusor
 )
 
 # Propagate optional serializer flags to consumers.

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <absl/status/status.h>
 #include <gmock/gmock.h>
 
 #include <string>
@@ -83,23 +82,23 @@ public:
     /// @brief Sets the value with validation.
     template <IsSetting S>
         requires(Schema::template has_setting<S>)
-    auto Set(typename S::value_type value) -> absl::Status
+    auto Set(typename S::value_type value) -> Status
     {
         auto validator = GetSettingValidator<S>();
         auto validation = validator(value);
         if (!validation) {
-            return absl::InvalidArgumentError(validation.error_message);
+            return InvalidArgumentError(validation.error_message);
         }
 
         SetValue<S>(std::move(value));
-        return absl::OkStatus();
+        return OkStatus();
     }
 
     /// @brief Simulates loading (no-op for mock).
-    [[nodiscard]] auto Load() -> absl::Status { return absl::OkStatus(); }
+    [[nodiscard]] auto Load() -> Status { return OkStatus(); }
 
     /// @brief Simulates saving (no-op for mock).
-    [[nodiscard]] auto Save() const -> absl::Status { return absl::OkStatus(); }
+    [[nodiscard]] auto Save() const -> Status { return OkStatus(); }
 
     /// @brief Resets all values to defaults.
     void Reset()
@@ -144,16 +143,16 @@ private:
 /// Usage:
 /// @code
 /// MockVirtualConfigurationProvider mock;
-/// EXPECT_CALL(mock, Load()).WillOnce(Return(absl::OkStatus()));
+/// EXPECT_CALL(mock, Load()).WillOnce(Return(cppfig::OkStatus()));
 /// EXPECT_CALL(mock, GetFilePath()).WillOnce(Return("config.json"));
 /// @endcode
 // LCOV_EXCL_START — GMock macro internals generate uninstrumented stubs
 class MockVirtualConfigurationProvider : public IConfigurationProviderVirtual {
 public:
-    MOCK_METHOD(absl::Status, Load, (), (override));
-    MOCK_METHOD(absl::Status, Save, (), (const, override));
+    MOCK_METHOD(Status, Load, (), (override));
+    MOCK_METHOD(Status, Save, (), (const, override));
     MOCK_METHOD(std::string_view, GetFilePath, (), (const, override));
-    MOCK_METHOD(absl::Status, ValidateAll, (), (const, override));
+    MOCK_METHOD(Status, ValidateAll, (), (const, override));
     MOCK_METHOD(std::string, GetDiffString, (), (const, override));
 };
 

@@ -216,7 +216,7 @@ TEST_F(ConfigurationIntegrationTest, ValidationRejectsInvalidValue)
     // Try to set an invalid value
     auto status = config.Set<settings::ServerPort>(99999);
     EXPECT_FALSE(status.ok());
-    EXPECT_TRUE(absl::IsInvalidArgument(status));
+    EXPECT_TRUE(cppfig::IsInvalidArgument(status));
 }
 
 TEST_F(ConfigurationIntegrationTest, EnvironmentVariableOverride)
@@ -376,7 +376,7 @@ TEST_F(ConfigurationIntegrationTest, InvalidJsonFile)
 
     auto status = config.Load();
     EXPECT_FALSE(status.ok());
-    EXPECT_TRUE(absl::IsInvalidArgument(status));
+    EXPECT_TRUE(cppfig::IsInvalidArgument(status));
 }
 
 TEST_F(ConfigurationIntegrationTest, EnvironmentVariableParseFailure)
@@ -523,7 +523,7 @@ TEST_F(ConfigurationIntegrationTest, ReadFileNotFound)
     // Test ReadFile with non-existent file
     auto result = ReadFile<JsonSerializer>("/nonexistent/path/to/file.json");
     EXPECT_FALSE(result.ok());
-    EXPECT_TRUE(absl::IsNotFound(result.status()));
+    EXPECT_TRUE(cppfig::IsNotFound(result.status()));
 }
 
 TEST_F(ConfigurationIntegrationTest, WriteFileToInvalidPath)
@@ -533,7 +533,7 @@ TEST_F(ConfigurationIntegrationTest, WriteFileToInvalidPath)
     data["key"] = Value("value");
     auto status = WriteFile<JsonSerializer>("/nonexistent_root_dir/cannot/write/here.json", data);
     EXPECT_FALSE(status.ok());
-    EXPECT_TRUE(absl::IsInternal(status));
+    EXPECT_TRUE(cppfig::IsInternal(status));
 }
 
 TEST_F(ConfigurationIntegrationTest, EnvironmentVariableSuccessfulParse)
@@ -1340,10 +1340,10 @@ TEST(MockVirtualConfigTest, AllMethods)
 {
     testing::MockVirtualConfigurationProvider mock;
 
-    EXPECT_CALL(mock, Load()).WillOnce(::testing::Return(absl::OkStatus()));
-    EXPECT_CALL(mock, Save()).WillOnce(::testing::Return(absl::OkStatus()));
+    EXPECT_CALL(mock, Load()).WillOnce(::testing::Return(cppfig::OkStatus()));
+    EXPECT_CALL(mock, Save()).WillOnce(::testing::Return(cppfig::OkStatus()));
     EXPECT_CALL(mock, GetFilePath()).WillOnce(::testing::Return("mock.json"));
-    EXPECT_CALL(mock, ValidateAll()).WillOnce(::testing::Return(absl::OkStatus()));
+    EXPECT_CALL(mock, ValidateAll()).WillOnce(::testing::Return(cppfig::OkStatus()));
     EXPECT_CALL(mock, GetDiffString()).WillOnce(::testing::Return("no diff"));
 
     EXPECT_TRUE(mock.Load().ok());

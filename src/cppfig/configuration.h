@@ -1,8 +1,5 @@
 #pragma once
 
-#include <absl/status/status.h>
-#include <absl/status/statusor.h>
-
 #include <cstdlib>
 #include <filesystem>
 #include <string>
@@ -149,7 +146,7 @@ public:
     /// mutation of internal state acquires an exclusive (writer) lock.
     template <IsSetting S>
         requires(Schema::template has_setting<S>)
-    auto SetImpl(typename S::value_type value) -> absl::Status
+    auto SetImpl(typename S::value_type value) -> Status
     {
         using value_type = typename S::value_type;
 
@@ -157,7 +154,7 @@ public:
         auto validator = GetSettingValidator<S>();
         auto validation = validator(value);
         if (!validation) {
-            return absl::InvalidArgumentError(validation.error_message);
+            return InvalidArgumentError(validation.error_message);
         }
 
         // Set the value under exclusive lock
@@ -165,14 +162,14 @@ public:
         auto serialized = ConfigTraits<value_type>::Serialize(value);
         file_values_.SetAtPath(S::path, serialized);
 
-        return absl::OkStatus();
+        return OkStatus();
     }
 
     /// @brief Loads configuration from the file.
     ///
     /// Thread safety: acquires an exclusive (writer) lock for the entire
     /// operation because it mutates @c file_values_.
-    [[nodiscard]] auto LoadImpl() -> absl::Status
+    [[nodiscard]] auto LoadImpl() -> Status
     {
         typename ThreadPolicy::unique_lock lock(mutex_);
         return LoadUnlocked();
@@ -182,7 +179,7 @@ public:
     ///
     /// Thread safety: acquires a shared (reader) lock because it only reads
     /// @c file_values_ (file I/O is serialized by the OS for the same path).
-    [[nodiscard]] auto SaveImpl() const -> absl::Status
+    [[nodiscard]] auto SaveImpl() const -> Status
     {
         typename ThreadPolicy::shared_lock lock(mutex_);
         return SaveUnlocked();
@@ -200,7 +197,7 @@ public:
     /// @brief Validates all current values against their validators.
     ///
     /// Thread safety: acquires a shared (reader) lock.
-    [[nodiscard]] auto ValidateAllImpl() const -> absl::Status
+    [[nodiscard]] auto ValidateAllImpl() const -> Status
     {
         typename ThreadPolicy::shared_lock lock(mutex_);
         return ValidateAllUnlocked();
@@ -223,19 +220,19 @@ public:
     /// concurrently without synchronization.
     [[nodiscard]] auto GetDefaults() const -> const Value& { return defaults_; }
 
-    [[nodiscard]] auto Load() -> absl::Status override { return LoadImpl(); }
+    [[nodiscard]] auto Load() -> Status override { return LoadImpl(); }
 
-    [[nodiscard]] auto Save() const -> absl::Status override { return SaveImpl(); }
+    [[nodiscard]] auto Save() const -> Status override { return SaveImpl(); }
 
     [[nodiscard]] auto GetFilePath() const -> std::string_view override { return GetFilePathImpl(); }
 
-    [[nodiscard]] auto ValidateAll() const -> absl::Status override { return ValidateAllImpl(); }
+    [[nodiscard]] auto ValidateAll() const -> Status override { return ValidateAllImpl(); }
 
     [[nodiscard]] auto GetDiffString() const -> std::string override { return DiffImpl().ToString(); }
 
 private:
     /// @brief Loads configuration from the file (caller must hold exclusive lock).
-    [[nodiscard]] auto LoadUnlocked() -> absl::Status
+    [[nodiscard]] auto LoadUnlocked() -> Status
     {
         namespace fs = std::filesystem;
 
@@ -278,11 +275,11 @@ private:
             }
         }
 
-        return absl::OkStatus();
+        return OkStatus();
     }
 
     /// @brief Saves the current configuration to the file (caller must hold at least a shared lock).
-    [[nodiscard]] auto SaveUnlocked() const -> absl::Status
+    [[nodiscard]] auto SaveUnlocked() const -> Status
     {
         namespace fs = std::filesystem;
 
@@ -292,7 +289,7 @@ private:
             std::error_code error_code;
             fs::create_directories(path.parent_path(), error_code);
             if (error_code) {
-                return absl::InternalError("Failed to create directory: " + error_code.message());
+                return InternalError("Failed to create directory: " + error_code.message());
             }
         }
 
@@ -300,9 +297,9 @@ private:
     }
 
     /// @brief Validates all values (caller must hold at least a shared lock).
-    [[nodiscard]] auto ValidateAllUnlocked() const -> absl::Status
+    [[nodiscard]] auto ValidateAllUnlocked() const -> Status
     {
-        absl::Status status = absl::OkStatus();
+        Status status = OkStatus();
 
         Schema::ForEachSetting([this, &status]<typename S>() {
             if (!status.ok()) {
@@ -318,7 +315,7 @@ private:
                     auto validator = GetSettingValidator<S>();
                     auto validation = validator(*parsed);
                     if (!validation) {
-                        status = absl::InvalidArgumentError(std::string(S::path) + ": " + validation.error_message);
+                        status = InvalidArgumentError(std::string(S::path) + ": " + validation.error_message);
                     }
                 }
             }

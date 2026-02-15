@@ -14,7 +14,6 @@ include(Coverage)
 copy_compile_commands()
 
 find_package(GTest CONFIG REQUIRED)
-find_package(absl CONFIG REQUIRED)
 
 # Optional serializer back-ends
 option(CPPFIG_ENABLE_JSON "Enable JSON serializer (requires nlohmann-json)" OFF)

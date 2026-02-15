@@ -177,7 +177,7 @@
 ///
 /// // Or use MockVirtualConfigurationProvider with GMock
 /// cppfig::testing::MockVirtualConfigurationProvider mock;
-/// EXPECT_CALL(mock, Load()).WillOnce(Return(absl::OkStatus()));
+/// EXPECT_CALL(mock, Load()).WillOnce(Return(cppfig::OkStatus()));
 /// @endcode
 ///
 /// @section organization Organizing Settings

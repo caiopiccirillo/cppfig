@@ -421,7 +421,7 @@ TEST(JsonSerializerTest, ParseStringError)
 {
     auto result = JsonSerializer::ParseString("not valid json {{{");
     EXPECT_FALSE(result.ok());
-    EXPECT_TRUE(absl::IsInvalidArgument(result.status()));
+    EXPECT_TRUE(cppfig::IsInvalidArgument(result.status()));
 }
 
 TEST(JsonSerializerTest, ParseStreamError)
@@ -429,7 +429,7 @@ TEST(JsonSerializerTest, ParseStreamError)
     std::istringstream stream("invalid json {{{");
     auto result = JsonSerializer::Parse(stream);
     EXPECT_FALSE(result.ok());
-    EXPECT_TRUE(absl::IsInvalidArgument(result.status()));
+    EXPECT_TRUE(cppfig::IsInvalidArgument(result.status()));
 }
 
 TEST(JsonSerializerTest, MergeNonObject)
@@ -460,7 +460,7 @@ TEST(JsonSerializerTest, GetAtPathNotAnObject)
     data["a"] = 42;
     auto result = data.GetAtPath("a.b");
     EXPECT_FALSE(result.ok());
-    EXPECT_TRUE(absl::IsNotFound(result.status()));
+    EXPECT_TRUE(cppfig::IsNotFound(result.status()));
 }
 
 TEST(ConfigDiffTest, NoDifferences)
@@ -703,7 +703,7 @@ TEST(MockConfigurationTest, SetWithValidationFailure)
 
     auto status = config.Set<MockValidatedPort>(99999);
     EXPECT_FALSE(status.ok());
-    EXPECT_TRUE(absl::IsInvalidArgument(status));
+    EXPECT_TRUE(cppfig::IsInvalidArgument(status));
     // Value should not be changed
     EXPECT_EQ(config.Get<MockValidatedPort>(), 8080);
 }

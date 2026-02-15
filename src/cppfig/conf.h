@@ -1,7 +1,5 @@
 #pragma once
 
-#include <absl/status/statusor.h>
-
 #include <istream>
 #include <sstream>
 #include <string>
@@ -9,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "cppfig/status.h"
 #include "cppfig/value.h"
 
 namespace cppfig {
@@ -38,7 +37,7 @@ struct ConfSerializer {
     using data_type = Value;
 
     /// @brief Parses a `.conf` stream into a Value tree.
-    static auto Parse(std::istream& is) -> absl::StatusOr<Value>
+    static auto Parse(std::istream& is) -> StatusOr<Value>
     {
         Value result = Value::Object();
         std::string line;
@@ -57,7 +56,7 @@ struct ConfSerializer {
             // key = value
             auto eq_pos = trimmed.find('=');
             if (eq_pos == std::string::npos) {
-                return absl::InvalidArgumentError("conf parse error: missing '=' on line " + std::to_string(line_number));
+                return InvalidArgumentError("conf parse error: missing '=' on line " + std::to_string(line_number));
             }
 
             std::string key = Trim(trimmed.substr(0, eq_pos));
@@ -70,7 +69,7 @@ struct ConfSerializer {
     }
 
     /// @brief Parses a `.conf` string into a Value tree.
-    static auto ParseString(std::string_view str) -> absl::StatusOr<Value>
+    static auto ParseString(std::string_view str) -> StatusOr<Value>
     {
         std::istringstream stream { std::string(str) };
         return Parse(stream);

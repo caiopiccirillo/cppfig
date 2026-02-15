@@ -1,8 +1,5 @@
 #pragma once
 
-#include <absl/status/status.h>
-#include <absl/status/statusor.h>
-
 #include <string>
 #include <string_view>
 
@@ -46,7 +43,7 @@ public:
     /// Usage: config.Set<MySettings::ServerPort>(8080)
     template <IsSetting S>
         requires(Schema::template has_setting<S>)
-    auto Set(typename S::value_type value) -> absl::Status
+    auto Set(typename S::value_type value) -> Status
     {
         return static_cast<Derived*>(this)->template SetImpl<S>(std::move(value));
     }
@@ -55,16 +52,16 @@ public:
     ///
     /// If the file doesn't exist, it creates it with default values.
     /// If new settings were added to the schema, they are appended to the file.
-    [[nodiscard]] auto Load() -> absl::Status { return static_cast<Derived*>(this)->LoadImpl(); }
+    [[nodiscard]] auto Load() -> Status { return static_cast<Derived*>(this)->LoadImpl(); }
 
     /// @brief Saves the current configuration to the file.
-    [[nodiscard]] auto Save() const -> absl::Status { return static_cast<const Derived*>(this)->SaveImpl(); }
+    [[nodiscard]] auto Save() const -> Status { return static_cast<const Derived*>(this)->SaveImpl(); }
 
     /// @brief Returns the diff between file values and defaults.
     [[nodiscard]] auto Diff() const -> ConfigDiff { return static_cast<const Derived*>(this)->DiffImpl(); }
 
     /// @brief Validates all current values against their validators.
-    [[nodiscard]] auto ValidateAll() const -> absl::Status
+    [[nodiscard]] auto ValidateAll() const -> Status
     {
         return static_cast<const Derived*>(this)->ValidateAllImpl();
     }
@@ -94,16 +91,16 @@ public:
     virtual ~IConfigurationProviderVirtual() = default;
 
     /// @brief Loads configuration from the file.
-    [[nodiscard]] virtual auto Load() -> absl::Status = 0;
+    [[nodiscard]] virtual auto Load() -> Status = 0;
 
     /// @brief Saves the current configuration to the file.
-    [[nodiscard]] virtual auto Save() const -> absl::Status = 0;
+    [[nodiscard]] virtual auto Save() const -> Status = 0;
 
     /// @brief Returns the file path.
     [[nodiscard]] virtual auto GetFilePath() const -> std::string_view = 0;
 
     /// @brief Validates all current values.
-    [[nodiscard]] virtual auto ValidateAll() const -> absl::Status = 0;
+    [[nodiscard]] virtual auto ValidateAll() const -> Status = 0;
 
     /// @brief Gets a string representation of the diff.
     [[nodiscard]] virtual auto GetDiffString() const -> std::string = 0;

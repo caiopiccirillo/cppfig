@@ -5,8 +5,6 @@
 #error "cppfig: JSON support is not enabled. Set CPPFIG_ENABLE_JSON=ON in CMake or add the 'json' vcpkg feature."
 #endif
 
-#include <absl/status/statusor.h>
-
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
@@ -90,7 +88,7 @@ struct JsonSerializer {
     using data_type = Value;
 
     /// @brief Parses JSON from an input stream.
-    static auto Parse(std::istream& is) -> absl::StatusOr<Value>
+    static auto Parse(std::istream& is) -> StatusOr<Value>
     {
         try {
             nlohmann::json data;
@@ -98,18 +96,18 @@ struct JsonSerializer {
             return JsonToValue(data);
         }
         catch (const nlohmann::json::parse_error& e) {
-            return absl::InvalidArgumentError(std::string("JSON parse error: ") + e.what());
+            return InvalidArgumentError(std::string("JSON parse error: ") + e.what());
         }
     }
 
     /// @brief Parses JSON from a string.
-    static auto ParseString(std::string_view str) -> absl::StatusOr<Value>
+    static auto ParseString(std::string_view str) -> StatusOr<Value>
     {
         try {
             return JsonToValue(nlohmann::json::parse(str));
         }
         catch (const nlohmann::json::parse_error& e) {
-            return absl::InvalidArgumentError(std::string("JSON parse error: ") + e.what());
+            return InvalidArgumentError(std::string("JSON parse error: ") + e.what());
         }
     }
 
