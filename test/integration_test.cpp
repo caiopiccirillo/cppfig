@@ -1306,7 +1306,7 @@ TEST_F(ConfigurationIntegrationTest, CRTPInterfaceSaveAndDiff)
     ASSERT_TRUE(config.Load().ok());
 
     IConfigurationProvider<Configuration<Schema>, Schema>& crtp_ref = config;
-    crtp_ref.Set<settings::AppPort>(9999);
+    (void)crtp_ref.Set<settings::AppPort>(9999);
 
     auto diff = crtp_ref.Diff();
     EXPECT_TRUE(diff.HasDifferences());

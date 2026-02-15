@@ -118,7 +118,7 @@ TEST_F(ThreadSafetyTest, SingleThreadedDiffAndValidateAll)
     ThreadSafeConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    config.Set<settings::Counter>(99);
+    (void)config.Set<settings::Counter>(99);
 
     auto diff = config.Diff();
     EXPECT_TRUE(diff.HasDifferences());
@@ -131,8 +131,8 @@ TEST_F(ThreadSafetyTest, ConcurrentReads)
 {
     ThreadSafeConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
-    config.Set<settings::Counter>(42);
-    config.Set<settings::Name>("concurrent");
+    (void)config.Set<settings::Counter>(42);
+    (void)config.Set<settings::Name>("concurrent");
 
     constexpr int kNumThreads = 8;
     constexpr int kReadsPerThread = 10'000;
@@ -176,7 +176,7 @@ TEST_F(ThreadSafetyTest, ConcurrentReadsAndWrites)
 {
     ThreadSafeConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
-    config.Set<settings::Counter>(0);
+    (void)config.Set<settings::Counter>(0);
 
     constexpr int kNumReaders = 6;
     constexpr int kNumWriters = 2;
@@ -236,28 +236,28 @@ TEST_F(ThreadSafetyTest, ConcurrentWritesToDifferentSettings)
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
         for (int i = 0; i < kIters; ++i) {
-            config.Set<settings::Counter>(i);
+            (void)config.Set<settings::Counter>(i);
         }
     });
 
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
         for (int i = 0; i < kIters; ++i) {
-            config.Set<settings::Name>("value_" + std::to_string(i));
+            (void)config.Set<settings::Name>("value_" + std::to_string(i));
         }
     });
 
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
         for (int i = 0; i < kIters; ++i) {
-            config.Set<settings::Ratio>(static_cast<double>(i) / 100.0);
+            (void)config.Set<settings::Ratio>(static_cast<double>(i) / 100.0);
         }
     });
 
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
         for (int i = 0; i < kIters; ++i) {
-            config.Set<settings::Enabled>(i % 2 == 0);
+            (void)config.Set<settings::Enabled>(i % 2 == 0);
         }
     });
 
@@ -286,8 +286,8 @@ TEST_F(ThreadSafetyTest, ConcurrentDiffAndValidateAllWithWrites)
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
         for (int i = 0; i < kIters; ++i) {
-            config.Set<settings::Counter>(i);
-            config.Set<settings::ValidatedPort>(1024 + (i % 60000));
+            (void)config.Set<settings::Counter>(i);
+            (void)config.Set<settings::ValidatedPort>(1024 + (i % 60000));
         }
     });
 
@@ -326,7 +326,7 @@ TEST_F(ThreadSafetyTest, ConcurrentLoadAndSave)
     {
         ThreadSafeConfig config(file_path_);
         ASSERT_TRUE(config.Load().ok());
-        config.Set<settings::Counter>(100);
+        (void)config.Set<settings::Counter>(100);
         ASSERT_TRUE(config.Save().ok());
     }
 
@@ -354,7 +354,7 @@ TEST_F(ThreadSafetyTest, ConcurrentLoadAndSave)
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
         for (int i = 0; i < kIters; ++i) {
-            config.Set<settings::Counter>(i);
+            (void)config.Set<settings::Counter>(i);
             auto status = config.Save();
             if (!status.ok()) {
                 errors.fetch_add(1, std::memory_order_relaxed);
@@ -385,7 +385,7 @@ TEST_F(ThreadSafetyTest, ConcurrentReload)
     {
         ThreadSafeConfig config(file_path_);
         ASSERT_TRUE(config.Load().ok());
-        config.Set<settings::Counter>(55);
+        (void)config.Set<settings::Counter>(55);
         ASSERT_TRUE(config.Save().ok());
     }
 
@@ -431,7 +431,7 @@ TEST_F(ThreadSafetyTest, ConcurrentValidationRejection)
 {
     ThreadSafeConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
-    config.Set<settings::ValidatedPort>(8080);
+    (void)config.Set<settings::ValidatedPort>(8080);
 
     constexpr int kIters = 5'000;
 
@@ -515,7 +515,7 @@ TEST_F(ThreadSafetyTest, ConcurrentVirtualInterface)
 {
     ThreadSafeConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
-    config.Set<settings::Counter>(7);
+    (void)config.Set<settings::Counter>(7);
 
     IConfigurationProviderVirtual& vconfig = config;
 
@@ -576,7 +576,7 @@ TEST_F(ThreadSafetyTest, StressAllOperationsMixed)
         threads.emplace_back([&, t] {
             start_latch.arrive_and_wait();
             for (int i = 0; i < kIters; ++i) {
-                config.Set<settings::Counter>(t * kIters + i);
+                (void)config.Set<settings::Counter>(t * kIters + i);
             }
         });
     }
@@ -585,7 +585,7 @@ TEST_F(ThreadSafetyTest, StressAllOperationsMixed)
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
         for (int i = 0; i < kIters; ++i) {
-            config.Set<settings::Name>("stress_" + std::to_string(i));
+            (void)config.Set<settings::Name>("stress_" + std::to_string(i));
         }
     });
 
@@ -593,7 +593,7 @@ TEST_F(ThreadSafetyTest, StressAllOperationsMixed)
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
         for (int i = 0; i < kIters; ++i) {
-            config.Set<settings::ValidatedPort>(1024 + (i % 60000));
+            (void)config.Set<settings::ValidatedPort>(1024 + (i % 60000));
         }
     });
 
@@ -654,7 +654,7 @@ TEST_F(ThreadSafetyTest, SingleThreadedPolicyCompiles)
     Configuration<TestSchema, JsonSerializer, SingleThreadedPolicy> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    config.Set<settings::Counter>(123);
+    (void)config.Set<settings::Counter>(123);
     EXPECT_EQ(config.Get<settings::Counter>(), 123);
 
     auto diff = config.Diff();
@@ -670,7 +670,7 @@ TEST_F(ThreadSafetyTest, DefaultPolicyIsSingleThreaded)
     Configuration<TestSchema> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    config.Set<settings::Counter>(999);
+    (void)config.Set<settings::Counter>(999);
     EXPECT_EQ(config.Get<settings::Counter>(), 999);
     EXPECT_TRUE(config.Save().ok());
 }
