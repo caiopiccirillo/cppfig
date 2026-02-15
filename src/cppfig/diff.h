@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
@@ -8,9 +9,9 @@
 namespace cppfig {
 
 /// @brief Type of change detected in a diff.
-enum class DiffType { Added,
-                      Removed,
-                      Modified };
+enum class DiffType : std::uint8_t { Added,
+                                     Removed,
+                                     Modified };
 
 /// @brief Represents a single difference between two configurations.
 struct DiffEntry {
@@ -103,7 +104,7 @@ namespace detail {
     {
         // Check for keys in target that are not in base (added)
         if (target.is_object()) {
-            for (auto& [key, value] : target.items()) {
+            for (const auto& [key, value] : target.items()) {
                 std::string path = prefix.empty() ? key : prefix + "." + key;
 
                 if (!base.is_object() || !base.contains(key)) {
@@ -122,7 +123,7 @@ namespace detail {
 
         // Check for keys in base that are not in target (removed)
         if (base.is_object()) {
-            for (auto& [key, value] : base.items()) {
+            for (const auto& [key, value] : base.items()) {
                 std::string path = prefix.empty() ? key : prefix + "." + key;
 
                 if (!target.is_object() || !target.contains(key)) {

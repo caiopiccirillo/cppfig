@@ -3,8 +3,6 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
-#include <barrier>
-#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>

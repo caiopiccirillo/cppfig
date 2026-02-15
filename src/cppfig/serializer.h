@@ -69,7 +69,7 @@ struct JsonSerializer {
         }
 
         data_type result = base;
-        for (auto& [key, value] : overlay.items()) {
+        for (const auto& [key, value] : overlay.items()) {
             if (result.contains(key) && result[key].is_object() && value.is_object()) {
                 result[key] = Merge(result[key], value);
             }

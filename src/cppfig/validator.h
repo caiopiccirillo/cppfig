@@ -50,7 +50,7 @@ public:
     auto operator()(const T& value) const -> ValidationResult { return fn_(value); }
 
     /// @brief Combines this validator with another (both must pass).
-    auto And(Validator<T> other) const -> Validator<T>
+    [[nodiscard]] auto And(Validator<T> other) const -> Validator<T>
     {
         auto this_fn = fn_;
         auto other_fn = other.fn_;
@@ -64,7 +64,7 @@ public:
     }
 
     /// @brief Combines this validator with another (either must pass).
-    auto Or(Validator<T> other) const -> Validator<T>
+    [[nodiscard]] auto Or(Validator<T> other) const -> Validator<T>
     {
         auto this_fn = fn_;
         auto other_fn = other.fn_;
