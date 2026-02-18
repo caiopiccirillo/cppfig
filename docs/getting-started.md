@@ -21,6 +21,7 @@ add_subdirectory(cppfig)
 target_link_libraries(your_target PRIVATE cppfig)
 ```
 
+<!--
 ### vcpkg
 
 ```json
@@ -43,6 +44,7 @@ To also enable the optional JSON serializer:
     ]
 }
 ```
+-->
 
 ### Requirements
 

@@ -146,6 +146,7 @@ target_link_libraries(your_target PRIVATE cppfig)
 set(CPPFIG_ENABLE_JSON ON)
 ```
 
+<!--
 ### vcpkg
 
 Core (`.conf` only, no extra dependencies):
@@ -166,6 +167,7 @@ With JSON support:
     ]
 }
 ```
+-->
 
 ## Documentation
 
