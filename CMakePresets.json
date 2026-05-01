@@ -76,6 +76,21 @@
                 "STRICT_BUILD": "OFF",
                 "ENABLE_COVERAGE": "ON"
             }
+        },
+        {
+            "name": "config-docs",
+            "displayName": "Documentation",
+            "description": "Configure build for Doxygen documentation generation",
+            "binaryDir": "${sourceDir}/build/docs",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_C_COMPILER": "/usr/bin/gcc",
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "STRICT_BUILD": "OFF"
+            }
         }
     ],
     "buildPresets": [
@@ -108,6 +123,13 @@
             "configurePreset": "config-coverage",
             "displayName": "Coverage",
             "description": "Build with code coverage enabled"
+        },
+        {
+            "name": "build-docs",
+            "configurePreset": "config-docs",
+            "displayName": "Documentation",
+            "description": "Build Doxygen documentation",
+            "targets": ["docs"]
         }
     ],
     "testPresets": [
@@ -212,6 +234,19 @@
                 {
                     "type": "test",
                     "name": "test-coverage"
+                }
+            ]
+        },
+        {
+            "name": "docs",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "config-docs"
+                },
+                {
+                    "type": "build",
+                    "name": "build-docs"
                 }
             ]
         }

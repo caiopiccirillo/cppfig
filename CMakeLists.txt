@@ -9,6 +9,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(CompileCommands)
 include(Coverage)
+include(Docs)
 
 # Enable copying of compile_commands.json to project root
 copy_compile_commands()

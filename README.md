@@ -1,6 +1,7 @@
 # cppfig - Modern C++20 Configuration Library
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/caiopiccirillo/cppfig)
+[![Documentation](https://img.shields.io/badge/docs-online-blue.svg)](https://caiopiccirillo.github.io/cppfig/)
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B20)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
