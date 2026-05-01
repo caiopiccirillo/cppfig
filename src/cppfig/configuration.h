@@ -5,8 +5,8 @@
 #include <string>
 #include <string_view>
 
-#include "cppfig/diff.h"
 #include "cppfig/conf.h"
+#include "cppfig/diff.h"
 #include "cppfig/interface.h"
 #include "cppfig/logging.h"
 #include "cppfig/serializer.h"

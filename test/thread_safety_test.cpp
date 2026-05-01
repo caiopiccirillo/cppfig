@@ -401,7 +401,7 @@ TEST_F(ThreadSafetyTest, ConcurrentReload)
 
     // Multiple loaders
     threads.reserve(2);
-for (int t = 0; t < 2; ++t) {
+    for (int t = 0; t < 2; ++t) {
         threads.emplace_back([&] {
             start_latch.arrive_and_wait();
             for (int i = 0; i < k_iters; ++i) {
@@ -576,7 +576,7 @@ TEST_F(ThreadSafetyTest, StressAllOperationsMixed)
 
     // Thread 0-1: Set Counter
     threads.reserve(2);
-for (int t = 0; t < 2; ++t) {
+    for (int t = 0; t < 2; ++t) {
         threads.emplace_back([&, t] {
             start_latch.arrive_and_wait();
             for (int i = 0; i < k_iters; ++i) {
