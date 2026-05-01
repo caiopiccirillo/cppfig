@@ -97,7 +97,7 @@ namespace settings {
         static constexpr std::string_view path = "app.scale";
         static constexpr std::string_view env_override = "TEST_APP_SCALE";
         using value_type = float;
-        static auto default_value() -> float { return 1.0f; }
+        static auto default_value() -> float { return 1.0F; }
     };
 
     // Int64 setting with environment variable override
@@ -309,9 +309,8 @@ struct Point {
 
     bool operator==(const Point& other) const { return x == other.x && y == other.y; }
 
-    friend void to_json(nlohmann::json& j, const Point& p) { j = nlohmann::json { { "x", p.x }, { "y", p.y } }; }
-
-    friend void from_json(const nlohmann::json& j, Point& p)
+    friend void to_json(nlohmann::json& j, const Point& p) { j = nlohmann::json { { "x", p.x }, { "y", p.y } }; }  // NOLINT(readability-identifier-naming)
+    friend void from_json(const nlohmann::json& j, Point& p)                                                       // NOLINT(readability-identifier-naming)
     {
         j.at("x").get_to(p.x);
         j.at("y").get_to(p.y);
@@ -399,7 +398,7 @@ TEST_F(ConfigurationIntegrationTest, EnvironmentVariableParseFailure)
     // Should fall back to file value since env var parse failed
     // (Logger will warn about it)
     ::testing::internal::CaptureStderr();
-    int port = config.Get<settings::PortWithEnv>();
+    const int port = config.Get<settings::PortWithEnv>();
     auto stderr_output = ::testing::internal::GetCapturedStderr();
 
     // Verify warning was logged
@@ -426,7 +425,7 @@ TEST_F(ConfigurationIntegrationTest, FileValueParseFailure)
 
     // Should fall back to default since file value can't be parsed
     ::testing::internal::CaptureStderr();
-    int port = config.Get<settings::AppPort>();
+    const int port = config.Get<settings::AppPort>();
     auto stderr_output = ::testing::internal::GetCapturedStderr();
 
     // Verify warning was logged
@@ -446,7 +445,7 @@ TEST_F(ConfigurationIntegrationTest, GetDiffString)
     ASSERT_TRUE(config.Set<settings::AppPort>(9000).ok());
 
     // Get diff string via virtual interface
-    IConfigurationProviderVirtual& virtual_config = config;
+    const IConfigurationProviderVirtual& virtual_config = config;
     auto diff_str = virtual_config.GetDiffString();
 
     EXPECT_NE(diff_str.find("app.port"), std::string::npos);
@@ -475,7 +474,7 @@ TEST_F(ConfigurationIntegrationTest, GetDefaults)
 
 TEST_F(ConfigurationIntegrationTest, SaveCreatesParentDirectories)
 {
-    std::string nested_path = file_path_ + "_nested/subdir/config.json";
+    const std::string nested_path = file_path_ + "_nested/subdir/config.json";
 
     using Schema = ConfigSchema<settings::AppName>;
     Configuration<Schema> config(nested_path);
@@ -492,7 +491,7 @@ TEST_F(ConfigurationIntegrationTest, SaveCreatesParentDirectories)
 TEST_F(ConfigurationIntegrationTest, CustomTypeToAndFromString)
 {
     // Test the ToString and FromString methods on ConfigTraitsFromJsonAdl
-    Point p { .x = 10, .y = 20 };
+    const Point p { .x = 10, .y = 20 };
 
     auto str = ConfigTraits<Point>::ToString(p);
     EXPECT_NE(str.find("10"), std::string::npos);
@@ -513,7 +512,7 @@ TEST_F(ConfigurationIntegrationTest, CustomTypeFromStringInvalid)
 TEST_F(ConfigurationIntegrationTest, CustomTypeFromJsonInvalid)
 {
     // JSON that doesn't match Point structure
-    Value invalid = 42;
+    const Value invalid = 42;
     auto parsed = ConfigTraits<Point>::Deserialize(invalid);
     EXPECT_FALSE(parsed.has_value());
 }
@@ -546,7 +545,7 @@ TEST_F(ConfigurationIntegrationTest, EnvironmentVariableSuccessfulParse)
     ASSERT_TRUE(config.Load().ok());
 
     // Environment variable should be successfully parsed and returned
-    std::string host = config.Get<settings::AppHost>();
+    const std::string host = config.Get<settings::AppHost>();
     EXPECT_EQ(host, "env-host.example.com");
 
     unsetenv("TEST_APP_HOST");
@@ -565,7 +564,7 @@ TEST_F(ConfigurationIntegrationTest, FileValueSuccessfulParse)
     ASSERT_TRUE(config.Load().ok());
 
     // File value should be successfully parsed and returned
-    std::string name = config.Get<settings::AppName>();
+    const std::string name = config.Get<settings::AppName>();
     EXPECT_EQ(name, "FileApp");
 }
 
@@ -728,7 +727,7 @@ TEST_F(ConfigurationIntegrationTest, MultiThreadedGetDiffString)
     ASSERT_TRUE(config.Load().ok());
     ASSERT_TRUE(config.Set<settings::AppPort>(1234).ok());
 
-    IConfigurationProviderVirtual& vconfig = config;
+    const IConfigurationProviderVirtual& vconfig = config;
     auto diff_str = vconfig.GetDiffString();
     EXPECT_NE(diff_str.find("app.port"), std::string::npos);
 }
@@ -740,7 +739,7 @@ TEST_F(ConfigurationIntegrationTest, MultiThreadedEnvVarSuccessfulParse)
     MTConfigEnv config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    std::string host = config.Get<settings::AppHost>();
+    const std::string host = config.Get<settings::AppHost>();
     EXPECT_EQ(host, "mt-host.example.com");
 
     unsetenv("TEST_APP_HOST");
@@ -759,7 +758,7 @@ TEST_F(ConfigurationIntegrationTest, MultiThreadedEnvVarParseFailure)
     ASSERT_TRUE(config.Load().ok());
 
     ::testing::internal::CaptureStderr();
-    int port = config.Get<settings::PortWithEnv>();
+    const int port = config.Get<settings::PortWithEnv>();
     auto stderr_output = ::testing::internal::GetCapturedStderr();
 
     EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
@@ -781,7 +780,7 @@ TEST_F(ConfigurationIntegrationTest, MultiThreadedFileValueParseFailure)
     ASSERT_TRUE(config.Load().ok());
 
     ::testing::internal::CaptureStderr();
-    int port = config.Get<settings::AppPort>();
+    const int port = config.Get<settings::AppPort>();
     auto stderr_output = ::testing::internal::GetCapturedStderr();
 
     EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
@@ -805,7 +804,7 @@ TEST_F(ConfigurationIntegrationTest, MultiThreadedDefaultValueFallback)
     // Schema migration adds it, so let's use a setting not in the schema
     // Actually, schema migration adds the setting. So instead, confirm
     // that the default value was written during migration.
-    int port = config.Get<settings::AppPort>();
+    const int port = config.Get<settings::AppPort>();
     EXPECT_EQ(port, 8080);
 }
 
@@ -876,9 +875,9 @@ TEST_F(ConfigurationIntegrationTest, MultiThreadedSchemaMigrationSaveFailure)
 TEST_F(ConfigurationIntegrationTest, MultiThreadedSaveDirectoryCreationFailure)
 {
     // Use /proc/... which can't have subdirectories created on Linux
-    std::string bad_path = "/proc/fakedir/subdir/config.json";
+    const std::string bad_path = "/proc/fakedir/subdir/config.json";
 
-    MTConfig config(bad_path);
+    const MTConfig config(bad_path);
     // Don't load — just build defaults and try to save directly
     auto status = config.Save();
     EXPECT_FALSE(status.ok());
@@ -935,7 +934,7 @@ TEST_F(ConfigurationIntegrationTest, ValidateAllStopsOnFirstError)
 
 TEST_F(ConfigurationIntegrationTest, SingleThreadedSaveCreatesDeepNestedDirectories)
 {
-    std::string nested = file_path_ + "_deep/a/b/c/config.json";
+    const std::string nested = file_path_ + "_deep/a/b/c/config.json";
 
     using Schema = ConfigSchema<settings::AppName>;
     Configuration<Schema> config(nested);
@@ -1001,16 +1000,16 @@ TEST_F(ConfigurationIntegrationTest, SingleThreadedSchemaMigrationSaveFailure)
 
 TEST_F(ConfigurationIntegrationTest, SingleThreadedSaveDirectoryCreationFailure)
 {
-    std::string bad_path = "/proc/fakedir/subdir/config.json";
+    const std::string bad_path = "/proc/fakedir/subdir/config.json";
     using Schema = ConfigSchema<settings::AppName>;
-    Configuration<Schema> config(bad_path);
+    const Configuration<Schema> config(bad_path);
     auto status = config.Save();
     EXPECT_FALSE(status.ok());
 }
 
 TEST_F(ConfigurationIntegrationTest, ConfigTraitsFromJsonAdlToJson)
 {
-    Point p { .x = 5, .y = 15 };
+    const Point p { .x = 5, .y = 15 };
     auto val = ConfigTraits<Point>::Serialize(p);
     EXPECT_EQ(val["x"], 5);
     EXPECT_EQ(val["y"], 15);
@@ -1065,7 +1064,7 @@ TEST_F(ConfigurationIntegrationTest, OrCombinatorSecondPasses)
 
 TEST_F(ConfigurationIntegrationTest, Int64Traits)
 {
-    std::int64_t val = 1234567890123LL;
+    const std::int64_t val = 1234567890123LL;
     auto serialized = ConfigTraits<std::int64_t>::Serialize(val);
     auto parsed = ConfigTraits<std::int64_t>::Deserialize(serialized);
     ASSERT_TRUE(parsed.has_value());
@@ -1083,7 +1082,7 @@ TEST_F(ConfigurationIntegrationTest, Int64Traits)
     EXPECT_FALSE(ConfigTraits<std::int64_t>::FromString("123abc").has_value());
 
     // Wrong JSON type
-    Value wrong("string");
+    const Value wrong("string");
     EXPECT_FALSE(ConfigTraits<std::int64_t>::Deserialize(wrong).has_value());
 }
 
@@ -1115,7 +1114,7 @@ TEST_F(ConfigurationIntegrationTest, SingleThreadedDefaultFallbackNoFileKey)
 TEST_F(ConfigurationIntegrationTest, SaveToFileWithNoParentPath)
 {
     // A bare filename with no directory component
-    std::string bare = "bare_config_test_temp.json";
+    const std::string bare = "bare_config_test_temp.json";
 
     using Schema = ConfigSchema<settings::AppName>;
     Configuration<Schema> config(bare);
@@ -1135,7 +1134,7 @@ TEST_F(ConfigurationIntegrationTest, BoolEnvVarParseFailure)
     ASSERT_TRUE(config.Load().ok());
 
     ::testing::internal::CaptureStderr();
-    bool debug = config.Get<settings::DebugMode>();
+    const bool debug = config.Get<settings::DebugMode>();
     auto stderr_output = ::testing::internal::GetCapturedStderr();
 
     EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
@@ -1154,7 +1153,7 @@ TEST_F(ConfigurationIntegrationTest, DoubleEnvVarParseFailure)
     ASSERT_TRUE(config.Load().ok());
 
     ::testing::internal::CaptureStderr();
-    double ratio = config.Get<settings::Ratio>();
+    const double ratio = config.Get<settings::Ratio>();
     auto stderr_output = ::testing::internal::GetCapturedStderr();
 
     EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
@@ -1173,12 +1172,12 @@ TEST_F(ConfigurationIntegrationTest, FloatEnvVarParseFailure)
     ASSERT_TRUE(config.Load().ok());
 
     ::testing::internal::CaptureStderr();
-    float scale = config.Get<settings::Scale>();
+    const float scale = config.Get<settings::Scale>();
     auto stderr_output = ::testing::internal::GetCapturedStderr();
 
     EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
     EXPECT_NE(stderr_output.find("TEST_APP_SCALE"), std::string::npos);
-    EXPECT_FLOAT_EQ(scale, 1.0f);  // falls back to default
+    EXPECT_FLOAT_EQ(scale, 1.0F);  // falls back to default
 
     unsetenv("TEST_APP_SCALE");
 }
@@ -1192,7 +1191,7 @@ TEST_F(ConfigurationIntegrationTest, Int64EnvVarParseFailure)
     ASSERT_TRUE(config.Load().ok());
 
     ::testing::internal::CaptureStderr();
-    std::int64_t big = config.Get<settings::BigNumber>();
+    const std::int64_t big = config.Get<settings::BigNumber>();
     auto stderr_output = ::testing::internal::GetCapturedStderr();
 
     EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
@@ -1214,7 +1213,7 @@ TEST_F(ConfigurationIntegrationTest, BoolFileValueParseFailure)
     ASSERT_TRUE(config.Load().ok());
 
     ::testing::internal::CaptureStderr();
-    bool debug = config.Get<settings::DebugMode>();
+    const bool debug = config.Get<settings::DebugMode>();
     auto stderr_output = ::testing::internal::GetCapturedStderr();
 
     EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
@@ -1233,7 +1232,7 @@ TEST_F(ConfigurationIntegrationTest, DoubleFileValueParseFailure)
     ASSERT_TRUE(config.Load().ok());
 
     ::testing::internal::CaptureStderr();
-    double ratio = config.Get<settings::Ratio>();
+    const double ratio = config.Get<settings::Ratio>();
     auto stderr_output = ::testing::internal::GetCapturedStderr();
 
     EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
@@ -1248,7 +1247,7 @@ TEST_F(ConfigurationIntegrationTest, BoolEnvVarSuccessfulParse)
     Configuration<Schema> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    bool debug = config.Get<settings::DebugMode>();
+    const bool debug = config.Get<settings::DebugMode>();
     EXPECT_TRUE(debug);
 
     unsetenv("TEST_DEBUG_MODE");
@@ -1262,7 +1261,7 @@ TEST_F(ConfigurationIntegrationTest, DoubleEnvVarSuccessfulParse)
     Configuration<Schema> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    double ratio = config.Get<settings::Ratio>();
+    const double ratio = config.Get<settings::Ratio>();
     EXPECT_DOUBLE_EQ(ratio, 3.14);
 
     unsetenv("TEST_APP_RATIO");
@@ -1287,7 +1286,7 @@ TEST_F(ConfigurationIntegrationTest, CRTPInterfaceGet)
     Configuration<Schema> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    IConfigurationProvider<Configuration<Schema>, Schema>& crtp_ref = config;
+    const IConfigurationProvider<Configuration<Schema>, Schema>& crtp_ref = config;
     EXPECT_EQ(crtp_ref.Get<settings::AppName>(), "TestApp");
 }
 
@@ -1322,7 +1321,7 @@ TEST_F(ConfigurationIntegrationTest, CRTPInterfaceValidateAll)
     Configuration<Schema> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    IConfigurationProvider<Configuration<Schema>, Schema>& crtp_ref = config;
+    const IConfigurationProvider<Configuration<Schema>, Schema>& crtp_ref = config;
     EXPECT_TRUE(crtp_ref.ValidateAll().ok());
 }
 
@@ -1332,7 +1331,7 @@ TEST_F(ConfigurationIntegrationTest, CRTPInterfaceGetFilePath)
     Configuration<Schema> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    IConfigurationProvider<Configuration<Schema>, Schema>& crtp_ref = config;
+    const IConfigurationProvider<Configuration<Schema>, Schema>& crtp_ref = config;
     EXPECT_EQ(crtp_ref.GetFilePath(), file_path_);
 }
 

@@ -4,6 +4,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <numbers>
 
 namespace cppfig::bench {
 
@@ -24,7 +25,7 @@ namespace settings {
     struct DoubleSetting {
         static constexpr std::string_view path = "benchmark.double";
         using value_type = double;
-        static auto default_value() -> double { return 3.14159; }
+        static auto default_value() -> double { return std::numbers::pi; }
     };
 
     struct BoolSetting {
@@ -119,7 +120,7 @@ protected:
         return temp_path.string();
     }
 
-    void RemoveFile(const std::string& path)
+    static void RemoveFile(const std::string& path)
     {
         if (std::filesystem::exists(path)) {
             std::filesystem::remove(path);
@@ -129,7 +130,7 @@ protected:
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, GetString)(benchmark::State& state)
 {
-    std::string path = CreateTempFile();
+    const std::string path = CreateTempFile();
     Configuration<SmallSchema> config(path);
     (void)config.Load();
 
@@ -144,7 +145,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, GetString);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, GetInt)(benchmark::State& state)
 {
-    std::string path = CreateTempFile();
+    const std::string path = CreateTempFile();
     Configuration<MediumSchema> config(path);
     (void)config.Load();
 
@@ -159,7 +160,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, GetInt);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, GetDouble)(benchmark::State& state)
 {
-    std::string path = CreateTempFile();
+    const std::string path = CreateTempFile();
     Configuration<MediumSchema> config(path);
     (void)config.Load();
 
@@ -174,7 +175,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, GetDouble);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, GetBool)(benchmark::State& state)
 {
-    std::string path = CreateTempFile();
+    const std::string path = CreateTempFile();
     Configuration<MediumSchema> config(path);
     (void)config.Load();
 
@@ -189,7 +190,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, GetBool);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, GetValidated)(benchmark::State& state)
 {
-    std::string path = CreateTempFile();
+    const std::string path = CreateTempFile();
     Configuration<MediumSchema> config(path);
     (void)config.Load();
 
@@ -204,13 +205,13 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, GetValidated);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, SetString)(benchmark::State& state)
 {
-    std::string path = CreateTempFile();
+    const std::string path = CreateTempFile();
     Configuration<SmallSchema> config(path);
     (void)config.Load();
 
     int counter = 0;
     for (auto _ : state) {
-        std::string value = "value_" + std::to_string(counter++);
+        const std::string value = "value_" + std::to_string(counter++);
         auto status = config.Set<settings::StringSetting>(value);
         benchmark::DoNotOptimize(status);
     }
@@ -221,7 +222,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, SetString);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, SetInt)(benchmark::State& state)
 {
-    std::string path = CreateTempFile();
+    const std::string path = CreateTempFile();
     Configuration<MediumSchema> config(path);
     (void)config.Load();
 
@@ -237,7 +238,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, SetInt);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, SetValidated)(benchmark::State& state)
 {
-    std::string path = CreateTempFile();
+    const std::string path = CreateTempFile();
     Configuration<MediumSchema> config(path);
     (void)config.Load();
 
@@ -252,7 +253,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, SetValidated);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, LoadSmallSchema)(benchmark::State& state)
 {
-    std::string path = CreateTempFile();
+    const std::string path = CreateTempFile();
 
     // Create initial file
     {
@@ -273,7 +274,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, LoadSmallSchema);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, LoadMediumSchema)(benchmark::State& state)
 {
-    std::string path = CreateTempFile();
+    const std::string path = CreateTempFile();
 
     // Create initial file
     {
@@ -294,7 +295,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, LoadMediumSchema);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, LoadLargeSchema)(benchmark::State& state)
 {
-    std::string path = CreateTempFile();
+    const std::string path = CreateTempFile();
 
     // Create initial file
     {
@@ -315,7 +316,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, LoadLargeSchema);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, SaveSmallSchema)(benchmark::State& state)
 {
-    std::string path = CreateTempFile();
+    const std::string path = CreateTempFile();
     Configuration<SmallSchema> config(path);
     (void)config.Load();
 
@@ -330,7 +331,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, SaveSmallSchema);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, SaveMediumSchema)(benchmark::State& state)
 {
-    std::string path = CreateTempFile();
+    const std::string path = CreateTempFile();
     Configuration<MediumSchema> config(path);
     (void)config.Load();
 
@@ -345,7 +346,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, SaveMediumSchema);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, SaveLargeSchema)(benchmark::State& state)
 {
-    std::string path = CreateTempFile();
+    const std::string path = CreateTempFile();
     Configuration<LargeSchema> config(path);
     (void)config.Load();
 
@@ -372,7 +373,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, ValidatorRange);
 BENCHMARK_DEFINE_F(BenchmarkFixture, ValidatorNotEmpty)(benchmark::State& state)
 {
     auto not_empty_validator = cppfig::NotEmpty();
-    std::string test_value = "test";
+    const std::string test_value = "test";
 
     for (auto _ : state) {
         auto result = not_empty_validator(test_value);
@@ -405,7 +406,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, ValidatorCombined);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, DiffNoChanges)(benchmark::State& state)
 {
-    std::string path = CreateTempFile();
+    const std::string path = CreateTempFile();
     Configuration<MediumSchema> config(path);
     (void)config.Load();
 
@@ -420,7 +421,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, DiffNoChanges);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, DiffWithChanges)(benchmark::State& state)
 {
-    std::string path = CreateTempFile();
+    const std::string path = CreateTempFile();
     Configuration<MediumSchema> config(path);
     (void)config.Load();
 
@@ -439,7 +440,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, DiffWithChanges);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, JsonSerializerParse)(benchmark::State& state)
 {
-    std::string json_str = R"({
+    const std::string json_str = R"({
         "benchmark": {
             "string": "test",
             "int": 42,
@@ -462,7 +463,7 @@ BENCHMARK_DEFINE_F(BenchmarkFixture, JsonSerializerStringify)(benchmark::State& 
     auto benchmark_obj = Value::Object();
     benchmark_obj["string"] = Value("test");
     benchmark_obj["int"] = Value(42);
-    benchmark_obj["double"] = Value(3.14159);
+    benchmark_obj["double"] = Value(std::numbers::pi);
     benchmark_obj["bool"] = Value(true);
     benchmark_obj["validated"] = Value(50);
     value["benchmark"] = benchmark_obj;
@@ -483,7 +484,7 @@ BENCHMARK_DEFINE_F(BenchmarkFixture, ValueGetAtPath)(benchmark::State& state)
     connection["port"] = Value(5432);
     database["connection"] = connection;
     value["database"] = database;
-    std::string path = "database.connection.host";
+    const std::string path = "database.connection.host";
 
     for (auto _ : state) {
         auto result = value.GetAtPath(path);
@@ -501,7 +502,7 @@ BENCHMARK_DEFINE_F(BenchmarkFixture, ValueSetAtPath)(benchmark::State& state)
     connection["port"] = Value(5432);
     database["connection"] = connection;
     value["database"] = database;
-    std::string path = "database.connection.host";
+    const std::string path = "database.connection.host";
 
     for (auto _ : state) {
         Value value_copy = value;
@@ -522,7 +523,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, TraitsSerializeInt);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, TraitsDeserializeInt)(benchmark::State& state)
 {
-    Value val(42);
+    const Value val(42);
 
     for (auto _ : state) {
         auto result = ConfigTraits<int>::Deserialize(val);
@@ -533,7 +534,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, TraitsDeserializeInt);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, TraitsSerializeString)(benchmark::State& state)
 {
-    std::string value = "benchmark_test_string";
+    const std::string value = "benchmark_test_string";
 
     for (auto _ : state) {
         auto val = ConfigTraits<std::string>::Serialize(value);
@@ -544,7 +545,7 @@ BENCHMARK_REGISTER_F(BenchmarkFixture, TraitsSerializeString);
 
 BENCHMARK_DEFINE_F(BenchmarkFixture, TraitsDeserializeString)(benchmark::State& state)
 {
-    Value val("benchmark_test_string");
+    const Value val("benchmark_test_string");
 
     for (auto _ : state) {
         auto result = ConfigTraits<std::string>::Deserialize(val);

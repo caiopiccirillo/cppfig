@@ -146,19 +146,19 @@ TEST_F(ThreadSafetyTest, ConcurrentReads)
         threads.emplace_back([&] {
             start_latch.arrive_and_wait();
             for (int i = 0; i < k_reads_per_thread; ++i) {
-                int counter = config.Get<settings::Counter>();
+                const int counter = config.Get<settings::Counter>();
                 if (counter != 42) {
                     error_count.fetch_add(1, std::memory_order_relaxed);
                 }
-                std::string name = config.Get<settings::Name>();
+                const std::string name = config.Get<settings::Name>();
                 if (name != "concurrent") {
                     error_count.fetch_add(1, std::memory_order_relaxed);
                 }
-                double ratio = config.Get<settings::Ratio>();
+                const double ratio = config.Get<settings::Ratio>();
                 if (std::abs(ratio - 1.0) > 1e-9) {
                     error_count.fetch_add(1, std::memory_order_relaxed);
                 }
-                bool enabled = config.Get<settings::Enabled>();
+                const bool enabled = config.Get<settings::Enabled>();
                 if (!enabled) {
                     error_count.fetch_add(1, std::memory_order_relaxed);
                 }
@@ -193,7 +193,7 @@ TEST_F(ThreadSafetyTest, ConcurrentReadsAndWrites)
         threads.emplace_back([&, w] {
             start_latch.arrive_and_wait();
             for (int i = 0; i < k_ops_per_thread; ++i) {
-                int value = (w * k_ops_per_thread) + i;
+                const int value = (w * k_ops_per_thread) + i;
                 auto status = config.Set<settings::Counter>(value);
                 // All values we write are non-negative ints — must always pass validation
                 if (!status.ok()) {
@@ -209,7 +209,7 @@ TEST_F(ThreadSafetyTest, ConcurrentReadsAndWrites)
         threads.emplace_back([&] {
             start_latch.arrive_and_wait();
             for (int i = 0; i < k_ops_per_thread; ++i) {
-                int counter = config.Get<settings::Counter>();
+                const int counter = config.Get<settings::Counter>();
                 // The counter must be a non-negative integer set by one of the writers
                 if (counter < 0) {
                     torn_read_count.fetch_add(1, std::memory_order_relaxed);
@@ -368,7 +368,7 @@ TEST_F(ThreadSafetyTest, ConcurrentLoadAndSave)
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
         for (int i = 0; i < k_iters; ++i) {
-            int val = config.Get<settings::Counter>();
+            const int val = config.Get<settings::Counter>();
             if (val < 0) {
                 errors.fetch_add(1, std::memory_order_relaxed);
             }
@@ -415,9 +415,9 @@ TEST_F(ThreadSafetyTest, ConcurrentReload)
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
         for (int i = 0; i < k_iters; ++i) {
-            int val = config.Get<settings::Counter>();
+            const int val = config.Get<settings::Counter>();
             (void)val;
-            std::string name = config.Get<settings::Name>();
+            const std::string name = config.Get<settings::Name>();
             (void)name;
         }
     });
@@ -468,7 +468,7 @@ TEST_F(ThreadSafetyTest, ConcurrentValidationRejection)
     threads.emplace_back([&] {
         start_latch.arrive_and_wait();
         for (int i = 0; i < k_iters; ++i) {
-            int port = config.Get<settings::ValidatedPort>();
+            const int port = config.Get<settings::ValidatedPort>();
             if (port != 8080) {
                 unexpected_values.fetch_add(1, std::memory_order_relaxed);
             }
@@ -495,6 +495,7 @@ TEST_F(ThreadSafetyTest, ConcurrentGetFilePath)
     std::vector<std::thread> threads;
     std::atomic<int> mismatches { 0 };
 
+    threads.reserve(k_num_threads);
     for (int t = 0; t < k_num_threads; ++t) {
         threads.emplace_back([&] {
             start_latch.arrive_and_wait();
@@ -730,7 +731,7 @@ TEST_F(ThreadSafetyTest, EdgeEnvVarSuccessfulParse)
     Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    std::string host = config.Get<edge_settings::HostWithEnv>();
+    const std::string host = config.Get<edge_settings::HostWithEnv>();
     EXPECT_EQ(host, "env-host.example.com");
 
     unsetenv("CPPFIG_EDGE_HOST");
@@ -750,7 +751,7 @@ TEST_F(ThreadSafetyTest, EdgeEnvVarParseFailure)
     ASSERT_TRUE(config.Load().ok());
 
     ::testing::internal::CaptureStderr();
-    int port = config.Get<edge_settings::PortWithEnv>();
+    const int port = config.Get<edge_settings::PortWithEnv>();
     auto stderr_output = ::testing::internal::GetCapturedStderr();
 
     EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
@@ -772,7 +773,7 @@ TEST_F(ThreadSafetyTest, EdgeFileValueParseFailure)
     ASSERT_TRUE(config.Load().ok());
 
     ::testing::internal::CaptureStderr();
-    int port = config.Get<edge_settings::AppPort>();
+    const int port = config.Get<edge_settings::AppPort>();
     auto stderr_output = ::testing::internal::GetCapturedStderr();
 
     EXPECT_NE(stderr_output.find("WARN"), std::string::npos);
@@ -862,10 +863,10 @@ TEST_F(ThreadSafetyTest, EdgeSchemaMigrationSaveFailure)
 
 TEST_F(ThreadSafetyTest, EdgeSaveDirectoryCreationFailure)
 {
-    std::string bad_path = "/proc/fakedir/subdir/config.json";
+    const std::string bad_path = "/proc/fakedir/subdir/config.json";
 
     using Schema = ConfigSchema<edge_settings::AppName>;
-    Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(bad_path);
+    const Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(bad_path);
 
     auto status = config.Save();
     EXPECT_FALSE(status.ok());
@@ -873,7 +874,7 @@ TEST_F(ThreadSafetyTest, EdgeSaveDirectoryCreationFailure)
 
 TEST_F(ThreadSafetyTest, EdgeSaveNoParentPath)
 {
-    std::string bare = "bare_ts_config_temp.json";
+    const std::string bare = "bare_ts_config_temp.json";
 
     using Schema = ConfigSchema<edge_settings::AppName>;
     Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(bare);

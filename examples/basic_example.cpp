@@ -72,20 +72,20 @@ int main()
     // Load configuration (creates file with defaults if it doesn't exist)
     auto status = config.Load();
     if (!status.ok()) {
-        std::cerr << "Failed to load configuration: " << status.message() << std::endl;
+        std::cerr << "Failed to load configuration: " << status.message() << '\n';
         return 1;
     }
 
     // Access configuration values - fully type-safe with IDE autocompletion!
     std::cout << "Application: " << config.Get<settings::AppName>() << " v" << config.Get<settings::AppVersion>()
-              << std::endl;
+              << '\n';
     std::cout << "Server: " << config.Get<settings::ServerHost>() << ":" << config.Get<settings::ServerPort>()
-              << std::endl;
-    std::cout << "Max connections: " << config.Get<settings::ServerMaxConnections>() << std::endl;
-    std::cout << "Logging enabled: " << (config.Get<settings::LoggingEnabled>() ? "yes" : "no") << std::endl;
-    std::cout << "Logging level: " << config.Get<settings::LoggingLevel>() << std::endl;
+              << '\n';
+    std::cout << "Max connections: " << config.Get<settings::ServerMaxConnections>() << '\n';
+    std::cout << "Logging enabled: " << (config.Get<settings::LoggingEnabled>() ? "yes" : "no") << '\n';
+    std::cout << "Logging level: " << config.Get<settings::LoggingLevel>() << '\n';
     std::cout << "Experimental features: " << (config.Get<settings::FeaturesExperimental>() ? "enabled" : "disabled")
-              << std::endl;
+              << '\n';
 
     // Show the diff between file and defaults
     std::cout << "\n"
@@ -94,23 +94,23 @@ int main()
     // Modify a setting (with validation)
     status = config.Set<settings::ServerPort>(9000);
     if (!status.ok()) {
-        std::cerr << "Failed to set port: " << status.message() << std::endl;
+        std::cerr << "Failed to set port: " << status.message() << '\n';
     }
 
     // Try to set an invalid value
     status = config.Set<settings::ServerPort>(99999);  // Out of range!
     if (!status.ok()) {
-        std::cout << "\nExpected validation error: " << status.message() << std::endl;
+        std::cout << "\nExpected validation error: " << status.message() << '\n';
     }
 
     // Save updated configuration
     status = config.Save();
     if (!status.ok()) {
-        std::cerr << "Failed to save configuration: " << status.message() << std::endl;
+        std::cerr << "Failed to save configuration: " << status.message() << '\n';
         return 1;
     }
 
-    std::cout << "\nConfiguration saved to: " << config.GetFilePath() << std::endl;
+    std::cout << "\nConfiguration saved to: " << config.GetFilePath() << '\n';
 
     return 0;
 }

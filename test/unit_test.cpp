@@ -92,27 +92,27 @@ TEST(ConfigTraitsTest, DoubleToString)
 
 TEST(ConfigTraitsTest, FloatToJson)
 {
-    EXPECT_FLOAT_EQ(ConfigTraits<float>::Serialize(3.14f).Get<float>(), 3.14f);
+    EXPECT_FLOAT_EQ(ConfigTraits<float>::Serialize(3.14F).Get<float>(), 3.14F);
 }
 
 TEST(ConfigTraitsTest, FloatFromJson)
 {
-    auto result = ConfigTraits<float>::Deserialize(Value(3.14f));
+    auto result = ConfigTraits<float>::Deserialize(Value(3.14F));
     ASSERT_TRUE(result.has_value());
-    EXPECT_FLOAT_EQ(*result, 3.14f);
+    EXPECT_FLOAT_EQ(*result, 3.14F);
     EXPECT_EQ(ConfigTraits<float>::Deserialize(Value("invalid")), std::nullopt);
 }
 
 TEST(ConfigTraitsTest, FloatFromString)
 {
-    EXPECT_FLOAT_EQ(*ConfigTraits<float>::FromString("3.14"), 3.14f);
+    EXPECT_FLOAT_EQ(*ConfigTraits<float>::FromString("3.14"), 3.14F);
     EXPECT_EQ(ConfigTraits<float>::FromString("abc"), std::nullopt);
     EXPECT_EQ(ConfigTraits<float>::FromString("3.14abc"), std::nullopt);
 }
 
 TEST(ConfigTraitsTest, FloatToString)
 {
-    auto str = ConfigTraits<float>::ToString(3.14f);
+    auto str = ConfigTraits<float>::ToString(3.14F);
     EXPECT_FALSE(str.empty());
 }
 
@@ -337,13 +337,13 @@ TEST(ConfigSchemaTest, ForEachSetting)
 
 TEST(JsonSerializerTest, ParseAndStringify)
 {
-    std::string json_str = R"({"key": "value", "number": 42})";
+    const std::string json_str = R"({"key": "value", "number": 42})";
     std::istringstream stream(json_str);
 
     auto result = JsonSerializer::Parse(stream);
     ASSERT_TRUE(result.ok());
 
-    auto data = *result;
+    const auto& data = *result;
     EXPECT_EQ(data["key"], "value");
     EXPECT_EQ(data["number"], 42);
 
@@ -435,7 +435,7 @@ TEST(JsonSerializerTest, ParseStreamError)
 TEST(JsonSerializerTest, MergeNonObject)
 {
     // When base is not an object, overlay replaces it entirely
-    Value base = 42;
+    const Value base = 42;
     auto overlay = Value::Object();
     overlay["key"] = Value("value");
 
@@ -448,7 +448,7 @@ TEST(JsonSerializerTest, MergeNonObjectOverlay)
     // When overlay is not an object, it replaces base
     auto base = Value::Object();
     base["key"] = Value("value");
-    Value overlay = 42;
+    const Value overlay = 42;
 
     auto merged = Value::Merge(base, overlay);
     EXPECT_EQ(merged, 42);
@@ -517,13 +517,13 @@ TEST(ConfigDiffTest, ModifiedEntry)
 
 TEST(ConfigDiffTest, DiffEntryTypeString)
 {
-    DiffEntry added { .type = DiffType::Added, .path = "path", .old_value = "", .new_value = "value" };
+    const DiffEntry added { .type = DiffType::Added, .path = "path", .old_value = "", .new_value = "value" };
     EXPECT_EQ(added.TypeString(), "ADDED");
 
-    DiffEntry removed { .type = DiffType::Removed, .path = "path", .old_value = "value", .new_value = "" };
+    const DiffEntry removed { .type = DiffType::Removed, .path = "path", .old_value = "value", .new_value = "" };
     EXPECT_EQ(removed.TypeString(), "REMOVED");
 
-    DiffEntry modified { .type = DiffType::Modified, .path = "path", .old_value = "old", .new_value = "new" };
+    const DiffEntry modified { .type = DiffType::Modified, .path = "path", .old_value = "old", .new_value = "new" };
     EXPECT_EQ(modified.TypeString(), "MODIFIED");
 }
 
@@ -541,7 +541,7 @@ TEST(ConfigDiffTest, DiffSize)
 
 TEST(ConfigDiffTest, ToStringNoDifferences)
 {
-    ConfigDiff diff;
+    const ConfigDiff diff;
     auto str = diff.ToString();
     EXPECT_EQ(str, "No differences found.\n");
 }
@@ -635,7 +635,7 @@ using MockSchema = ConfigSchema<MockAppName, MockAppPort>;
 
 TEST(MockConfigurationTest, GetDefault)
 {
-    testing::MockConfiguration<MockSchema> config;
+    const testing::MockConfiguration<MockSchema> config;
 
     // These should return defaults since nothing was set
     EXPECT_EQ(config.Get<MockAppName>(), "MyApp");
@@ -871,18 +871,18 @@ TEST(ValidatorTest, PredicateStringValidator)
 
 TEST(ValidatorTest, MinValidatorFloat)
 {
-    auto validator = Min(1.0f);
-    EXPECT_TRUE(validator(1.0f));
-    EXPECT_TRUE(validator(2.0f));
-    EXPECT_FALSE(validator(0.9f));
+    auto validator = Min(1.0F);
+    EXPECT_TRUE(validator(1.0F));
+    EXPECT_TRUE(validator(2.0F));
+    EXPECT_FALSE(validator(0.9F));
 }
 
 TEST(ValidatorTest, MaxValidatorFloat)
 {
-    auto validator = Max(100.0f);
-    EXPECT_TRUE(validator(100.0f));
-    EXPECT_TRUE(validator(50.0f));
-    EXPECT_FALSE(validator(100.1f));
+    auto validator = Max(100.0F);
+    EXPECT_TRUE(validator(100.0F));
+    EXPECT_TRUE(validator(50.0F));
+    EXPECT_FALSE(validator(100.1F));
 }
 
 TEST(ValidatorTest, NotEmptyFailureMessage)
@@ -1048,7 +1048,7 @@ TEST(ConfigDiffTest, DiffNestedObjects)
 
 TEST(ConfigDiffTest, DiffAddedToNonObject)
 {
-    Value base = 42;
+    const Value base = 42;
     auto target = Value::Object();
     target["a"] = 1;
 
@@ -1061,7 +1061,7 @@ TEST(ConfigDiffTest, DiffRemovedFromNonObject)
 {
     auto base = Value::Object();
     base["a"] = 1;
-    Value target = 42;
+    const Value target = 42;
 
     auto diff = DiffValues(base, target);
     EXPECT_TRUE(diff.HasDifferences());
