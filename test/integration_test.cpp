@@ -492,7 +492,7 @@ TEST_F(ConfigurationIntegrationTest, SaveCreatesParentDirectories)
 TEST_F(ConfigurationIntegrationTest, CustomTypeToAndFromString)
 {
     // Test the ToString and FromString methods on ConfigTraitsFromJsonAdl
-    Point p { .x=10, .y=20 };
+    Point p { .x = 10, .y = 20 };
 
     auto str = ConfigTraits<Point>::ToString(p);
     EXPECT_NE(str.find("10"), std::string::npos);
@@ -1010,7 +1010,7 @@ TEST_F(ConfigurationIntegrationTest, SingleThreadedSaveDirectoryCreationFailure)
 
 TEST_F(ConfigurationIntegrationTest, ConfigTraitsFromJsonAdlToJson)
 {
-    Point p { .x=5, .y=15 };
+    Point p { .x = 5, .y = 15 };
     auto val = ConfigTraits<Point>::Serialize(p);
     EXPECT_EQ(val["x"], 5);
     EXPECT_EQ(val["y"], 15);

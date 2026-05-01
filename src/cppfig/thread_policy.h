@@ -17,16 +17,16 @@ namespace cppfig {
 /// @endcode
 struct SingleThreadedPolicy {
     /// @brief No-op mutex type (lower_case to satisfy C++ BasicLockable/SharedLockable).
-    struct mutex_type {  // NOLINT(readability-identifier-naming)
-        void lock() {}         // NOLINT(readability-identifier-naming) LCOV_EXCL_LINE
-        void unlock() {}       // NOLINT(readability-identifier-naming) LCOV_EXCL_LINE
-        void lock_shared() {}  // NOLINT(readability-identifier-naming) LCOV_EXCL_LINE
-        void unlock_shared() {} // NOLINT(readability-identifier-naming) LCOV_EXCL_LINE
+    struct mutex_type {           // NOLINT(readability-identifier-naming)
+        void lock() { }           // NOLINT(readability-identifier-naming) LCOV_EXCL_LINE
+        void unlock() { }         // NOLINT(readability-identifier-naming) LCOV_EXCL_LINE
+        void lock_shared() { }    // NOLINT(readability-identifier-naming) LCOV_EXCL_LINE
+        void unlock_shared() { }  // NOLINT(readability-identifier-naming) LCOV_EXCL_LINE
     };
 
     /// @brief No-op shared (reader) lock (mirrors std::shared_lock).
     struct shared_lock {  // NOLINT(readability-identifier-naming)
-        explicit shared_lock(mutex_type& /*unused*/) {}
+        explicit shared_lock(mutex_type& /*unused*/) { }
         ~shared_lock() = default;
 
         shared_lock(const shared_lock&) = delete;
@@ -37,7 +37,7 @@ struct SingleThreadedPolicy {
 
     /// @brief No-op unique (writer) lock (mirrors std::unique_lock).
     struct unique_lock {  // NOLINT(readability-identifier-naming)
-        explicit unique_lock(mutex_type& /*unused*/) {}
+        explicit unique_lock(mutex_type& /*unused*/) { }
         ~unique_lock() = default;
 
         unique_lock(const unique_lock&) = delete;

@@ -1,8 +1,8 @@
 #pragma once
 
+#include "cppfig/conf.h"           // IWYU pragma: export
 #include "cppfig/configuration.h"  // IWYU pragma: export
 #include "cppfig/diff.h"           // IWYU pragma: export
-#include "cppfig/conf.h"           // IWYU pragma: export
 #include "cppfig/interface.h"      // IWYU pragma: export
 #include "cppfig/logging.h"        // IWYU pragma: export
 #include "cppfig/schema.h"         // IWYU pragma: export
