@@ -987,6 +987,48 @@ TEST(JsonSerializerTest, SetAtPathSingleSegment)
     EXPECT_EQ(data["key"], "value");
 }
 
+TEST(JsonSerializerTest, SplitPathRejectsIllFormedPaths)
+{
+    EXPECT_THAT(Value::SplitPath("a.b.c"), ::testing::ElementsAre("a", "b", "c"));
+    EXPECT_THAT(Value::SplitPath("a"), ::testing::ElementsAre("a"));
+
+    // Empty, leading, trailing and doubled separators all leave a blank segment.
+    EXPECT_TRUE(Value::SplitPath("").empty());
+    EXPECT_TRUE(Value::SplitPath(".").empty());
+    EXPECT_TRUE(Value::SplitPath(".a").empty());
+    EXPECT_TRUE(Value::SplitPath("a.").empty());
+    EXPECT_TRUE(Value::SplitPath("a..b").empty());
+}
+
+TEST(JsonSerializerTest, SetAtPathIgnoresIllFormedPaths)
+{
+    // Regression: an empty path used to underflow segments.size() - 1 and
+    // index an empty vector.
+    auto data = Value::Object();
+    data.SetAtPath("", Value(1));
+    EXPECT_TRUE(data.Items().empty());
+
+    data.SetAtPath("a..b", Value(1));
+    data.SetAtPath(".a", Value(1));
+    data.SetAtPath("a.", Value(1));
+    EXPECT_TRUE(data.Items().empty());
+}
+
+TEST(JsonSerializerTest, GetAtPathRejectsIllFormedPaths)
+{
+    auto data = Value::Object();
+    data.SetAtPath("a.b", Value(1));
+
+    // An empty path used to resolve to the whole tree.
+    EXPECT_FALSE(data.GetAtPath("").ok());
+    EXPECT_FALSE(data.HasPath(""));
+    EXPECT_FALSE(data.HasPath("a..b"));
+    EXPECT_FALSE(data.HasPath(".a"));
+    EXPECT_FALSE(data.HasPath("a."));
+
+    EXPECT_TRUE(data.HasPath("a.b"));
+}
+
 TEST(JsonSerializerTest, MergeDeepRecursive)
 {
     auto base = Value::Object();
@@ -1109,6 +1151,31 @@ TEST(ConfigurationTestFixtureTest, RemoveFileNonexistent)
 {
     // Should not crash for non-existent file
     testing::ConfigurationTestFixture::RemoveFile("/tmp/nonexistent_test_file_12345.json");
+}
+
+TEST(ConfSerializerTest, ParseRejectsMissingSeparator)
+{
+    auto result = ConfSerializer::ParseString("server.host localhost\n");
+    ASSERT_FALSE(result.ok());
+    EXPECT_TRUE(IsInvalidArgument(result.status()));
+    EXPECT_NE(std::string(result.status().message()).find("line 1"), std::string::npos);
+}
+
+TEST(ConfSerializerTest, ParseRejectsIllFormedKey)
+{
+    // Regression: an empty key reached SetAtPath and indexed out of bounds.
+    for (const auto* line : { "  = 5\n", "a..b = 5\n", ".a = 5\n", "a. = 5\n" }) {
+        auto result = ConfSerializer::ParseString(line);
+        ASSERT_FALSE(result.ok()) << "expected rejection for: " << line;
+        EXPECT_TRUE(IsInvalidArgument(result.status()));
+    }
+}
+
+TEST(ConfSerializerTest, ParseReportsOffendingLineNumber)
+{
+    auto result = ConfSerializer::ParseString("# comment\n\nserver.host = localhost\n = 5\n");
+    ASSERT_FALSE(result.ok());
+    EXPECT_NE(std::string(result.status().message()).find("line 4"), std::string::npos);
 }
 
 }  // namespace cppfig::test

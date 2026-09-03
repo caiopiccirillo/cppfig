@@ -64,6 +64,12 @@ struct ConfSerializer {
             std::string key = Trim(trimmed.substr(0, eq_pos));
             std::string value_str = Trim(trimmed.substr(eq_pos + 1));
 
+            // Reject keys SetAtPath would have to ignore, so a malformed file
+            // is reported with its line number rather than silently dropped.
+            if (Value::SplitPath(key).empty()) {
+                return InvalidArgumentError("conf parse error: ill-formed key '" + key + "' on line " + std::to_string(line_number));
+            }
+
             result.SetAtPath(key, InferValue(value_str));
         }
 
