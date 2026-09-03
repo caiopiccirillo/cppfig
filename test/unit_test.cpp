@@ -1153,4 +1153,29 @@ TEST(ConfigurationTestFixtureTest, RemoveFileNonexistent)
     testing::ConfigurationTestFixture::RemoveFile("/tmp/nonexistent_test_file_12345.json");
 }
 
+TEST(ConfSerializerTest, ParseRejectsMissingSeparator)
+{
+    auto result = ConfSerializer::ParseString("server.host localhost\n");
+    ASSERT_FALSE(result.ok());
+    EXPECT_TRUE(IsInvalidArgument(result.status()));
+    EXPECT_NE(std::string(result.status().message()).find("line 1"), std::string::npos);
+}
+
+TEST(ConfSerializerTest, ParseRejectsIllFormedKey)
+{
+    // Regression: an empty key reached SetAtPath and indexed out of bounds.
+    for (const auto* line : { "  = 5\n", "a..b = 5\n", ".a = 5\n", "a. = 5\n" }) {
+        auto result = ConfSerializer::ParseString(line);
+        ASSERT_FALSE(result.ok()) << "expected rejection for: " << line;
+        EXPECT_TRUE(IsInvalidArgument(result.status()));
+    }
+}
+
+TEST(ConfSerializerTest, ParseReportsOffendingLineNumber)
+{
+    auto result = ConfSerializer::ParseString("# comment\n\nserver.host = localhost\n = 5\n");
+    ASSERT_FALSE(result.ok());
+    EXPECT_NE(std::string(result.status().message()).find("line 4"), std::string::npos);
+}
+
 }  // namespace cppfig::test
