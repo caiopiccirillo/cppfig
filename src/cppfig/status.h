@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -110,10 +111,16 @@ public:
 
     /// @brief Constructs a StatusOr holding an error status.
     ///
+    /// An OK status carries no value, so a StatusOr built from one would
+    /// report ok() == false while status() reported OK — an object that
+    /// contradicts itself. The precondition is checked rather than merely
+    /// documented.
+    ///
     /// @pre status must not be OK.
     StatusOr(Status status)  // NOLINT(google-explicit-constructor)
         : storage_(std::move(status))
     {
+        assert(!std::get<Status>(storage_).ok() && "StatusOr must not be constructed from an OK status");
     }
 
     /// @brief Returns true if a value is present (no error).
