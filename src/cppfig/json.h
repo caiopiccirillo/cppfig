@@ -6,6 +6,8 @@
 #endif
 
 #include <nlohmann/json.hpp>
+
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
