@@ -45,8 +45,9 @@ inline auto JsonToValue(const nlohmann::json& json) -> Value
     }
     if (json.is_array()) {
         auto arr = Value::Array();
-        // Array elements are not used in config settings but supported
-        // for completeness.
+        for (const auto& element : json) {
+            arr.Elements().push_back(JsonToValue(element));
+        }
         return arr;
     }
     return {};
@@ -78,7 +79,11 @@ inline auto ValueToJson(const Value& value) -> nlohmann::json
         return json;
     }
     if (value.IsArray()) {
-        return nlohmann::json::array();
+        nlohmann::json json = nlohmann::json::array();
+        for (const auto& element : value.Elements()) {
+            json.push_back(ValueToJson(element));
+        }
+        return json;
     }
     return nullptr;
 }
