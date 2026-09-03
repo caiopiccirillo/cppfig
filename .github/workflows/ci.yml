@@ -9,12 +9,59 @@ on:
 permissions:
   contents: read
   checks: write
-  packages: read
+  packages: write
+
+# A new push supersedes whatever was already running for the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Tag per-ref, so a branch that edits .devcontainer/** builds the image once
+  # in the job below and every other job pulls that build instead of repeating
+  # it.
+  DEVCONTAINER_IMAGE: ghcr.io/${{ github.repository }}/devcontainer
+  DEVCONTAINER_TAG: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'latest' }}
 
 jobs:
+  # Builds the devcontainer image once and publishes it, so the jobs below pull
+  # a ready image instead of each rebuilding it. Previously every job set
+  # `cacheFrom` while also setting `push: never`, so nothing was ever published
+  # for the cache to hit and each one rebuilt the LLVM layer from scratch —
+  # about 83 seconds per job.
+  devcontainer:
+    name: Devcontainer image
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish the image
+        uses: devcontainers/ci@v0.3
+        with:
+          imageName: ${{ env.DEVCONTAINER_IMAGE }}
+          imageTag: ${{ env.DEVCONTAINER_TAG }}
+          # main's image is the base cache; a pull request additionally reuses
+          # its own previous build, so a second push to the same PR hits.
+          cacheFrom: |
+            ${{ env.DEVCONTAINER_IMAGE }}:latest
+            ${{ env.DEVCONTAINER_IMAGE }}:${{ env.DEVCONTAINER_TAG }}
+          push: always
+          runCmd: |
+            set -euo pipefail
+            clang --version
+
   build-and-test:
     name: Build & Test (${{ matrix.compiler }})
     runs-on: ubuntu-latest
+    needs: devcontainer
     strategy:
       fail-fast: false
       matrix:
@@ -34,13 +81,32 @@ jobs:
           # "fatal: shallow file has changed since we read it".
           fetch-depth: 0
 
-      - name: Build devcontainer image
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: .vcpkg-binary-cache
+          key: vcpkg-${{ runner.os }}-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-${{ runner.os }}-${{ matrix.preset }}-
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & test
         uses: devcontainers/ci@v0.3
         with:
-          imageName: ghcr.io/${{ github.repository }}/devcontainer
-          cacheFrom: ghcr.io/${{ github.repository }}/devcontainer
+          imageName: ${{ env.DEVCONTAINER_IMAGE }}
+          cacheFrom: ${{ env.DEVCONTAINER_IMAGE }}:${{ env.DEVCONTAINER_TAG }}
           push: never
           runCmd: |
+            set -euo pipefail
+            mkdir -p .vcpkg-binary-cache
+            export VCPKG_DEFAULT_BINARY_CACHE="$PWD/.vcpkg-binary-cache"
             ./third/vcpkg/bootstrap-vcpkg.sh
             cmake --workflow --preset=${{ matrix.preset }}
             mkdir -p build/test-results
@@ -69,6 +135,7 @@ jobs:
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
+    needs: devcontainer
 
     steps:
       - uses: actions/checkout@v4
@@ -80,13 +147,32 @@ jobs:
           # "fatal: shallow file has changed since we read it".
           fetch-depth: 0
 
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: .vcpkg-binary-cache
+          key: vcpkg-${{ runner.os }}-coverage-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-coverage-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-${{ runner.os }}-coverage-
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build devcontainer and run coverage
         uses: devcontainers/ci@v0.3
         with:
-          imageName: ghcr.io/${{ github.repository }}/devcontainer
-          cacheFrom: ghcr.io/${{ github.repository }}/devcontainer
+          imageName: ${{ env.DEVCONTAINER_IMAGE }}
+          cacheFrom: ${{ env.DEVCONTAINER_IMAGE }}:${{ env.DEVCONTAINER_TAG }}
           push: never
           runCmd: |
+            set -euo pipefail
+            mkdir -p .vcpkg-binary-cache
+            export VCPKG_DEFAULT_BINARY_CACHE="$PWD/.vcpkg-binary-cache"
             ./third/vcpkg/bootstrap-vcpkg.sh
             cmake --workflow --preset=coverage
             ninja -C build/coverage coverage
