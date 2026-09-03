@@ -5,6 +5,7 @@
 #error "cppfig: JSON support is not enabled. Set CPPFIG_ENABLE_JSON=ON in CMake or add the 'json' vcpkg feature."
 #endif
 
+#include <cstdint>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
