@@ -257,17 +257,24 @@ public:
     /// Thread safety: @c file_path_ is immutable after construction — no lock needed.
     [[nodiscard]] auto GetFilePathImpl() const -> std::string_view { return file_path_; }
 
-    /// @brief Returns the current file values.
+    /// @brief Returns a snapshot of the current file values.
     ///
-    /// @warning The returned reference is *not* protected after the call returns.
-    ///          In multi-threaded code, prefer @c Get<Setting>() for safe access.
-    [[nodiscard]] auto GetFileValues() const -> const Value& { return file_values_; }
+    /// Returned by value: handing out a reference to @c file_values_ let it
+    /// escape the lock that guards it, so a reader could observe a tree being
+    /// mutated by @c Set or @c Load.
+    ///
+    /// Thread safety: acquires a shared (reader) lock.
+    [[nodiscard]] auto GetFileValues() const -> Value
+    {
+        typename ThreadPolicy::shared_lock lock(mutex_);
+        return file_values_;
+    }
 
-    /// @brief Returns the default values.
+    /// @brief Returns a snapshot of the default values.
     ///
     /// Thread safety: @c defaults_ is immutable after construction — safe to call
     /// concurrently without synchronization.
-    [[nodiscard]] auto GetDefaults() const -> const Value& { return defaults_; }
+    [[nodiscard]] auto GetDefaults() const -> Value { return defaults_; }
 
 private:
     /// @brief Loads configuration from the file (caller must hold exclusive lock).
