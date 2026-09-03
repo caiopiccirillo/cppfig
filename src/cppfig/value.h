@@ -262,15 +262,50 @@ public:
         return *std::get<std::shared_ptr<ObjectType>>(data_);
     }
 
-    /// @brief Gets a value at a dot-separated path.
-    [[nodiscard]] auto GetAtPath(std::string_view path) const -> StatusOr<Value>
+    /// @brief Splits a dot-separated path into its segments.
+    ///
+    /// A path is well-formed only if it is non-empty and every segment
+    /// between the dots is non-empty.  Ill-formed paths (`""`, `"a."`,
+    /// `".a"`, `"a..b"`) yield an empty result and are rejected by the
+    /// path accessors rather than silently creating blank keys.
+    [[nodiscard]] static auto SplitPath(std::string_view path) -> std::vector<std::string>
     {
-        const Value* current = this;
+        std::vector<std::string> segments;
+        if (path.empty()) {
+            return segments;
+        }
+
         std::string path_str(path);
         std::istringstream stream(path_str);
         std::string segment;
 
         while (std::getline(stream, segment, '.')) {
+            if (segment.empty()) {
+                return {};
+            }
+            segments.push_back(segment);
+        }
+
+        // A trailing dot leaves no final segment for getline to produce.
+        if (path.back() == '.') {
+            return {};
+        }
+        return segments;
+    }
+
+    /// @brief Gets a value at a dot-separated path.
+    ///
+    /// @return The value at the path, or a NotFound error if the path is
+    ///         ill-formed or does not resolve.
+    [[nodiscard]] auto GetAtPath(std::string_view path) const -> StatusOr<Value>
+    {
+        auto segments = SplitPath(path);
+        if (segments.empty()) {
+            return NotFoundError("Ill-formed configuration path: '" + std::string(path) + "'");
+        }
+
+        const Value* current = this;
+        for (const auto& segment : segments) {
             if (!current->IsObject()) {
                 return NotFoundError("Path segment '" + segment + "' not found: parent is not an object");
             }
@@ -283,28 +318,25 @@ public:
     }
 
     /// @brief Sets a value at a dot-separated path, creating intermediate objects.
+    ///
+    /// Ill-formed paths are ignored; use @c SplitPath to validate a path
+    /// before calling if the caller needs to report the failure.
     void SetAtPath(std::string_view path, const Value& value)
     {
-        Value* current = this;
-        std::string path_str(path);
-        std::istringstream stream(path_str);
-        std::string segment;
-        std::vector<std::string> segments;
-
-        while (std::getline(stream, segment, '.')) {
-            segments.push_back(segment);
+        auto segments = SplitPath(path);
+        if (segments.empty()) {
+            return;
         }
 
-        for (std::size_t i = 0; i < segments.size() - 1; ++i) {
+        Value* current = this;
+        for (std::size_t i = 0; i + 1 < segments.size(); ++i) {
             if (!current->Contains(segments[i]) || !(*current)[segments[i]].IsObject()) {
                 (*current)[segments[i]] = Value::Object();
             }
             current = &(*current)[segments[i]];
         }
 
-        if (!segments.empty()) {
-            (*current)[segments.back()] = value;
-        }
+        (*current)[segments.back()] = value;
     }
 
     /// @brief Checks if a path exists in the data.
