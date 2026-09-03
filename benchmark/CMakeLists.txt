@@ -12,13 +12,11 @@ add_executable(
 target_link_libraries(
     cppfig_benchmark
     PRIVATE
-    cppfig
+    cppfig::cppfig
+    cppfig_warnings
     benchmark::benchmark
     benchmark::benchmark_main
 )
-
-# Set C++ standard
-target_compile_features(cppfig_benchmark PRIVATE cxx_std_17)
 
 # Enable optimizations for accurate benchmarking
 target_compile_options(cppfig_benchmark PRIVATE

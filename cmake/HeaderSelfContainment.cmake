@@ -12,12 +12,11 @@
 #
 # Usage:
 #   add_header_self_containment_target(cppfig_header_check
-#       BASE_DIR ${CMAKE_CURRENT_LIST_DIR}
-#       LINK_LIBRARIES cppfig
-#       HEADERS ${headers})
+#       LINK_LIBRARIES cppfig::cppfig
+#       HEADERS cppfig/status.h cppfig/value.h)
 
 function(add_header_self_containment_target target)
-    cmake_parse_arguments(ARG "" "BASE_DIR" "HEADERS;LINK_LIBRARIES" ${ARGN})
+    cmake_parse_arguments(ARG "" "" "HEADERS;LINK_LIBRARIES" ${ARGN})
 
     if(NOT ARG_HEADERS)
         message(FATAL_ERROR "add_header_self_containment_target: no HEADERS given")
@@ -26,15 +25,15 @@ function(add_header_self_containment_target target)
     set(_generated_dir "${CMAKE_CURRENT_BINARY_DIR}/header_self_containment")
     set(_sources "")
 
-    foreach(_header ${ARG_HEADERS})
-        file(RELATIVE_PATH _include_path "${ARG_BASE_DIR}" "${_header}")
-
+    # HEADERS are include paths as a consumer would write them, so each one can
+    # be dropped straight into a #include.
+    foreach(_include_path ${ARG_HEADERS})
         # Derive a unique TU name from the header's path: cppfig/testing/mock.h
         # becomes cppfig_testing_mock_h.cpp.
         string(REGEX REPLACE "[/.]" "_" _stem "${_include_path}")
         set(_source "${_generated_dir}/${_stem}.cpp")
 
-        file(GENERATE OUTPUT "${_source}" CONTENT "#include \"${_include_path}\"\n")
+        file(GENERATE OUTPUT "${_source}" CONTENT "#include <${_include_path}>\n")
         list(APPEND _sources "${_source}")
     endforeach()
 
