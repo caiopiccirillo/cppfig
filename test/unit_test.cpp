@@ -1355,7 +1355,7 @@ TEST(StatusOrTest, RejectsConstructionFromOkStatus)
 TEST(ConfigurationTestFixtureTest, CreateTempFilePathDefault)
 {
     auto path = testing::ConfigurationTestFixture::CreateTempFilePath();
-    EXPECT_NE(path.find("/tmp/"), std::string::npos);
+    EXPECT_TRUE(path.starts_with(std::filesystem::temp_directory_path().string()));
     EXPECT_NE(path.find("test_config"), std::string::npos);
     EXPECT_NE(path.find(".conf"), std::string::npos);
 }
@@ -1363,7 +1363,7 @@ TEST(ConfigurationTestFixtureTest, CreateTempFilePathDefault)
 TEST(ConfigurationTestFixtureTest, CreateTempFilePathWithPrefix)
 {
     auto path = testing::ConfigurationTestFixture::CreateTempFilePath("my_prefix");
-    EXPECT_NE(path.find("/tmp/"), std::string::npos);
+    EXPECT_TRUE(path.starts_with(std::filesystem::temp_directory_path().string()));
     EXPECT_NE(path.find("my_prefix"), std::string::npos);
 }
 

@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 3.22.0)
-project(cppfig VERSION 0.1.0)
+cmake_minimum_required(VERSION 3.31.0)
+project(cppfig VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,37 +7,45 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-include(CompileCommands)
-include(HeaderSelfContainment)
-include(Coverage)
-include(Docs)
-
-# Enable copying of compile_commands.json to project root
-copy_compile_commands()
-
-find_package(GTest CONFIG REQUIRED)
+# Everything past the library itself exists to develop cppfig, not to consume
+# it: a project that does add_subdirectory(cppfig) must not be made to supply
+# GTest and Google Benchmark.
+option(CPPFIG_BUILD_TESTS "Build the cppfig test suite" ${PROJECT_IS_TOP_LEVEL})
+option(CPPFIG_BUILD_BENCHMARKS "Build the cppfig benchmarks" ${PROJECT_IS_TOP_LEVEL})
+option(CPPFIG_BUILD_EXAMPLES "Build the cppfig examples" ${PROJECT_IS_TOP_LEVEL})
+option(CPPFIG_INSTALL "Generate the cppfig install and package rules" ${PROJECT_IS_TOP_LEVEL})
 
 # Optional serializer back-ends
 option(CPPFIG_ENABLE_JSON "Enable JSON serializer (requires nlohmann-json)" OFF)
 
-# When building in-tree we always need JSON for the tests & benchmarks.
-# Detect whether nlohmann-json is available and enable automatically.
-find_package(nlohmann_json CONFIG QUIET)
-if(nlohmann_json_FOUND)
-    set(CPPFIG_ENABLE_JSON ON CACHE BOOL "" FORCE)
-    message(STATUS "nlohmann-json found — CPPFIG_ENABLE_JSON=ON")
-else()
-    message(STATUS "nlohmann-json not found — JSON serializer disabled")
+# When building in-tree we always need JSON for the tests & benchmarks, so
+# enable it automatically if nlohmann-json is available. A consumer asking for
+# it explicitly gets a hard failure instead of a silent downgrade.
+if(PROJECT_IS_TOP_LEVEL)
+    find_package(nlohmann_json CONFIG QUIET)
+    if(nlohmann_json_FOUND)
+        set(CPPFIG_ENABLE_JSON ON CACHE BOOL "" FORCE)
+        message(STATUS "nlohmann-json found — CPPFIG_ENABLE_JSON=ON")
+    else()
+        message(STATUS "nlohmann-json not found — JSON serializer disabled")
+    endif()
+elseif(CPPFIG_ENABLE_JSON)
+    find_package(nlohmann_json CONFIG REQUIRED)
 endif()
 # Future: option(CPPFIG_ENABLE_TOML "Enable TOML serializer" OFF)
 
 option(STRICT_BUILD "Enable warnings as errors" ON)
 
+# Warnings live on an INTERFACE target rather than in add_compile_options, so
+# they apply to cppfig's own targets and not to dependencies built in-tree or
+# to a consumer that adds this project.
+add_library(cppfig_warnings INTERFACE)
+
 if(STRICT_BUILD)
     message(STATUS "Strict build enabled — adding comprehensive compiler warnings")
 
     # Warnings common to GCC and Clang
-    add_compile_options(
+    target_compile_options(cppfig_warnings INTERFACE
         -Wall
         -Wextra
         -Wpedantic
@@ -72,7 +80,7 @@ if(STRICT_BUILD)
 
     # GCC-only warnings
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        add_compile_options(
+        target_compile_options(cppfig_warnings INTERFACE
             -Wduplicated-cond
             -Wduplicated-branches
             -Wlogical-op
@@ -85,7 +93,7 @@ if(STRICT_BUILD)
 
     # Clang-only warnings
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        add_compile_options(
+        target_compile_options(cppfig_warnings INTERFACE
             -Wextra-semi
             -Wnewline-eof
             -Wheader-hygiene
@@ -94,21 +102,47 @@ if(STRICT_BUILD)
     endif()
 endif()
 
-configure_file(CMakeConfig.h.in "${CMAKE_BINARY_DIR}/CMakeConfig.h")
-include_directories(${CMAKE_BINARY_DIR})
-
 # Uncomment to enable clang-tidy during compilation
 # set(CMAKE_CXX_CLANG_TIDY clang-tidy;-fix;-fix-errors)
 
-add_subdirectory(src)
-add_subdirectory(examples)
+# Both are needed by src/: GTest for the cppfig::testing target, and the
+# header self-containment check that is built alongside it.
+if(CPPFIG_BUILD_TESTS)
+    find_package(GTest CONFIG REQUIRED)
+    include(HeaderSelfContainment)
+endif()
 
-add_subdirectory(test)
-add_subdirectory(benchmark)
-include(CTest)
+include(Coverage)
+
+add_subdirectory(src)
+
+if(PROJECT_IS_TOP_LEVEL)
+    include(CompileCommands)
+    include(Docs)
+
+    # Enable copying of compile_commands.json to project root
+    copy_compile_commands()
+endif()
+
+if(CPPFIG_BUILD_TESTS)
+    include(CTest)
+    add_subdirectory(test)
+endif()
+
+if(CPPFIG_BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()
+
+if(CPPFIG_BUILD_BENCHMARKS)
+    add_subdirectory(benchmark)
+endif()
 
 # Add coverage targets if coverage is enabled
-add_coverage_target()
+if(PROJECT_IS_TOP_LEVEL)
+    add_coverage_target()
+endif()
 
-include(CPackConfig.cmake)
-include(CPack)
+if(CPPFIG_INSTALL)
+    include(Install)
+    cppfig_add_install_rules()
+endif()
