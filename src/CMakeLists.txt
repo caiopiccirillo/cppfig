@@ -9,6 +9,7 @@ set(CPPFIG_CORE_HEADERS
     cppfig/serializer.h
     cppfig/setting.h
     cppfig/status.h
+    cppfig/thread_policy.h
     cppfig/traits.h
     cppfig/validator.h
     cppfig/value.h
