@@ -403,6 +403,98 @@ TEST_F(ConfigurationIntegrationTest, ValidEnvironmentOverrideIsStillUsed)
     unsetenv("TEST_VALIDATED_PORT");
 }
 
+// Settings whose declared type disagrees with what a flat .conf line looks like.
+namespace conf_settings {
+
+    struct Version {
+        static constexpr std::string_view path = "app.version";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "unset"; }
+    };
+
+    struct Flag {
+        static constexpr std::string_view path = "app.flag";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "unset"; }
+    };
+
+    struct Port {
+        static constexpr std::string_view path = "app.port";
+        using value_type = int;
+        static auto default_value() -> int { return 8080; }
+    };
+
+}  // namespace conf_settings
+
+using ConfSchema = ConfigSchema<conf_settings::Version, conf_settings::Flag, conf_settings::Port>;
+
+TEST_F(ConfigurationIntegrationTest, ConfKeepsStringValuesThatLookNumeric)
+{
+    // Regression: .conf infers a leaf's type from its text, so a string
+    // setting hand-edited to 2.5 parsed as a double, failed to deserialize,
+    // and silently reverted to the default.
+    {
+        std::ofstream file(file_path_);
+        file << "app.version = 2.5\napp.flag = true\napp.port = 9000\n";
+    }
+
+    Configuration<ConfSchema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    EXPECT_EQ(config.Get<conf_settings::Version>(), "2.5");
+    EXPECT_EQ(config.Get<conf_settings::Flag>(), "true");
+    EXPECT_EQ(config.Get<conf_settings::Port>(), 9000);
+}
+
+TEST_F(ConfigurationIntegrationTest, ConfKeepsQuotedValuesForNumericSettings)
+{
+    {
+        std::ofstream file(file_path_);
+        file << "app.version = \"1.0.0\"\napp.flag = \"yes\"\napp.port = \"9000\"\n";
+    }
+
+    Configuration<ConfSchema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    EXPECT_EQ(config.Get<conf_settings::Version>(), "1.0.0");
+    EXPECT_EQ(config.Get<conf_settings::Flag>(), "yes");
+    EXPECT_EQ(config.Get<conf_settings::Port>(), 9000);
+}
+
+TEST_F(ConfigurationIntegrationTest, ConfRoundTripsValuesUnchanged)
+{
+    {
+        Configuration<ConfSchema> config(file_path_);
+        ASSERT_TRUE(config.Load().ok());
+        ASSERT_TRUE(config.Set<conf_settings::Version>("8080").ok());
+        ASSERT_TRUE(config.Set<conf_settings::Flag>("false").ok());
+        ASSERT_TRUE(config.Set<conf_settings::Port>(1234).ok());
+        ASSERT_TRUE(config.Save().ok());
+    }
+
+    Configuration<ConfSchema> reloaded(file_path_);
+    ASSERT_TRUE(reloaded.Load().ok());
+
+    EXPECT_EQ(reloaded.Get<conf_settings::Version>(), "8080");
+    EXPECT_EQ(reloaded.Get<conf_settings::Flag>(), "false");
+    EXPECT_EQ(reloaded.Get<conf_settings::Port>(), 1234);
+}
+
+TEST_F(ConfigurationIntegrationTest, ConfDoesNotCoerceOutOfRangeValues)
+{
+    // Reinterpreting a leaf must not rescue a value that is genuinely wrong:
+    // an int64 too large for an int stays unusable and falls back to the
+    // default rather than being coerced into something plausible.
+    {
+        std::ofstream file(file_path_);
+        file << "app.port = 4294967297\n";
+    }
+
+    Configuration<ConfSchema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+    EXPECT_EQ(config.Get<conf_settings::Port>(), 8080);
+}
+
 TEST_F(ConfigurationIntegrationTest, HierarchicalSettings)
 {
     using Schema = ConfigSchema<settings::DatabaseHost, settings::DatabasePort,
