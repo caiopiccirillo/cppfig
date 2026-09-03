@@ -54,7 +54,9 @@ jobs:
             ${{ env.DEVCONTAINER_IMAGE }}:latest
             ${{ env.DEVCONTAINER_IMAGE }}:${{ env.DEVCONTAINER_TAG }}
           push: always
-          runCmd: clang --version
+          runCmd: |
+            set -euo pipefail
+            clang --version
 
   build-and-test:
     name: Build & Test (${{ matrix.compiler }})
@@ -101,10 +103,10 @@ jobs:
           imageName: ${{ env.DEVCONTAINER_IMAGE }}
           cacheFrom: ${{ env.DEVCONTAINER_IMAGE }}:${{ env.DEVCONTAINER_TAG }}
           push: never
-          env: |
-            VCPKG_DEFAULT_BINARY_CACHE=${{ github.workspace }}/.vcpkg-binary-cache
           runCmd: |
+            set -euo pipefail
             mkdir -p .vcpkg-binary-cache
+            export VCPKG_DEFAULT_BINARY_CACHE="$PWD/.vcpkg-binary-cache"
             ./third/vcpkg/bootstrap-vcpkg.sh
             cmake --workflow --preset=${{ matrix.preset }}
             mkdir -p build/test-results
@@ -167,10 +169,10 @@ jobs:
           imageName: ${{ env.DEVCONTAINER_IMAGE }}
           cacheFrom: ${{ env.DEVCONTAINER_IMAGE }}:${{ env.DEVCONTAINER_TAG }}
           push: never
-          env: |
-            VCPKG_DEFAULT_BINARY_CACHE=${{ github.workspace }}/.vcpkg-binary-cache
           runCmd: |
+            set -euo pipefail
             mkdir -p .vcpkg-binary-cache
+            export VCPKG_DEFAULT_BINARY_CACHE="$PWD/.vcpkg-binary-cache"
             ./third/vcpkg/bootstrap-vcpkg.sh
             cmake --workflow --preset=coverage
             ninja -C build/coverage coverage
