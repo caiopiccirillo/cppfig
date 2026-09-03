@@ -6,6 +6,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -266,6 +267,30 @@ public:
         else {
             static_assert(sizeof(T) == 0, "Unsupported type for Value::Get<T>()");
         }
+    }
+
+    /// @brief Renders a scalar value as text, or nullopt for objects/arrays.
+    ///
+    /// Flat formats store every leaf as text, so this is the bridge back to
+    /// @c ConfigTraits::FromString when a parsed leaf has to be reinterpreted
+    /// as the type the schema declares.
+    [[nodiscard]] auto TryToText() const -> std::optional<std::string>
+    {
+        if (IsBoolean()) {
+            return std::get<bool>(data_) ? "true" : "false";
+        }
+        if (IsInteger()) {
+            return std::to_string(std::get<std::int64_t>(data_));
+        }
+        if (IsDouble()) {
+            std::ostringstream stream;
+            stream << std::get<double>(data_);
+            return stream.str();
+        }
+        if (IsString()) {
+            return std::get<std::string>(data_);
+        }
+        return std::nullopt;
     }
 
     /// @brief Checks whether the given key exists in an object value.
