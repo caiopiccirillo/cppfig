@@ -268,6 +268,7 @@ private:
         }
 
         file_values_ = *result;
+        CoerceToSchemaTypes();
 
         // Check for schema migration (new settings in defaults not in file)
         auto diff = DiffDefaultsFromFile(defaults_, file_values_);
@@ -397,6 +398,43 @@ private:
         });
 
         return status;
+    }
+
+    /// @brief Reinterprets parsed leaves as the types the schema declares.
+    ///
+    /// A flat format has to infer a leaf's type from its text, and the
+    /// inference cannot know that `2.5` was written for a std::string setting
+    /// or that `"8080"` was written for an int one. Where the parsed value
+    /// does not deserialize as its declared type, re-read it from its textual
+    /// form, so a hand-edited file keeps the value the user wrote instead of
+    /// silently reverting to the default.
+    ///
+    /// A value that cannot be reinterpreted either — an out-of-range int, say
+    /// — is left as parsed, so it still fails validation rather than being
+    /// coerced into something plausible.
+    void CoerceToSchemaTypes()
+    {
+        Schema::ForEachSetting([this]<typename S>() {
+            using value_type = typename S::value_type;
+
+            auto file_result = file_values_.GetAtPath(S::path);
+            if (!file_result.ok()) {
+                return;
+            }
+            if (ConfigTraits<value_type>::Deserialize(*file_result).has_value()) {
+                return;
+            }
+
+            auto text = file_result->TryToText();
+            if (!text.has_value()) {
+                return;
+            }
+
+            auto parsed = ConfigTraits<value_type>::FromString(*text);
+            if (parsed.has_value()) {
+                file_values_.SetAtPath(S::path, ConfigTraits<value_type>::Serialize(*parsed));
+            }
+        });
     }
 
     void BuildDefaults()
