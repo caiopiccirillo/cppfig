@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <string_view>
 
 namespace cppfig::test {
 
@@ -109,6 +110,40 @@ namespace settings {
     };
 
 }  // namespace settings
+
+/// Creates a directory containing a config file with @p contents, then makes
+/// the directory read-only. Saving writes a temporary file next to the target
+/// and renames it over the target, so blocking a save means blocking directory
+/// writes rather than file writes.
+inline auto ReadOnlyDirectoryWith(std::string_view contents) -> std::filesystem::path
+{
+    const auto dir = std::filesystem::temp_directory_path()
+        / ("cppfig_readonly_" + std::to_string(std::rand()));  // NOLINT(cert-msc30-c,cert-msc50-cpp,concurrency-mt-unsafe)
+
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    {
+        std::ofstream file(dir / "config.json");
+        file << contents;
+    }
+
+    // owner_exec is kept so the directory can still be traversed and the
+    // existing file read; only creating and renaming entries is denied.
+    std::filesystem::permissions(dir,
+                                 std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec,
+                                 std::filesystem::perm_options::replace);
+    return dir;
+}
+
+/// Restores write permission on a directory from ReadOnlyDirectoryWith and
+/// removes it.
+inline void RemoveReadOnlyDirectory(const std::filesystem::path& dir)
+{
+    std::filesystem::permissions(dir, std::filesystem::perms::owner_all,
+                                 std::filesystem::perm_options::replace);
+    std::filesystem::remove_all(dir);
+}
 
 class ConfigurationIntegrationTest : public ::testing::Test {
 protected:
@@ -847,29 +882,21 @@ TEST_F(ConfigurationIntegrationTest, MultiThreadedSchemaMigration)
 
 TEST_F(ConfigurationIntegrationTest, MultiThreadedSchemaMigrationSaveFailure)
 {
-    // Create a valid file with a subset of settings
-    {
-        std::ofstream file(file_path_);
-        file << R"({"app": {"name": "OldApp"}})";
-    }
-
-    // Make the file read-only so Save fails during migration
-    std::filesystem::permissions(file_path_,
-                                 std::filesystem::perms::owner_read,
-                                 std::filesystem::perm_options::replace);
+    // Saving writes a temporary file next to the target and renames it over
+    // the target, so it is the *directory* that has to be unwritable for the
+    // save to fail.
+    const auto dir = ReadOnlyDirectoryWith(R"({"app": {"name": "OldApp"}})");
 
     ::testing::internal::CaptureStderr();
-    MTConfigWithVersion config(file_path_);
+    MTConfigWithVersion config((dir / "config.json").string());
     auto status = config.Load();
     auto stderr_output = ::testing::internal::GetCapturedStderr();
 
-    // Migration save should fail because the file is read-only
+    // Migration save should fail because the directory is read-only
     EXPECT_FALSE(status.ok());
     EXPECT_NE(stderr_output.find("Failed to save migrated configuration"), std::string::npos);
 
-    // Cleanup: restore permissions so TearDown can remove the file
-    std::filesystem::permissions(file_path_, std::filesystem::perms::owner_all,
-                                 std::filesystem::perm_options::replace);
+    RemoveReadOnlyDirectory(dir);
 }
 
 TEST_F(ConfigurationIntegrationTest, MultiThreadedSaveDirectoryCreationFailure)
@@ -974,28 +1001,18 @@ TEST_F(ConfigurationIntegrationTest, SingleThreadedValidateAllInvalidValue)
 
 TEST_F(ConfigurationIntegrationTest, SingleThreadedSchemaMigrationSaveFailure)
 {
-    {
-        std::ofstream file(file_path_);
-        file << R"({"app": {"name": "OldApp"}})";
-    }
-
-    // Make the file read-only so Save fails during migration
-    std::filesystem::permissions(file_path_,
-                                 std::filesystem::perms::owner_read,
-                                 std::filesystem::perm_options::replace);
+    const auto dir = ReadOnlyDirectoryWith(R"({"app": {"name": "OldApp"}})");
 
     using Schema = ConfigSchema<settings::AppName, settings::AppPort>;
     ::testing::internal::CaptureStderr();
-    Configuration<Schema, JsonSerializer> config(file_path_);
+    Configuration<Schema, JsonSerializer> config((dir / "config.json").string());
     auto status = config.Load();
     auto stderr_output = ::testing::internal::GetCapturedStderr();
 
     EXPECT_FALSE(status.ok());
     EXPECT_NE(stderr_output.find("Failed to save migrated configuration"), std::string::npos);
 
-    // Cleanup: restore permissions so TearDown can remove the file
-    std::filesystem::permissions(file_path_, std::filesystem::perms::owner_all,
-                                 std::filesystem::perm_options::replace);
+    RemoveReadOnlyDirectory(dir);
 }
 
 TEST_F(ConfigurationIntegrationTest, SingleThreadedSaveDirectoryCreationFailure)

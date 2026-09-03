@@ -63,6 +63,40 @@ using TestSchema = ConfigSchema<settings::Counter, settings::Name, settings::Rat
 
 using ThreadSafeConfig = Configuration<TestSchema, JsonSerializer, MultiThreadedPolicy>;
 
+/// Creates a directory containing a config file with @p contents, then makes
+/// the directory read-only. Saving writes a temporary file next to the target
+/// and renames it over the target, so blocking a save means blocking directory
+/// writes rather than file writes.
+inline auto ReadOnlyDirectoryWith(std::string_view contents) -> std::filesystem::path
+{
+    const auto dir = std::filesystem::temp_directory_path()
+        / ("cppfig_readonly_" + std::to_string(std::rand()));  // NOLINT(cert-msc30-c,cert-msc50-cpp,concurrency-mt-unsafe)
+
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    {
+        std::ofstream file(dir / "config.json");
+        file << contents;
+    }
+
+    // owner_exec is kept so the directory can still be traversed and the
+    // existing file read; only creating and renaming entries is denied.
+    std::filesystem::permissions(dir,
+                                 std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec,
+                                 std::filesystem::perm_options::replace);
+    return dir;
+}
+
+/// Restores write permission on a directory from ReadOnlyDirectoryWith and
+/// removes it.
+inline void RemoveReadOnlyDirectory(const std::filesystem::path& dir)
+{
+    std::filesystem::permissions(dir, std::filesystem::perms::owner_all,
+                                 std::filesystem::perm_options::replace);
+    std::filesystem::remove_all(dir);
+}
+
 class ThreadSafetyTest : public ::testing::Test {
 protected:
     void SetUp() override
@@ -834,20 +868,65 @@ TEST_F(ThreadSafetyTest, EdgeSchemaMigration)
     EXPECT_EQ(config.Get<edge_settings::AppVersion>(), "1.0.0");
 }
 
-TEST_F(ThreadSafetyTest, EdgeSchemaMigrationSaveFailure)
+TEST_F(ThreadSafetyTest, ConcurrentSavesNeverExposeAPartialFile)
 {
-    {
-        std::ofstream file(file_path_);
-        file << R"({"app": {"name": "Old"}})";
+    // Regression: Save() used to take a shared lock, so several threads
+    // truncated and rewrote the same path at once and a reader could observe
+    // an empty or half-written configuration.
+    ThreadSafeConfig config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+    ASSERT_TRUE(config.Set<settings::Name>(std::string(4000, 'x')).ok());
+    ASSERT_TRUE(config.Save().ok());
+
+    const auto complete_size = std::filesystem::file_size(file_path_);
+    ASSERT_GT(complete_size, 0U);
+
+    std::atomic<bool> stop { false };
+    std::atomic<int> observations { 0 };
+    std::atomic<int> partial { 0 };
+
+    std::vector<std::thread> writers;
+    writers.reserve(4);
+    for (int i = 0; i < 4; ++i) {
+        writers.emplace_back([&config, &stop] {
+            while (!stop.load(std::memory_order_relaxed)) {
+                EXPECT_TRUE(config.Save().ok());
+            }
+        });
     }
 
-    // Make the file read-only so Save fails during migration
-    std::filesystem::permissions(file_path_,
-                                 std::filesystem::perms::owner_read,
-                                 std::filesystem::perm_options::replace);
+    for (int i = 0; i < 5000; ++i) {
+        std::error_code error_code;
+        const auto size = std::filesystem::file_size(file_path_, error_code);
+        if (error_code) {
+            // The path must always resolve: the replacement is renamed over it.
+            ++partial;
+            continue;
+        }
+        ++observations;
+        if (size != complete_size) {
+            ++partial;
+        }
+    }
+
+    stop.store(true, std::memory_order_relaxed);
+    for (auto& writer : writers) {
+        writer.join();
+    }
+
+    EXPECT_GT(observations.load(), 0);
+    EXPECT_EQ(partial.load(), 0);
+}
+
+TEST_F(ThreadSafetyTest, EdgeSchemaMigrationSaveFailure)
+{
+    // Saving writes a temporary file next to the target and renames it over
+    // the target, so it is the *directory* that has to be unwritable for the
+    // save to fail.
+    const auto dir = ReadOnlyDirectoryWith(R"({"app": {"name": "Old"}})");
 
     using Schema = ConfigSchema<edge_settings::AppName, edge_settings::AppPort>;
-    Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(file_path_);
+    Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config((dir / "config.json").string());
 
     ::testing::internal::CaptureStderr();
     auto status = config.Load();
@@ -856,9 +935,7 @@ TEST_F(ThreadSafetyTest, EdgeSchemaMigrationSaveFailure)
     EXPECT_FALSE(status.ok());
     EXPECT_NE(stderr_output.find("Failed to save migrated configuration"), std::string::npos);
 
-    // Restore permissions for cleanup
-    std::filesystem::permissions(file_path_, std::filesystem::perms::owner_all,
-                                 std::filesystem::perm_options::replace);
+    RemoveReadOnlyDirectory(dir);
 }
 
 TEST_F(ThreadSafetyTest, EdgeSaveDirectoryCreationFailure)
