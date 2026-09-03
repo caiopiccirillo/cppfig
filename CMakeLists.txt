@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(CompileCommands)
+include(HeaderSelfContainment)
 include(Coverage)
 include(Docs)
 
