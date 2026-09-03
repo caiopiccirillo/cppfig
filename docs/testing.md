@@ -116,7 +116,19 @@ TEST(HttpServerTest, StartsWithConfiguredPort) {
 
 ## Using Virtual Interface for Mocking
 
-For code that can't use templates, use `IConfigurationProviderVirtual`:
+For code that can't use templates, use `IConfigurationProviderVirtual`. A
+`Configuration` does not derive from it — that would put a vtable pointer on
+every instance, including the ones that never need it — so wrap it in
+`VirtualConfigAdapter` at the point where you need type erasure:
+
+```cpp
+cppfig::Configuration<MySchema> config("config.conf");
+cppfig::VirtualConfigAdapter adapter(config);
+
+// The adapter refers to the configuration, so keep the configuration alive
+// for at least as long as the adapter.
+Service service(adapter);
+```
 
 ```cpp
 // Your code using virtual interface
