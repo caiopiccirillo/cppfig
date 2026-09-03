@@ -80,9 +80,12 @@ namespace cppfig {
 /// @tparam Schema The ConfigSchema type defining all settings.
 /// @tparam SerializerT The serializer to use (defaults to ConfSerializer).
 /// @tparam ThreadPolicy The threading policy (defaults to SingleThreadedPolicy).
+/// For type-erased access, wrap an instance in @c VirtualConfigAdapter rather
+/// than deriving from @c IConfigurationProviderVirtual here: a virtual base
+/// would put a vptr on every configuration, including the single-threaded,
+/// non-polymorphic default.
 template <typename Schema, Serializer SerializerT = ConfSerializer, typename ThreadPolicy = SingleThreadedPolicy>
-class Configuration : public IConfigurationProvider<Configuration<Schema, SerializerT, ThreadPolicy>, Schema>,
-                      public IConfigurationProviderVirtual {
+class Configuration : public IConfigurationProvider<Configuration<Schema, SerializerT, ThreadPolicy>, Schema> {
 public:
     using serializer_type = SerializerT;
     using data_type = Value;
@@ -265,16 +268,6 @@ public:
     /// Thread safety: @c defaults_ is immutable after construction — safe to call
     /// concurrently without synchronization.
     [[nodiscard]] auto GetDefaults() const -> const Value& { return defaults_; }
-
-    [[nodiscard]] auto Load() -> Status override { return LoadImpl(); }
-
-    [[nodiscard]] auto Save() const -> Status override { return SaveImpl(); }
-
-    [[nodiscard]] auto GetFilePath() const -> std::string_view override { return GetFilePathImpl(); }
-
-    [[nodiscard]] auto ValidateAll() const -> Status override { return ValidateAllImpl(); }
-
-    [[nodiscard]] auto GetDiffString() const -> std::string override { return DiffImpl().ToString(); }
 
 private:
     /// @brief Loads configuration from the file (caller must hold exclusive lock).

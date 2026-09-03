@@ -674,7 +674,8 @@ TEST_F(ConfigurationIntegrationTest, VirtualInterfaceWorks)
     Configuration<Schema> config(file_path_);
 
     // Use through virtual interface
-    IConfigurationProviderVirtual& virtual_config = config;
+    VirtualConfigAdapter adapter(config);
+    IConfigurationProviderVirtual& virtual_config = adapter;
 
     ASSERT_TRUE(virtual_config.Load().ok());
     EXPECT_EQ(virtual_config.GetFilePath(), file_path_);
@@ -823,7 +824,8 @@ TEST_F(ConfigurationIntegrationTest, GetDiffString)
     ASSERT_TRUE(config.Set<settings::AppPort>(9000).ok());
 
     // Get diff string via virtual interface
-    const IConfigurationProviderVirtual& virtual_config = config;
+    VirtualConfigAdapter adapter(config);
+    const IConfigurationProviderVirtual& virtual_config = adapter;
     auto diff_str = virtual_config.GetDiffString();
 
     EXPECT_NE(diff_str.find("app.port"), std::string::npos);
@@ -1105,7 +1107,8 @@ TEST_F(ConfigurationIntegrationTest, MultiThreadedGetDiffString)
     ASSERT_TRUE(config.Load().ok());
     ASSERT_TRUE(config.Set<settings::AppPort>(1234).ok());
 
-    const IConfigurationProviderVirtual& vconfig = config;
+    VirtualConfigAdapter adapter(config);
+    const IConfigurationProviderVirtual& vconfig = adapter;
     auto diff_str = vconfig.GetDiffString();
     EXPECT_NE(diff_str.find("app.port"), std::string::npos);
 }

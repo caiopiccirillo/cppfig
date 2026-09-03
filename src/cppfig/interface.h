@@ -127,4 +127,41 @@ protected:
     auto operator=(IConfigurationProviderVirtual&&) -> IConfigurationProviderVirtual& = default;
 };
 
+/// @brief Adapts a configuration provider to the type-erased interface.
+///
+/// Deriving Configuration from IConfigurationProviderVirtual directly gave
+/// every instance a vptr whether or not it was ever used polymorphically, and
+/// duplicated four names that the CRTP base already declared. Wrapping instead
+/// keeps that cost with the callers who ask for type erasure.
+///
+/// The adapter refers to the configuration; the configuration must outlive it.
+///
+/// Usage:
+/// @code
+/// Configuration<MySchema> config("config.conf");
+/// VirtualConfigAdapter adapter(config);
+/// IConfigurationProviderVirtual& erased = adapter;
+/// @endcode
+template <typename ConfigT>
+class VirtualConfigAdapter final : public IConfigurationProviderVirtual {
+public:
+    explicit VirtualConfigAdapter(ConfigT& config)
+        : config_(&config)
+    {
+    }
+
+    [[nodiscard]] auto Load() -> Status override { return config_->Load(); }
+
+    [[nodiscard]] auto Save() const -> Status override { return config_->Save(); }
+
+    [[nodiscard]] auto GetFilePath() const -> std::string_view override { return config_->GetFilePath(); }
+
+    [[nodiscard]] auto ValidateAll() const -> Status override { return config_->ValidateAll(); }
+
+    [[nodiscard]] auto GetDiffString() const -> std::string override { return config_->Diff().ToString(); }
+
+private:
+    ConfigT* config_;
+};
+
 }  // namespace cppfig

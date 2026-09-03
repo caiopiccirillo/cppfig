@@ -1257,6 +1257,34 @@ TEST(MockConfigurationTest, ClearValueAndGetDefault)
     EXPECT_EQ(config.Get<MockAppPort>(), 8080);  // default
 }
 
+TEST(ConfigurationTest, ConfigurationIsNotPolymorphic)
+{
+    // Regression: Configuration derived from both the CRTP base and the
+    // virtual one, so every instance carried a vptr and four names were
+    // declared twice. Type erasure now costs only the callers who ask for it.
+    using Schema = ConfigSchema<TestStringSetting>;
+    static_assert(!std::is_polymorphic_v<Configuration<Schema>>);
+    static_assert(std::is_polymorphic_v<VirtualConfigAdapter<Configuration<Schema>>>);
+}
+
+TEST(ConfigurationTest, VirtualAdapterForwardsToTheConfiguration)
+{
+    using Schema = ConfigSchema<TestStringSetting>;
+    const auto path = testing::ConfigurationTestFixture::CreateTempFilePath("adapter_test");
+    Configuration<Schema> config(path);
+
+    VirtualConfigAdapter adapter(config);
+    IConfigurationProviderVirtual& erased = adapter;
+
+    EXPECT_TRUE(erased.Load().ok());
+    EXPECT_EQ(erased.GetFilePath(), path);
+    EXPECT_TRUE(erased.ValidateAll().ok());
+    EXPECT_TRUE(erased.Save().ok());
+    EXPECT_FALSE(erased.GetDiffString().empty());
+
+    testing::ConfigurationTestFixture::RemoveFile(path);
+}
+
 TEST(ConfigurationTestFixtureTest, CreateTempFilePathDefault)
 {
     auto path = testing::ConfigurationTestFixture::CreateTempFilePath();
