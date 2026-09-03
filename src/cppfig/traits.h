@@ -60,7 +60,7 @@ struct ConfigTraits<bool> {
 
     static auto Deserialize(const Value& value) -> std::optional<bool>
     {
-        if (!value.IsBoolean()) {
+        if (!value.Fits<bool>()) {
             return std::nullopt;
         }
         return value.Get<bool>();
@@ -86,7 +86,10 @@ struct ConfigTraits<int> {
 
     static auto Deserialize(const Value& value) -> std::optional<int>
     {
-        if (!value.IsInteger()) {
+        // Rejects an int64 too large for an int rather than discarding its
+        // high bits, which would turn a plainly wrong value into a
+        // plausible-looking one that then passes validation.
+        if (!value.Fits<int>()) {
             return std::nullopt;
         }
         return value.Get<int>();
@@ -116,7 +119,7 @@ struct ConfigTraits<std::int64_t> {
 
     static auto Deserialize(const Value& value) -> std::optional<std::int64_t>
     {
-        if (!value.IsInteger()) {
+        if (!value.Fits<std::int64_t>()) {
             return std::nullopt;
         }
         return value.Get<std::int64_t>();
@@ -146,7 +149,7 @@ struct ConfigTraits<double> {
 
     static auto Deserialize(const Value& value) -> std::optional<double>
     {
-        if (!value.IsNumber()) {
+        if (!value.Fits<double>()) {
             return std::nullopt;
         }
         return value.Get<double>();
@@ -176,7 +179,8 @@ struct ConfigTraits<float> {
 
     static auto Deserialize(const Value& value) -> std::optional<float>
     {
-        if (!value.IsNumber()) {
+        // A double outside the float range would otherwise arrive as infinity.
+        if (!value.Fits<float>()) {
             return std::nullopt;
         }
         return value.Get<float>();
@@ -206,7 +210,7 @@ struct ConfigTraits<std::string> {
 
     static auto Deserialize(const Value& value) -> std::optional<std::string>
     {
-        if (!value.IsString()) {
+        if (!value.Fits<std::string>()) {
             return std::nullopt;
         }
         return value.Get<std::string>();
