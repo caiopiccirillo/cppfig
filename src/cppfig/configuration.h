@@ -43,7 +43,9 @@ namespace cppfig {
 /// With @c MultiThreadedPolicy:
 /// - Multiple threads may call @c Get concurrently (shared/reader lock).
 /// - Calls to @c Set, @c Load mutate internal state under an exclusive/writer lock.
-/// - @c Save, @c Diff, @c ValidateAll acquire a shared/reader lock.
+/// - @c Save also takes the exclusive lock: it rewrites the file, so
+///   concurrent savers would race over the same path.
+/// - @c Diff and @c ValidateAll acquire a shared/reader lock.
 /// - Validation in @c Set is performed *before* acquiring the exclusive lock.
 ///
 /// Usage:
@@ -177,11 +179,13 @@ public:
 
     /// @brief Saves the current configuration to the file.
     ///
-    /// Thread safety: acquires a shared (reader) lock because it only reads
-    /// @c file_values_ (file I/O is serialized by the OS for the same path).
+    /// Thread safety: acquires an exclusive (writer) lock. Although only
+    /// @c file_values_ is read, the call also rewrites the file, and two
+    /// threads holding a shared lock would race over the same path.
+    /// Serializing saves costs nothing next to the file I/O they perform.
     [[nodiscard]] auto SaveImpl() const -> Status
     {
-        typename ThreadPolicy::shared_lock lock(mutex_);
+        typename ThreadPolicy::unique_lock lock(mutex_);
         return SaveUnlocked();
     }
 
@@ -278,7 +282,7 @@ private:
         return OkStatus();
     }
 
-    /// @brief Saves the current configuration to the file (caller must hold at least a shared lock).
+    /// @brief Saves the current configuration to the file (caller must hold the exclusive lock).
     [[nodiscard]] auto SaveUnlocked() const -> Status
     {
         namespace fs = std::filesystem;
