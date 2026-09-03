@@ -348,6 +348,26 @@ public:
         return *std::get<std::shared_ptr<ObjectType>>(data_);
     }
 
+    /// @brief Returns const reference to the array elements.
+    [[nodiscard]] auto Elements() const -> const ArrayType&
+    {
+        static const ArrayType empty;
+        if (!IsArray()) {
+            return empty;
+        }
+        return *std::get<std::shared_ptr<ArrayType>>(data_);
+    }
+
+    /// @brief Returns mutable reference to the array elements,
+    ///        promoting null → array.
+    auto Elements() -> ArrayType&
+    {
+        if (!IsArray()) {
+            data_ = std::make_shared<ArrayType>();
+        }
+        return *std::get<std::shared_ptr<ArrayType>>(data_);
+    }
+
     /// @brief Splits a dot-separated path into its segments.
     ///
     /// A path is well-formed only if it is non-empty and every segment

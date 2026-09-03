@@ -176,6 +176,49 @@ TEST(JsonSerializerTest, FitsReportsWrongKind)
     EXPECT_FALSE(text.Fits<double>());
 }
 
+TEST(JsonSerializerTest, ArrayElementsSurviveConversion)
+{
+    // Regression: JsonToValue built an empty Value::Array() and returned it
+    // without looking at the elements, and ValueToJson mirrored the omission,
+    // so every array in a JSON config silently loaded as empty.
+    auto parsed = JsonSerializer::ParseString(R"({"ports": [80, 443, 8080]})");
+    ASSERT_TRUE(parsed.ok());
+
+    const auto& ports = (*parsed)["ports"];
+    ASSERT_TRUE(ports.IsArray());
+    ASSERT_EQ(ports.Elements().size(), 3U);
+    EXPECT_EQ(ports.Elements()[0].Get<std::int64_t>(), 80);
+    EXPECT_EQ(ports.Elements()[2].Get<std::int64_t>(), 8080);
+
+    // And back out again.
+    auto json = ValueToJson(*parsed);
+    EXPECT_EQ(json["ports"].size(), 3U);
+    EXPECT_EQ(json["ports"][1].get<std::int64_t>(), 443);
+}
+
+TEST(JsonSerializerTest, NestedAndMixedArraysSurviveConversion)
+{
+    auto parsed = JsonSerializer::ParseString(R"({"a": [[1, 2], {"b": "c"}, true, null]})");
+    ASSERT_TRUE(parsed.ok());
+
+    const auto& outer = (*parsed)["a"];
+    ASSERT_EQ(outer.Elements().size(), 4U);
+    EXPECT_EQ(outer.Elements()[0].Elements().size(), 2U);
+    EXPECT_EQ(outer.Elements()[1]["b"], "c");
+    EXPECT_TRUE(outer.Elements()[2].Get<bool>());
+    EXPECT_TRUE(outer.Elements()[3].IsNull());
+
+    EXPECT_EQ(ValueToJson(*parsed).dump(), R"({"a":[[1,2],{"b":"c"},true,null]})");
+}
+
+TEST(JsonSerializerTest, EmptyArrayStaysEmpty)
+{
+    auto parsed = JsonSerializer::ParseString(R"({"a": []})");
+    ASSERT_TRUE(parsed.ok());
+    EXPECT_TRUE((*parsed)["a"].IsArray());
+    EXPECT_TRUE((*parsed)["a"].Elements().empty());
+}
+
 TEST(ValidatorTest, MinValidator)
 {
     auto validator = Min(5);
