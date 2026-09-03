@@ -70,6 +70,14 @@ namespace settings {
     };
 
     // Setting for testing environment variable parse failure
+    struct ValidatedPortWithEnv {
+        static constexpr std::string_view path = "server.port";
+        static constexpr std::string_view env_override = "TEST_VALIDATED_PORT";
+        using value_type = int;
+        static auto default_value() -> int { return 8080; }
+        static auto validator() -> Validator<int> { return Range(1, 65535); }
+    };
+
     struct PortWithEnv {
         static constexpr std::string_view path = "server.port";
         static constexpr std::string_view env_override = "TEST_SERVER_PORT";
@@ -300,10 +308,99 @@ TEST_F(ConfigurationIntegrationTest, ValidateAll)
     using Schema = ConfigSchema<settings::ServerPort>;
     Configuration<Schema, JsonSerializer> config(file_path_);
 
-    ASSERT_TRUE(config.Load().ok());
+    // Load itself now rejects a file that violates the schema's validators.
+    EXPECT_FALSE(config.Load().ok());
 
     auto status = config.ValidateAll();
     EXPECT_FALSE(status.ok());
+}
+
+TEST_F(ConfigurationIntegrationTest, LoadRejectsInvalidFileValue)
+{
+    // Regression: Load used to succeed on a file the schema's own validators
+    // reject, so Get handed the invalid value straight to the caller.
+    {
+        std::ofstream file(file_path_);
+        file << R"({"server": {"port": 999999}})";
+    }
+
+    using Schema = ConfigSchema<settings::ServerPort>;
+    Configuration<Schema, JsonSerializer> config(file_path_);
+
+    auto status = config.Load();
+    EXPECT_FALSE(status.ok());
+    EXPECT_TRUE(IsInvalidArgument(status));
+    EXPECT_NE(std::string(status.message()).find("server.port"), std::string::npos);
+}
+
+TEST_F(ConfigurationIntegrationTest, LoadDoesNotDependOnTheEnvironment)
+{
+    // An unparseable override is a process-level problem, not a reason for
+    // reading the file to fail.
+    {
+        std::ofstream file(file_path_);
+        file << R"({"server": {"port": 8080}})";
+    }
+
+    setenv("TEST_VALIDATED_PORT", "not_a_number", 1);
+
+    using Schema = ConfigSchema<settings::ValidatedPortWithEnv>;
+    Configuration<Schema, JsonSerializer> config(file_path_);
+    EXPECT_TRUE(config.Load().ok());
+
+    // ValidateAll is the diagnostic that does report it.
+    EXPECT_FALSE(config.ValidateAll().ok());
+
+    unsetenv("TEST_VALIDATED_PORT");
+}
+
+TEST_F(ConfigurationIntegrationTest, EnvironmentOverrideIsValidated)
+{
+    // Regression: an env override bypassed the validator on every path, so
+    // TEST_VALIDATED_PORT=999999 was returned unchecked and no API objected.
+    {
+        std::ofstream file(file_path_);
+        file << R"({"server": {"port": 9000}})";
+    }
+
+    setenv("TEST_VALIDATED_PORT", "999999", 1);
+
+    using Schema = ConfigSchema<settings::ValidatedPortWithEnv>;
+    Configuration<Schema, JsonSerializer> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    ::testing::internal::CaptureStderr();
+    const int port = config.Get<settings::ValidatedPortWithEnv>();
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    // Falls back to the file value rather than returning the invalid override.
+    EXPECT_EQ(port, 9000);
+    EXPECT_NE(stderr_output.find("is invalid"), std::string::npos);
+
+    auto status = config.ValidateAll();
+    EXPECT_FALSE(status.ok());
+    EXPECT_NE(std::string(status.message()).find("TEST_VALIDATED_PORT"), std::string::npos);
+
+    unsetenv("TEST_VALIDATED_PORT");
+}
+
+TEST_F(ConfigurationIntegrationTest, ValidEnvironmentOverrideIsStillUsed)
+{
+    {
+        std::ofstream file(file_path_);
+        file << R"({"server": {"port": 9000}})";
+    }
+
+    setenv("TEST_VALIDATED_PORT", "1234", 1);
+
+    using Schema = ConfigSchema<settings::ValidatedPortWithEnv>;
+    Configuration<Schema, JsonSerializer> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    EXPECT_EQ(config.Get<settings::ValidatedPortWithEnv>(), 1234);
+    EXPECT_TRUE(config.ValidateAll().ok());
+
+    unsetenv("TEST_VALIDATED_PORT");
 }
 
 TEST_F(ConfigurationIntegrationTest, HierarchicalSettings)
@@ -919,7 +1016,7 @@ TEST_F(ConfigurationIntegrationTest, MultiThreadedValidateAllWithInvalidValue)
     }
 
     MTConfigValidated config(file_path_);
-    ASSERT_TRUE(config.Load().ok());
+    EXPECT_FALSE(config.Load().ok());
 
     auto status = config.ValidateAll();
     EXPECT_FALSE(status.ok());
@@ -951,7 +1048,9 @@ TEST_F(ConfigurationIntegrationTest, ValidateAllStopsOnFirstError)
     }
 
     Configuration<Schema2V, JsonSerializer> config(file_path_);
-    ASSERT_TRUE(config.Load().ok());
+    auto load_status = config.Load();
+    EXPECT_FALSE(load_status.ok());
+    EXPECT_NE(std::string(load_status.message()).find("val.a"), std::string::npos);
 
     auto status = config.ValidateAll();
     EXPECT_FALSE(status.ok());
@@ -993,7 +1092,7 @@ TEST_F(ConfigurationIntegrationTest, SingleThreadedValidateAllInvalidValue)
 
     using Schema = ConfigSchema<settings::ServerPort>;
     Configuration<Schema, JsonSerializer> config(file_path_);
-    ASSERT_TRUE(config.Load().ok());
+    EXPECT_FALSE(config.Load().ok());
 
     auto status = config.ValidateAll();
     EXPECT_FALSE(status.ok());

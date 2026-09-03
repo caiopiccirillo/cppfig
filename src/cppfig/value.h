@@ -1,10 +1,13 @@
 #pragma once
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -170,11 +173,61 @@ public:
     /// @brief Returns true if this value is an array.
     [[nodiscard]] auto IsArray() const -> bool { return data_.index() == idx_array; }
 
+    /// @brief Returns true if the stored value is representable as @p T.
+    ///
+    /// Reports false both when the stored alternative is the wrong kind and
+    /// when it is numerically out of range for @p T (an int64 too large for
+    /// an int, a double too large for a float).
+    template <typename T>
+    [[nodiscard]] auto Fits() const -> bool
+    {
+        if constexpr (std::is_same_v<T, bool>) {
+            return IsBoolean();
+        }
+        else if constexpr (std::is_same_v<T, int>) {
+            if (!IsInteger()) {
+                return false;
+            }
+            const auto stored = std::get<std::int64_t>(data_);
+            return stored >= std::numeric_limits<int>::min() && stored <= std::numeric_limits<int>::max();
+        }
+        else if constexpr (std::is_same_v<T, std::int64_t>) {
+            return IsInteger();
+        }
+        else if constexpr (std::is_same_v<T, double>) {
+            return IsNumber();
+        }
+        else if constexpr (std::is_same_v<T, float>) {
+            if (IsInteger()) {
+                return true;
+            }
+            if (!IsDouble()) {
+                return false;
+            }
+            const auto stored = std::get<double>(data_);
+            // Non-finite doubles convert to the matching float exactly.
+            return !std::isfinite(stored) || (stored >= -static_cast<double>(std::numeric_limits<float>::max()) && stored <= static_cast<double>(std::numeric_limits<float>::max()));
+        }
+        else if constexpr (std::is_same_v<T, std::string>) {
+            return IsString();
+        }
+        else {
+            static_assert(sizeof(T) == 0, "Unsupported type for Value::Fits<T>()");
+        }
+    }
+
     /// @brief Extracts the stored value as the requested type.
     ///
     /// Supported types: bool, int, std::int64_t, double, float, std::string.
     /// Integer↔double conversions are performed with static_cast when
     /// the underlying storage differs from the requested type.
+    ///
+    /// @throws std::bad_variant_access if the stored value is of another kind.
+    /// @throws std::out_of_range if the stored value does not fit in @p T.
+    ///         Discarding the high bits of an out-of-range value would turn a
+    ///         plainly wrong configuration into a plausible-looking one, so
+    ///         callers that cannot guarantee the range should check @c Fits
+    ///         first (@c ConfigTraits does).
     template <typename T>
     [[nodiscard]] auto Get() const -> T
     {
@@ -182,7 +235,11 @@ public:
             return std::get<bool>(data_);
         }
         else if constexpr (std::is_same_v<T, int>) {
-            return static_cast<int>(std::get<std::int64_t>(data_));
+            const auto stored = std::get<std::int64_t>(data_);
+            if (!Fits<int>()) {
+                throw std::out_of_range("Value " + std::to_string(stored) + " does not fit in int");
+            }
+            return static_cast<int>(stored);
         }
         else if constexpr (std::is_same_v<T, std::int64_t>) {
             return std::get<std::int64_t>(data_);
@@ -197,7 +254,11 @@ public:
             if (IsInteger()) {
                 return static_cast<float>(std::get<std::int64_t>(data_));
             }
-            return static_cast<float>(std::get<double>(data_));
+            const auto stored = std::get<double>(data_);
+            if (!Fits<float>()) {
+                throw std::out_of_range("Value " + std::to_string(stored) + " does not fit in float");
+            }
+            return static_cast<float>(stored);
         }
         else if constexpr (std::is_same_v<T, std::string>) {
             return std::get<std::string>(data_);

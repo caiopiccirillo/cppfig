@@ -3,6 +3,9 @@
 #include <cppfig/testing/mock.h>
 #include <gtest/gtest.h>
 
+#include <limits>
+#include <stdexcept>
+
 namespace cppfig::test {
 
 TEST(ConfigTraitsTest, BoolToJson)
@@ -124,6 +127,53 @@ TEST(ConfigTraitsTest, StringToString)
 TEST(ConfigTraitsTest, StringFromString)
 {
     EXPECT_EQ(ConfigTraits<std::string>::FromString("hello"), "hello");
+}
+
+TEST(ConfigTraitsTest, IntFromJsonRejectsOutOfRange)
+{
+    // Regression: an int64 outside the int range used to be truncated, and
+    // the truncated value then passed the setting's validator.
+    EXPECT_EQ(ConfigTraits<int>::Deserialize(Value(std::int64_t { 4294967297 })), std::nullopt);
+    EXPECT_EQ(ConfigTraits<int>::Deserialize(Value(std::numeric_limits<std::int64_t>::max())), std::nullopt);
+    EXPECT_EQ(ConfigTraits<int>::Deserialize(Value(std::numeric_limits<std::int64_t>::min())), std::nullopt);
+
+    EXPECT_EQ(ConfigTraits<int>::Deserialize(Value(std::numeric_limits<int>::max())), std::numeric_limits<int>::max());
+    EXPECT_EQ(ConfigTraits<int>::Deserialize(Value(std::numeric_limits<int>::min())), std::numeric_limits<int>::min());
+}
+
+TEST(ConfigTraitsTest, FloatFromJsonRejectsOutOfRange)
+{
+    // A double beyond the float range would otherwise arrive as infinity.
+    EXPECT_EQ(ConfigTraits<float>::Deserialize(Value(1e300)), std::nullopt);
+    EXPECT_EQ(ConfigTraits<float>::Deserialize(Value(-1e300)), std::nullopt);
+
+    auto in_range = ConfigTraits<float>::Deserialize(Value(1.5));
+    ASSERT_TRUE(in_range.has_value());
+    EXPECT_FLOAT_EQ(*in_range, 1.5F);
+}
+
+TEST(JsonSerializerTest, GetThrowsOnOutOfRangeNarrowing)
+{
+    const Value big(std::int64_t { 4294967297 });
+    EXPECT_FALSE(big.Fits<int>());
+    EXPECT_THROW((void)big.Get<int>(), std::out_of_range);
+
+    // int64 access of the same value is exact and must still work.
+    EXPECT_EQ(big.Get<std::int64_t>(), 4294967297);
+
+    const Value huge(1e300);
+    EXPECT_FALSE(huge.Fits<float>());
+    EXPECT_THROW((void)huge.Get<float>(), std::out_of_range);
+    EXPECT_DOUBLE_EQ(huge.Get<double>(), 1e300);
+}
+
+TEST(JsonSerializerTest, FitsReportsWrongKind)
+{
+    const Value text("hello");
+    EXPECT_TRUE(text.Fits<std::string>());
+    EXPECT_FALSE(text.Fits<int>());
+    EXPECT_FALSE(text.Fits<bool>());
+    EXPECT_FALSE(text.Fits<double>());
 }
 
 TEST(ValidatorTest, MinValidator)

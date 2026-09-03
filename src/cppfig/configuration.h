@@ -116,11 +116,21 @@ public:
         if constexpr (!env_override.empty()) {
             if (const char* env_value = std::getenv(std::string(env_override).c_str())) {
                 auto parsed = ConfigTraits<value_type>::FromString(env_value);
-                if (parsed.has_value()) {
-                    return *parsed;
+                if (!parsed.has_value()) {
+                    Logger::WarnF("Failed to parse environment variable %.*s='%s', using fallback",
+                                  static_cast<int>(env_override.size()), env_override.data(), env_value);
                 }
-                Logger::WarnF("Failed to parse environment variable %.*s='%s', using fallback",
-                              static_cast<int>(env_override.size()), env_override.data(), env_value);
+                else {
+                    // An override that fails the setting's own validator must
+                    // not slip through unchecked; fall back and say so.
+                    auto validation = GetSettingValidator<S>()(*parsed);
+                    if (validation) {
+                        return *parsed;
+                    }
+                    Logger::WarnF("Environment variable %.*s='%s' is invalid (%s), using fallback",
+                                  static_cast<int>(env_override.size()), env_override.data(), env_value,
+                                  validation.error_message.c_str());
+                }
             }
         }
 
@@ -244,7 +254,11 @@ private:
             // File doesn't exist - create with defaults
             Logger::InfoF("Configuration file '%s' not found, creating with defaults", file_path_.c_str());
             file_values_ = defaults_;
-            return SaveUnlocked();
+            auto save_status = SaveUnlocked();
+            if (!save_status.ok()) {
+                return save_status;
+            }
+            return ValidateFileValuesUnlocked();
         }
 
         // Load existing file
@@ -279,7 +293,10 @@ private:
             }
         }
 
-        return OkStatus();
+        // A successful Load must leave the configuration holding only values
+        // the schema accepts; otherwise every caller of Get inherits an
+        // invalid value that nothing ever objected to.
+        return ValidateFileValuesUnlocked();
     }
 
     /// @brief Saves the current configuration to the file (caller must hold the exclusive lock).
@@ -300,8 +317,11 @@ private:
         return WriteFile<SerializerT>(file_path_, file_values_);
     }
 
-    /// @brief Validates all values (caller must hold at least a shared lock).
-    [[nodiscard]] auto ValidateAllUnlocked() const -> Status
+    /// @brief Validates the loaded file values (caller must hold at least a shared lock).
+    ///
+    /// Covers only what @c Load read, so a successful @c Load does not depend
+    /// on the ambient environment.
+    [[nodiscard]] auto ValidateFileValuesUnlocked() const -> Status
     {
         Status status = OkStatus();
 
@@ -312,15 +332,66 @@ private:
 
             using value_type = typename S::value_type;
             auto file_result = file_values_.GetAtPath(S::path);
+            if (!file_result.ok()) {
+                return;
+            }
 
-            if (file_result.ok()) {
-                auto parsed = ConfigTraits<value_type>::Deserialize(*file_result);
-                if (parsed.has_value()) {
-                    auto validator = GetSettingValidator<S>();
-                    auto validation = validator(*parsed);
-                    if (!validation) {
-                        status = InvalidArgumentError(std::string(S::path) + ": " + validation.error_message);
-                    }
+            auto parsed = ConfigTraits<value_type>::Deserialize(*file_result);
+            if (!parsed.has_value()) {
+                return;
+            }
+
+            auto validation = GetSettingValidator<S>()(*parsed);
+            if (!validation) {
+                status = InvalidArgumentError(std::string(S::path) + ": " + validation.error_message);
+            }
+        });
+
+        return status;
+    }
+
+    /// @brief Validates all values (caller must hold at least a shared lock).
+    ///
+    /// Checks every source that can supply a value: the environment override,
+    /// if one is set, and the file value. @c Get falls back past an invalid
+    /// override so the process keeps running, but the operator still has to
+    /// be able to find out that the override is wrong.
+    [[nodiscard]] auto ValidateAllUnlocked() const -> Status
+    {
+        Status status = ValidateEnvOverridesUnlocked();
+        if (!status.ok()) {
+            return status;
+        }
+        return ValidateFileValuesUnlocked();
+    }
+
+    /// @brief Validates the environment overrides that are currently set.
+    [[nodiscard]] auto ValidateEnvOverridesUnlocked() const -> Status
+    {
+        Status status = OkStatus();
+
+        Schema::ForEachSetting([&status]<typename S>() {
+            if (!status.ok()) {
+                return;  // Stop on first error
+            }
+
+            constexpr auto env_override = GetEnvOverride<S>();
+            if constexpr (!env_override.empty()) {
+                const char* env_value = std::getenv(std::string(env_override).c_str());
+                if (env_value == nullptr) {
+                    return;
+                }
+
+                using value_type = typename S::value_type;
+                auto parsed = ConfigTraits<value_type>::FromString(env_value);
+                if (!parsed.has_value()) {
+                    status = InvalidArgumentError(std::string(env_override) + ": cannot parse '" + env_value + "' as a value for '" + std::string(S::path) + "'");
+                    return;
+                }
+
+                auto validation = GetSettingValidator<S>()(*parsed);
+                if (!validation) {
+                    status = InvalidArgumentError(std::string(env_override) + ": " + validation.error_message);
                 }
             }
         });
