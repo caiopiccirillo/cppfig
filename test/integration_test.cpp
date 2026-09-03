@@ -600,6 +600,55 @@ TEST_F(ConfigurationIntegrationTest, ConfSaveKeepsSettingsTheSchemaNoLongerHas)
     EXPECT_NE(contents.find("app.retired"), std::string::npos);
 }
 
+TEST_F(ConfigurationIntegrationTest, SetReportsWhenAnOverrideShadowsIt)
+{
+    // Regression: Set returned OK and Get then ignored it, with nothing to
+    // tell the caller the write would have no visible effect.
+    {
+        std::ofstream file(file_path_);
+        file << R"({"server": {"port": 8080}})";
+    }
+
+    setenv("TEST_SERVER_PORT", "1234", 1);
+
+    using Schema = ConfigSchema<settings::PortWithEnv>;
+    Configuration<Schema, JsonSerializer> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    EXPECT_TRUE(config.IsOverridden<settings::PortWithEnv>());
+
+    ::testing::internal::CaptureStderr();
+    auto status = config.Set<settings::PortWithEnv>(9999);
+    auto stderr_output = ::testing::internal::GetCapturedStderr();
+
+    // The write is genuinely stored and will be saved, so it is not an error,
+    // but it is announced.
+    EXPECT_TRUE(status.ok());
+    EXPECT_NE(stderr_output.find("TEST_SERVER_PORT"), std::string::npos);
+    EXPECT_EQ(config.Get<settings::PortWithEnv>(), 1234);
+
+    // With the override gone, the stored write is what Get returns.
+    unsetenv("TEST_SERVER_PORT");
+    EXPECT_FALSE(config.IsOverridden<settings::PortWithEnv>());
+    EXPECT_EQ(config.Get<settings::PortWithEnv>(), 9999);
+}
+
+TEST_F(ConfigurationIntegrationTest, IsOverriddenIsFalseWithoutAnEnvOverride)
+{
+    using Schema = ConfigSchema<settings::ServerPort>;
+    Configuration<Schema, JsonSerializer> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    // The setting declares no env_override at all.
+    EXPECT_FALSE(config.IsOverridden<settings::ServerPort>());
+
+    unsetenv("TEST_SERVER_PORT");
+    using EnvSchema = ConfigSchema<settings::PortWithEnv>;
+    Configuration<EnvSchema, JsonSerializer> env_config(file_path_);
+    ASSERT_TRUE(env_config.Load().ok());
+    EXPECT_FALSE(env_config.IsOverridden<settings::PortWithEnv>());
+}
+
 TEST_F(ConfigurationIntegrationTest, HierarchicalSettings)
 {
     using Schema = ConfigSchema<settings::DatabaseHost, settings::DatabasePort,

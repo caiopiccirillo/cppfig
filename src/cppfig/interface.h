@@ -48,6 +48,20 @@ public:
         return static_cast<Derived*>(this)->template SetImpl<S>(std::move(value));
     }
 
+    /// @brief Reports whether an environment variable is overriding a setting.
+    ///
+    /// An override takes precedence over both the file value and anything
+    /// passed to @c Set, so a write to an overridden setting is stored and
+    /// saved but is not what @c Get will return.
+    ///
+    /// Usage: config.IsOverridden<MySettings::ServerPort>()
+    template <IsSetting S>
+        requires(Schema::template has_setting<S>)
+    [[nodiscard]] auto IsOverridden() const -> bool
+    {
+        return static_cast<const Derived*>(this)->template IsOverriddenImpl<S>();
+    }
+
     /// @brief Loads configuration from the file.
     ///
     /// If the file doesn't exist, it creates it with default values.

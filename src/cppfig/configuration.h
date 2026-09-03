@@ -152,7 +152,29 @@ public:
         return S::default_value();
     }
 
+    /// @brief Reports whether an environment variable is overriding a setting.
+    ///
+    /// An override wins over the file value, so @c Set on such a setting is
+    /// recorded and saved but will not be what @c Get returns. Callers that
+    /// need to know can ask before writing.
+    template <IsSetting S>
+        requires(Schema::template has_setting<S>)
+    [[nodiscard]] auto IsOverriddenImpl() const -> bool
+    {
+        constexpr auto env_override = GetEnvOverride<S>();
+        if constexpr (env_override.empty()) {
+            return false;
+        }
+        else {
+            return std::getenv(std::string(env_override).c_str()) != nullptr;
+        }
+    }
+
     /// @brief Sets the value for a setting type.
+    ///
+    /// The value is stored and will be written by @c Save. If an environment
+    /// override is shadowing the setting, @c Get will keep returning the
+    /// override; that is logged, and @c IsOverridden reports it up front.
     ///
     /// Thread safety: validation runs without holding any lock; the actual
     /// mutation of internal state acquires an exclusive (writer) lock.
@@ -167,6 +189,16 @@ public:
         auto validation = validator(value);
         if (!validation) {
             return InvalidArgumentError(validation.error_message);
+        }
+
+        // Returning OK from a write the next read will ignore is a trap.
+        constexpr auto env_override = GetEnvOverride<S>();
+        if constexpr (!env_override.empty()) {
+            if (IsOverriddenImpl<S>()) {
+                Logger::WarnF("Set('%.*s') stored, but %.*s is overriding it and Get will return the override",
+                              static_cast<int>(S::path.size()), S::path.data(),
+                              static_cast<int>(env_override.size()), env_override.data());
+            }
         }
 
         // Set the value under exclusive lock
