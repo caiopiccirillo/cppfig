@@ -2,8 +2,12 @@
 
 #include <gmock/gmock.h>
 
+#include <cstdint>
+#include <filesystem>
+#include <random>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_map>
 
 #include "cppfig/interface.h"
@@ -163,13 +167,26 @@ public:
 class ConfigurationTestFixture {
 public:
     /// @brief Creates a temporary file path for testing.
+    ///
+    /// Uses the platform's temporary directory rather than a hard-coded
+    /// "/tmp/", and a randomly seeded generator rather than std::rand, which
+    /// was never seeded and so produced the same sequence on every run.
     [[nodiscard]] static auto CreateTempFilePath(std::string_view prefix = "test_config") -> std::string
     {
-        return std::string("/tmp/") + std::string(prefix) + "_" + std::to_string(std::rand()) + ".conf";
+        static std::mt19937_64 generator { std::random_device {}() };
+        std::uniform_int_distribution<std::uint64_t> distribution;
+
+        const auto path = std::filesystem::temp_directory_path()
+            / (std::string(prefix) + "_" + std::to_string(distribution(generator)) + ".conf");
+        return path.string();
     }
 
     /// @brief Removes a file if it exists.
-    static void RemoveFile(const std::string& path) { std::remove(path.c_str()); }
+    static void RemoveFile(const std::string& path)
+    {
+        std::error_code error_code;
+        std::filesystem::remove(path, error_code);
+    }
 };
 // LCOV_EXCL_STOP
 
