@@ -1,0 +1,14 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# The JSON serializer is opt-in; only consumers of a JSON-enabled build need
+# nlohmann-json, and they need it transitively.
+set(CPPFIG_HAS_JSON @CPPFIG_ENABLE_JSON@)
+if(CPPFIG_HAS_JSON)
+    find_dependency(nlohmann_json CONFIG)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/cppfigTargets.cmake")
+
+check_required_components(cppfig)
