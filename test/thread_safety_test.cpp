@@ -971,7 +971,8 @@ TEST_F(ThreadSafetyTest, EdgeValidateAllInvalidValue)
 
     using Schema = ConfigSchema<edge_settings::ValidatedPort>;
     Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(file_path_);
-    ASSERT_TRUE(config.Load().ok());
+    // Load itself now rejects a file that violates the schema's validators.
+    EXPECT_FALSE(config.Load().ok());
 
     auto status = config.ValidateAll();
     EXPECT_FALSE(status.ok());
@@ -988,7 +989,7 @@ TEST_F(ThreadSafetyTest, EdgeValidateAllEarlyStop)
 
     using Schema = ConfigSchema<edge_settings::ValidatedPort, edge_settings::AppPort>;
     Configuration<Schema, JsonSerializer, MultiThreadedPolicy> config(file_path_);
-    ASSERT_TRUE(config.Load().ok());
+    EXPECT_FALSE(config.Load().ok());
 
     // ValidatedPort has a validator and its value (-1) is invalid.
     // AppPort has no validator so it doesn't cause an error.
