@@ -21,3 +21,8 @@ RUN if [ "${REINSTALL_LLVM_VERSION}" != "none" ]; then \
     chmod +x /tmp/reinstall-llvm.sh && /tmp/reinstall-llvm.sh ${REINSTALL_LLVM_VERSION}; \
     fi \
     && rm -f /tmp/reinstall-llvm.sh
+
+# Links the published image to the repository in GHCR, which is what lets the
+# repo's Actions token pull it. An image pushed with a personal access token is
+# otherwise unlinked and private, so CI silently falls back to a full rebuild.
+LABEL org.opencontainers.image.source="https://github.com/caiopiccirillo/cppfig"
