@@ -1285,6 +1285,73 @@ TEST(ConfigurationTest, VirtualAdapterForwardsToTheConfiguration)
     testing::ConfigurationTestFixture::RemoveFile(path);
 }
 
+namespace schema_paths {
+
+    template <const char* Path>
+    struct Setting {
+        static constexpr std::string_view path = Path;
+        using value_type = int;
+        static auto default_value() -> int { return 0; }
+    };
+
+    constexpr char k_server[] = "server";
+    constexpr char k_server_port[] = "server.port";
+    constexpr char k_server_host[] = "server.host";
+    constexpr char k_serverport[] = "serverport";
+    constexpr char k_empty[] = "";
+    constexpr char k_doubled[] = "a..b";
+    constexpr char k_trailing[] = "a.";
+
+}  // namespace schema_paths
+
+TEST(ConfigSchemaTest, RejectsPrefixCollisionsAtCompileTime)
+{
+    using namespace schema_paths;
+
+    // Regression: uniqueness compared paths for equality only, so "server"
+    // and "server.port" both passed and whichever was written second turned
+    // the other into an object or a leaf.
+    static_assert(detail::AllPathsUnique<Setting<k_server_port>, Setting<k_server_host>>());
+    static_assert(detail::AllPathsUnique<Setting<k_server>, Setting<k_serverport>>());
+
+    static_assert(!detail::AllPathsUnique<Setting<k_server>, Setting<k_server_port>>());
+    static_assert(!detail::AllPathsUnique<Setting<k_server_port>, Setting<k_server>>());
+    static_assert(!detail::AllPathsUnique<Setting<k_server>, Setting<k_server>>());
+
+    EXPECT_TRUE(detail::IsPathPrefix("server", "server.port"));
+    EXPECT_FALSE(detail::IsPathPrefix("server", "serverport"));
+    EXPECT_FALSE(detail::IsPathPrefix("server", "server"));
+}
+
+TEST(ConfigSchemaTest, RejectsIllFormedPathsAtCompileTime)
+{
+    using namespace schema_paths;
+
+    static_assert(detail::AllPathsWellFormed<Setting<k_server_port>>());
+    static_assert(!detail::AllPathsWellFormed<Setting<k_empty>>());
+    static_assert(!detail::AllPathsWellFormed<Setting<k_doubled>>());
+    static_assert(!detail::AllPathsWellFormed<Setting<k_trailing>>());
+
+    EXPECT_TRUE(detail::IsPathWellFormed("a.b.c"));
+    EXPECT_FALSE(detail::IsPathWellFormed(".a"));
+}
+
+TEST(StatusOrTest, RejectsConstructionFromOkStatus)
+{
+    // An OK status carries no value, so ok() would report false while
+    // status() reported OK. The precondition is an assert, which NDEBUG
+    // compiles out, so only assert the death where asserts are live.
+#ifndef NDEBUG
+    EXPECT_DEATH_IF_SUPPORTED((void)StatusOr<int>(OkStatus()), "must not be constructed from an OK status");
+#endif
+
+    // An error status is fine and reports the error unchanged, in every
+    // build configuration.
+    const StatusOr<int> failed { NotFoundError("nope") };
+    EXPECT_FALSE(failed.ok());
+    EXPECT_TRUE(IsNotFound(failed.status()));
+}
+
 TEST(ConfigurationTestFixtureTest, CreateTempFilePathDefault)
 {
     auto path = testing::ConfigurationTestFixture::CreateTempFilePath();

@@ -838,7 +838,7 @@ TEST_F(ConfigurationIntegrationTest, GetFileValues)
     Configuration<Schema> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    const auto& file_values = config.GetFileValues();
+    const auto file_values = config.GetFileValues();
     EXPECT_EQ(file_values["app"]["name"], "TestApp");
 }
 
@@ -848,7 +848,7 @@ TEST_F(ConfigurationIntegrationTest, GetDefaults)
     Configuration<Schema> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
 
-    const auto& defaults = config.GetDefaults();
+    const auto defaults = config.GetDefaults();
     EXPECT_EQ(defaults["app"]["name"], "TestApp");
 }
 
@@ -1089,7 +1089,7 @@ TEST_F(ConfigurationIntegrationTest, MultiThreadedGetFileValues)
 {
     MTConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
-    const auto& fv = config.GetFileValues();
+    const auto fv = config.GetFileValues();
     EXPECT_EQ(fv["app"]["name"], "TestApp");
 }
 
@@ -1097,7 +1097,7 @@ TEST_F(ConfigurationIntegrationTest, MultiThreadedGetDefaults)
 {
     MTConfig config(file_path_);
     ASSERT_TRUE(config.Load().ok());
-    const auto& defaults = config.GetDefaults();
+    const auto defaults = config.GetDefaults();
     EXPECT_EQ(defaults["app"]["port"], 8080);
 }
 

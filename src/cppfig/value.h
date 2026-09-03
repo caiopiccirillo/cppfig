@@ -26,8 +26,9 @@ namespace cppfig {
 ///
 /// Objects use `std::map` with transparent comparison for efficient
 /// `std::string_view` lookups.  Recursive containers are heap-allocated
-/// via `std::shared_ptr` to keep the variant's inline size small; a
-/// custom copy constructor ensures full deep-copy (value) semantics.
+/// via `std::unique_ptr` to keep the variant's inline size small; a
+/// custom copy constructor deep-copies them, so the pointer is never
+/// actually shared and the type has plain value semantics.
 class Value {
 public:
     /// @brief Ordered map of string keys to Value children.
@@ -37,7 +38,7 @@ public:
     using ArrayType = std::vector<Value>;
 
 private:
-    using DataVariant = std::variant<std::nullptr_t, bool, std::int64_t, double, std::string, std::shared_ptr<ObjectType>, std::shared_ptr<ArrayType>>;
+    using DataVariant = std::variant<std::nullptr_t, bool, std::int64_t, double, std::string, std::unique_ptr<ObjectType>, std::unique_ptr<ArrayType>>;
 
     DataVariant data_;
 
@@ -131,14 +132,14 @@ public:
     /// @brief Move assignment (default).
     auto operator=(Value&&) noexcept -> Value& = default;
 
-    /// @brief Destructor (default, shared_ptr handles cleanup).
+    /// @brief Destructor (default, unique_ptr handles cleanup).
     ~Value() = default;
 
     /// @brief Creates an empty object value.
     [[nodiscard]] static auto Object() -> Value
     {
         Value v;
-        v.data_ = std::make_shared<ObjectType>();
+        v.data_ = std::make_unique<ObjectType>();
         return v;
     }
 
@@ -146,7 +147,7 @@ public:
     [[nodiscard]] static auto Array() -> Value
     {
         Value v;
-        v.data_ = std::make_shared<ArrayType>();
+        v.data_ = std::make_unique<ArrayType>();
         return v;
     }
 
@@ -334,7 +335,7 @@ public:
         if (!IsObject()) {
             return false;
         }
-        const auto& obj = *std::get<std::shared_ptr<ObjectType>>(data_);
+        const auto& obj = *std::get<std::unique_ptr<ObjectType>>(data_);
         return obj.find(key) != obj.end();
     }
 
@@ -342,9 +343,9 @@ public:
     auto operator[](const std::string& key) -> Value&
     {
         if (!IsObject()) {
-            data_ = std::make_shared<ObjectType>();
+            data_ = std::make_unique<ObjectType>();
         }
-        auto& obj = *std::get<std::shared_ptr<ObjectType>>(data_);
+        auto& obj = *std::get<std::unique_ptr<ObjectType>>(data_);
         return obj[key];
     }
 
@@ -355,7 +356,7 @@ public:
         if (!IsObject()) {
             return null_value;
         }
-        const auto& obj = *std::get<std::shared_ptr<ObjectType>>(data_);
+        const auto& obj = *std::get<std::unique_ptr<ObjectType>>(data_);
         auto iter = obj.find(key);
         if (iter == obj.end()) {
             return null_value;
@@ -370,7 +371,7 @@ public:
         if (!IsObject()) {
             return empty;
         }
-        return *std::get<std::shared_ptr<ObjectType>>(data_);
+        return *std::get<std::unique_ptr<ObjectType>>(data_);
     }
 
     /// @brief Returns mutable reference to the object entries,
@@ -378,9 +379,9 @@ public:
     auto Items() -> ObjectType&
     {
         if (!IsObject()) {
-            data_ = std::make_shared<ObjectType>();
+            data_ = std::make_unique<ObjectType>();
         }
-        return *std::get<std::shared_ptr<ObjectType>>(data_);
+        return *std::get<std::unique_ptr<ObjectType>>(data_);
     }
 
     /// @brief Returns const reference to the array elements.
@@ -390,7 +391,7 @@ public:
         if (!IsArray()) {
             return empty;
         }
-        return *std::get<std::shared_ptr<ArrayType>>(data_);
+        return *std::get<std::unique_ptr<ArrayType>>(data_);
     }
 
     /// @brief Returns mutable reference to the array elements,
@@ -398,9 +399,9 @@ public:
     auto Elements() -> ArrayType&
     {
         if (!IsArray()) {
-            data_ = std::make_shared<ArrayType>();
+            data_ = std::make_unique<ArrayType>();
         }
-        return *std::get<std::shared_ptr<ArrayType>>(data_);
+        return *std::get<std::unique_ptr<ArrayType>>(data_);
     }
 
     /// @brief Splits a dot-separated path into its segments.
@@ -543,7 +544,7 @@ public:
             return Items() == other.Items();
         }
         if (IsArray()) {
-            return *std::get<std::shared_ptr<ArrayType>>(data_) == *std::get<std::shared_ptr<ArrayType>>(other.data_);
+            return *std::get<std::unique_ptr<ArrayType>>(data_) == *std::get<std::unique_ptr<ArrayType>>(other.data_);
         }
         return false;  // LCOV_EXCL_LINE
     }
@@ -554,13 +555,21 @@ public:
 private:
     [[nodiscard]] static auto DeepCopy(const DataVariant& src) -> DataVariant
     {
-        if (auto* obj = std::get_if<std::shared_ptr<ObjectType>>(&src)) {
-            return std::make_shared<ObjectType>(**obj);
-        }
-        if (auto* arr = std::get_if<std::shared_ptr<ArrayType>>(&src)) {
-            return std::make_shared<ArrayType>(**arr);
-        }
-        return src;
+        return std::visit(
+            [](const auto& held) -> DataVariant {
+                using Held = std::decay_t<decltype(held)>;
+                if constexpr (std::is_same_v<Held, std::unique_ptr<ObjectType>>) {
+                    // A moved-from Value holds a null pointer.
+                    return held ? std::make_unique<ObjectType>(*held) : std::make_unique<ObjectType>();
+                }
+                else if constexpr (std::is_same_v<Held, std::unique_ptr<ArrayType>>) {
+                    return held ? std::make_unique<ArrayType>(*held) : std::make_unique<ArrayType>();
+                }
+                else {
+                    return held;
+                }
+            },
+            src);
     }
 
     static void EscapeString(std::ostringstream& stream, const std::string& str)
@@ -649,7 +658,7 @@ private:
             stream << '}';
         }
         else if (IsArray()) {
-            const auto& arr = *std::get<std::shared_ptr<ArrayType>>(data_);
+            const auto& arr = *std::get<std::unique_ptr<ArrayType>>(data_);
             stream << '[';
             bool first = true;
             for (const auto& val : arr) {
