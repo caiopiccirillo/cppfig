@@ -293,6 +293,41 @@ public:
         return std::nullopt;
     }
 
+    /// @brief Extracts the stored value as @p T, or nullopt if it is not one.
+    ///
+    /// The library's error model is Status and std::optional everywhere else;
+    /// this is the accessor to reach for in @c ConfigTraits specialisations and
+    /// anywhere the stored kind is not already known, so a type mismatch does
+    /// not have to be handled as an exception.
+    template <typename T>
+    [[nodiscard]] auto TryGet() const -> std::optional<T>
+    {
+        if constexpr (std::is_same_v<T, bool>) {
+            if (!IsBoolean()) {
+                return std::nullopt;
+            }
+        }
+        else if constexpr (std::is_same_v<T, int> || std::is_same_v<T, std::int64_t>) {
+            if (!IsInteger()) {
+                return std::nullopt;
+            }
+        }
+        else if constexpr (std::is_same_v<T, double> || std::is_same_v<T, float>) {
+            if (!IsNumber()) {
+                return std::nullopt;
+            }
+        }
+        else if constexpr (std::is_same_v<T, std::string>) {
+            if (!IsString()) {
+                return std::nullopt;
+            }
+        }
+        else {
+            static_assert(sizeof(T) == 0, "Unsupported type for Value::TryGet<T>()");
+        }
+        return Get<T>();
+    }
+
     /// @brief Checks whether the given key exists in an object value.
     [[nodiscard]] auto Contains(std::string_view key) const -> bool
     {

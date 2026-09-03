@@ -267,12 +267,12 @@ struct cppfig::ConfigTraits<Point> {
         return obj;
     }
     static auto Deserialize(const cppfig::Value& v) -> std::optional<Point> {
-        try {
-            return Point{static_cast<int>(v["x"].Get<int64_t>()),
-                         static_cast<int>(v["y"].Get<int64_t>())};
-        } catch (...) {
+        auto x = v["x"].TryGet<int>();
+        auto y = v["y"].TryGet<int>();
+        if (!x || !y) {
             return std::nullopt;
         }
+        return Point{*x, *y};
     }
     static auto ToString(const Point& p) -> std::string {
         return "(" + std::to_string(p.x) + "," + std::to_string(p.y) + ")";
