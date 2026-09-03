@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build-and-test:
-    name: Build & Test (${{ matrix.compiler }})
+    name: Build & Test (${{ matrix.preset }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -21,8 +21,16 @@ jobs:
         include:
           - compiler: clang
             preset: debug-clang
+            build_dir: debug/clang
           - compiler: gcc
             preset: debug-gcc
+            build_dir: debug/gcc
+          - compiler: clang
+            preset: release-clang
+            build_dir: release/clang
+          - compiler: gcc
+            preset: release-gcc
+            build_dir: release/gcc
 
     steps:
       - uses: actions/checkout@v4
@@ -42,27 +50,108 @@ jobs:
             ./third/vcpkg/bootstrap-vcpkg.sh
             cmake --workflow --preset=${{ matrix.preset }}
             mkdir -p build/test-results
-            ./build/debug/${{ matrix.compiler }}/test/unit_test \
+            ./build/${{ matrix.build_dir }}/test/unit_test \
               --gtest_output=xml:build/test-results/unit_test.xml
-            ./build/debug/${{ matrix.compiler }}/test/integration_test \
+            ./build/${{ matrix.build_dir }}/test/integration_test \
               --gtest_output=xml:build/test-results/integration_test.xml
-            ./build/debug/${{ matrix.compiler }}/test/thread_safety_test \
+            ./build/${{ matrix.build_dir }}/test/thread_safety_test \
               --gtest_output=xml:build/test-results/thread_safety_test.xml
 
       - name: Upload test results
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.compiler }}
+          name: test-results-${{ matrix.preset }}
           path: build/test-results/*.xml
 
       - name: Publish test report
         if: success() || failure()
         uses: dorny/test-reporter@v1
         with:
-          name: Test Results (${{ matrix.compiler }})
+          name: Test Results (${{ matrix.preset }})
           path: build/test-results/*.xml
           reporter: java-junit
+
+  sanitizers:
+    name: Sanitizers (${{ matrix.sanitizer }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sanitizer: asan-ubsan
+            preset: sanitize-clang
+          - sanitizer: tsan
+            preset: tsan-clang
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Unshallow vcpkg submodule
+        run: git -C third/vcpkg fetch --unshallow
+
+      - name: Build and test under sanitizers
+        uses: devcontainers/ci@v0.3
+        with:
+          imageName: ghcr.io/${{ github.repository }}/devcontainer
+          cacheFrom: ghcr.io/${{ github.repository }}/devcontainer
+          push: never
+          runCmd: |
+            ./third/vcpkg/bootstrap-vcpkg.sh
+            cmake --workflow --preset=${{ matrix.preset }}
+
+  static-analysis:
+    name: Static analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Unshallow vcpkg submodule
+        run: git -C third/vcpkg fetch --unshallow
+
+      - name: Run clang-format and clang-tidy
+        uses: devcontainers/ci@v0.3
+        with:
+          imageName: ghcr.io/${{ github.repository }}/devcontainer
+          cacheFrom: ghcr.io/${{ github.repository }}/devcontainer
+          push: never
+          runCmd: |
+            ./third/vcpkg/bootstrap-vcpkg.sh
+            git ls-files '*.h' '*.cpp' | xargs clang-format --dry-run --Werror
+            cmake --preset=config-debug-clang
+            run-clang-tidy -p build/debug/clang -quiet \
+              $(git ls-files 'src/*.h' 'test/*.cpp' 'examples/*.cpp')
+
+  consumer:
+    name: Consume as a package
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Unshallow vcpkg submodule
+        run: git -C third/vcpkg fetch --unshallow
+
+      - name: Install and consume via find_package
+        uses: devcontainers/ci@v0.3
+        with:
+          imageName: ghcr.io/${{ github.repository }}/devcontainer
+          cacheFrom: ghcr.io/${{ github.repository }}/devcontainer
+          push: never
+          runCmd: |
+            ./third/vcpkg/bootstrap-vcpkg.sh
+            cmake --preset=config-release-clang -DCMAKE_INSTALL_PREFIX="$PWD/build/install"
+            cmake --build build/release/clang
+            cmake --install build/release/clang
+            test -f build/install/lib/cmake/cppfig/cppfig-config.cmake
+            test -f build/install/include/cppfig/thread_policy.h
 
   coverage:
     name: Coverage

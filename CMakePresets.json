@@ -62,6 +62,40 @@
             }
         },
         {
+            "name": "config-sanitize-clang",
+            "displayName": "Sanitizers Clang",
+            "description": "Configure debug build with AddressSanitizer and UndefinedBehaviorSanitizer",
+            "binaryDir": "${sourceDir}/build/sanitize/clang",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_C_COMPILER": "/usr/local/bin/clang",
+                "CMAKE_CXX_COMPILER": "/usr/local/bin/clang++",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "STRICT_BUILD": "ON",
+                "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all",
+                "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+            }
+        },
+        {
+            "name": "config-tsan-clang",
+            "displayName": "ThreadSanitizer Clang",
+            "description": "Configure debug build with ThreadSanitizer",
+            "binaryDir": "${sourceDir}/build/tsan/clang",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_C_COMPILER": "/usr/local/bin/clang",
+                "CMAKE_CXX_COMPILER": "/usr/local/bin/clang++",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "STRICT_BUILD": "ON",
+                "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer",
+                "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=thread"
+            }
+        },
+        {
             "name": "config-coverage",
             "displayName": "Coverage",
             "description": "Configure build with code coverage enabled",
@@ -119,6 +153,18 @@
             "description": "Build release version with GCC"
         },
         {
+            "name": "build-sanitize-clang",
+            "configurePreset": "config-sanitize-clang",
+            "displayName": "Sanitizers Clang",
+            "description": "Build with ASan and UBSan enabled"
+        },
+        {
+            "name": "build-tsan-clang",
+            "configurePreset": "config-tsan-clang",
+            "displayName": "ThreadSanitizer Clang",
+            "description": "Build with ThreadSanitizer enabled"
+        },
+        {
             "name": "build-coverage",
             "configurePreset": "config-coverage",
             "displayName": "Coverage",
@@ -156,6 +202,18 @@
             "configurePreset": "config-release-gcc",
             "displayName": "Test Release GCC",
             "description": "Test release version with GCC"
+        },
+        {
+            "name": "test-sanitize-clang",
+            "configurePreset": "config-sanitize-clang",
+            "displayName": "Test Sanitizers Clang",
+            "description": "Run tests under ASan and UBSan"
+        },
+        {
+            "name": "test-tsan-clang",
+            "configurePreset": "config-tsan-clang",
+            "displayName": "Test ThreadSanitizer Clang",
+            "description": "Run tests under ThreadSanitizer"
         },
         {
             "name": "test-coverage",
@@ -217,6 +275,40 @@
                 {
                     "type": "build",
                     "name": "build-release-gcc"
+                }
+            ]
+        },
+        {
+            "name": "sanitize-clang",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "config-sanitize-clang"
+                },
+                {
+                    "type": "build",
+                    "name": "build-sanitize-clang"
+                },
+                {
+                    "type": "test",
+                    "name": "test-sanitize-clang"
+                }
+            ]
+        },
+        {
+            "name": "tsan-clang",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "config-tsan-clang"
+                },
+                {
+                    "type": "build",
+                    "name": "build-tsan-clang"
+                },
+                {
+                    "type": "test",
+                    "name": "test-tsan-clang"
                 }
             ]
         },
