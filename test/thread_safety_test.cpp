@@ -555,7 +555,8 @@ TEST_F(ThreadSafetyTest, ConcurrentVirtualInterface)
     ASSERT_TRUE(config.Load().ok());
     (void)config.Set<settings::Counter>(7);
 
-    IConfigurationProviderVirtual& vconfig = config;
+    VirtualConfigAdapter adapter(config);
+    IConfigurationProviderVirtual& vconfig = adapter;
 
     constexpr int k_iters = 1'000;
 
