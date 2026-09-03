@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <string_view>
 
@@ -493,6 +494,110 @@ TEST_F(ConfigurationIntegrationTest, ConfDoesNotCoerceOutOfRangeValues)
     Configuration<ConfSchema> config(file_path_);
     ASSERT_TRUE(config.Load().ok());
     EXPECT_EQ(config.Get<conf_settings::Port>(), 8080);
+}
+
+TEST_F(ConfigurationIntegrationTest, ConfMigrationPreservesCommentsAndOrder)
+{
+    // Regression: migration regenerated the file from the Value tree, which
+    // alphabetised the keys and deleted every comment the user had written.
+    {
+        std::ofstream file(file_path_);
+        file << "# ports for the edge cluster\n"
+                "app.port = 9000\n"
+                "\n"
+                "# release channel\n"
+                "app.version = \"2.1\"\n";
+    }
+
+    // app.flag is in the schema but not in the file, so Load migrates.
+    Configuration<ConfSchema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+
+    std::ifstream reread(file_path_);
+    const std::string contents((std::istreambuf_iterator<char>(reread)), std::istreambuf_iterator<char>());
+
+    EXPECT_NE(contents.find("# ports for the edge cluster"), std::string::npos);
+    EXPECT_NE(contents.find("# release channel"), std::string::npos);
+
+    // The user's ordering survives: app.port still precedes app.version,
+    // which alphabetical regeneration would have reversed.
+    const auto port_pos = contents.find("app.port");
+    const auto version_pos = contents.find("app.version");
+    ASSERT_NE(port_pos, std::string::npos);
+    ASSERT_NE(version_pos, std::string::npos);
+    EXPECT_LT(port_pos, version_pos);
+
+    // The new setting is appended.
+    EXPECT_NE(contents.find("app.flag"), std::string::npos);
+
+    EXPECT_EQ(config.Get<conf_settings::Port>(), 9000);
+    EXPECT_EQ(config.Get<conf_settings::Version>(), "2.1");
+}
+
+TEST_F(ConfigurationIntegrationTest, ConfSaveWithNoChangesLeavesTheFileByteIdentical)
+{
+    const std::string original = "# hand written\n"
+                                 "app.port   =   9000\n"
+                                 "app.version = \"2.1\"\n"
+                                 "app.flag = \"on\"\n";
+    {
+        std::ofstream file(file_path_);
+        file << original;
+    }
+
+    Configuration<ConfSchema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+    ASSERT_TRUE(config.Save().ok());
+
+    std::ifstream reread(file_path_);
+    const std::string contents((std::istreambuf_iterator<char>(reread)), std::istreambuf_iterator<char>());
+    EXPECT_EQ(contents, original);
+}
+
+TEST_F(ConfigurationIntegrationTest, ConfSaveRewritesOnlyTheChangedLine)
+{
+    {
+        std::ofstream file(file_path_);
+        file << "# hand written\n"
+                "app.port = 9000\n"
+                "app.version = \"2.1\"\n"
+                "app.flag = \"on\"\n";
+    }
+
+    Configuration<ConfSchema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+    ASSERT_TRUE(config.Set<conf_settings::Port>(1234).ok());
+    ASSERT_TRUE(config.Save().ok());
+
+    std::ifstream reread(file_path_);
+    const std::string contents((std::istreambuf_iterator<char>(reread)), std::istreambuf_iterator<char>());
+
+    EXPECT_EQ(contents,
+              "# hand written\n"
+              "app.port = 1234\n"
+              "app.version = \"2.1\"\n"
+              "app.flag = \"on\"\n");
+}
+
+TEST_F(ConfigurationIntegrationTest, ConfSaveKeepsSettingsTheSchemaNoLongerHas)
+{
+    {
+        std::ofstream file(file_path_);
+        file << "app.port = 9000\n"
+                "app.version = \"2.1\"\n"
+                "app.flag = \"on\"\n"
+                "app.retired = \"keep me\"\n";
+    }
+
+    Configuration<ConfSchema> config(file_path_);
+    ASSERT_TRUE(config.Load().ok());
+    ASSERT_TRUE(config.Save().ok());
+
+    std::ifstream reread(file_path_);
+    const std::string contents((std::istreambuf_iterator<char>(reread)), std::istreambuf_iterator<char>());
+
+    // Deleting a deprecated setting is the user's call, not the library's.
+    EXPECT_NE(contents.find("app.retired"), std::string::npos);
 }
 
 TEST_F(ConfigurationIntegrationTest, HierarchicalSettings)

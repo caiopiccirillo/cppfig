@@ -4,7 +4,9 @@
 #include <filesystem>
 #include <fstream>
 #include <istream>
+#include <iterator>
 #include <string>
+#include <string_view>
 
 #include "cppfig/status.h"
 #include "cppfig/value.h"
@@ -23,6 +25,17 @@ concept Serializer = requires(const Value& data, std::istream& is) {
     { S::Stringify(data) } -> std::convertible_to<std::string>;
 };
 
+/// @brief Concept for serializers that can update a document in place.
+///
+/// A flat, hand-editable format carries information the Value tree does not:
+/// comments, blank lines and the order the user chose. Serializers that can
+/// preserve those provide Merge, and WriteFile uses it in preference to
+/// regenerating the document from scratch.
+template <typename S>
+concept MergingSerializer = Serializer<S> && requires(std::string_view existing, const Value& data) {
+    { S::Merge(existing, data) } -> std::convertible_to<std::string>;
+};
+
 /// @brief Helper to read a file into a Value tree via a serializer.
 template <Serializer S>
 auto ReadFile(const std::string& path) -> StatusOr<Value>
@@ -32,6 +45,24 @@ auto ReadFile(const std::string& path) -> StatusOr<Value>
         return NotFoundError("Could not open file: " + path);
     }
     return S::Parse(file);
+}
+
+/// @brief Renders the file text for a Value tree.
+///
+/// When the serializer can merge and the file already exists, the existing
+/// document is updated in place so its comments and ordering survive;
+/// otherwise the document is generated from scratch.
+template <Serializer S>
+auto RenderFile(const std::string& path, const Value& data) -> std::string
+{
+    if constexpr (MergingSerializer<S>) {
+        std::ifstream existing(path);
+        if (existing.is_open()) {
+            const std::string text((std::istreambuf_iterator<char>(existing)), std::istreambuf_iterator<char>());
+            return S::Merge(text, data);
+        }
+    }
+    return S::Stringify(data);
 }
 
 /// @brief Helper to write a Value tree to a file via a serializer.
@@ -46,6 +77,8 @@ auto WriteFile(const std::string& path, const Value& data) -> Status
 {
     namespace fs = std::filesystem;
 
+    const std::string text = RenderFile<S>(path, data);
+
     const fs::path target(path);
     const fs::path temp_path = target.parent_path() / (target.filename().string() + ".tmp");
 
@@ -55,7 +88,7 @@ auto WriteFile(const std::string& path, const Value& data) -> Status
             return InternalError("Could not write to file: " + path);
         }
 
-        file << S::Stringify(data);
+        file << text;
         file.close();
 
         if (file.fail()) {

@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <istream>
+#include <map>
+#include <set>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -97,6 +99,70 @@ struct ConfSerializer {
         return stream.str();
     }
 
+    /// @brief Rewrites an existing `.conf` document, preserving its layout.
+    ///
+    /// Regenerating the file from the Value tree sorts the keys and drops
+    /// every comment the user wrote, which is user-hostile for a format whose
+    /// whole point is being hand-editable. Merge instead walks the existing
+    /// lines, updates the value of each key it recognises, leaves comments,
+    /// blank lines and ordering alone, and appends the keys the file does not
+    /// have yet.
+    ///
+    /// Lines whose value is unchanged are emitted verbatim, so a save that
+    /// changes nothing leaves the file byte-identical.
+    ///
+    /// @param existing The current file contents.
+    /// @param data The Value tree to write.
+    static auto Merge(std::string_view existing, const Value& data) -> std::string
+    {
+        std::vector<std::pair<std::string, const Value*>> leaves;
+        CollectLeaves(data, "", leaves);
+
+        std::map<std::string, const Value*, std::less<>> by_path;
+        for (const auto& [path, val] : leaves) {
+            by_path.emplace(path, val);
+        }
+
+        std::set<std::string, std::less<>> updated;
+        std::ostringstream out;
+        std::istringstream in { std::string(existing) };
+        std::string line;
+
+        while (std::getline(in, line)) {
+            auto trimmed = Trim(line);
+            auto eq_pos = line.find('=');
+
+            // Comments, blank lines and anything without a separator are the
+            // user's; pass them through untouched.
+            if (trimmed.empty() || trimmed[0] == '#' || eq_pos == std::string::npos) {
+                out << line << '\n';
+                continue;
+            }
+
+            const std::string key = Trim(line.substr(0, eq_pos));
+            auto entry = by_path.find(key);
+            if (entry == by_path.end()) {
+                // A key the schema no longer has. Removing it is the user's
+                // call, not ours.
+                out << line << '\n';
+                continue;
+            }
+
+            updated.insert(key);
+
+            const std::string rendered = ValueToString(*entry->second);
+            if (InferValue(Trim(line.substr(eq_pos + 1))) == *entry->second) {
+                out << line << '\n';  // unchanged — keep the user's spacing
+            }
+            else {
+                out << line.substr(0, eq_pos + 1) << ' ' << rendered << '\n';
+            }
+        }
+
+        AppendMissing(out, leaves, updated);
+        return out.str();
+    }
+
 private:
     /// @brief Trims leading/trailing whitespace.
     static auto Trim(std::string_view sv) -> std::string
@@ -185,6 +251,24 @@ private:
             return str;
         }
         return "";
+    }
+
+    /// @brief Appends the settings the existing document did not contain.
+    static void AppendMissing(std::ostringstream& out,
+                              const std::vector<std::pair<std::string, const Value*>>& leaves,
+                              const std::set<std::string, std::less<>>& updated)
+    {
+        bool wrote_header = false;
+        for (const auto& [path, val] : leaves) {
+            if (updated.contains(path)) {
+                continue;
+            }
+            if (!wrote_header) {
+                out << "\n# Added by cppfig\n";
+                wrote_header = true;
+            }
+            out << path << " = " << ValueToString(*val) << '\n';
+        }
     }
 
     /// @brief Recursively collects all leaf (path, Value*) pairs.
