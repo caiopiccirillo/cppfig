@@ -219,6 +219,38 @@ TEST(JsonSerializerTest, EmptyArrayStaysEmpty)
     EXPECT_TRUE((*parsed)["a"].Elements().empty());
 }
 
+TEST(JsonSerializerTest, TryGetReturnsNulloptOnTypeMismatch)
+{
+    // Get<T>() throws on a mismatch, which forced every documented
+    // ConfigTraits example to wrap it in catch (...).
+    const Value text("hello");
+    EXPECT_EQ(text.TryGet<std::string>(), "hello");
+    EXPECT_EQ(text.TryGet<int>(), std::nullopt);
+    EXPECT_EQ(text.TryGet<bool>(), std::nullopt);
+    EXPECT_EQ(text.TryGet<double>(), std::nullopt);
+
+    const Value number(42);
+    EXPECT_EQ(number.TryGet<int>(), 42);
+    EXPECT_EQ(number.TryGet<std::int64_t>(), 42);
+    EXPECT_EQ(number.TryGet<std::string>(), std::nullopt);
+
+    // A missing key yields the static null Value, which matches nothing.
+    const auto object = Value::Object();
+    EXPECT_EQ(object["absent"].TryGet<std::string>(), std::nullopt);
+}
+
+TEST(JsonSerializerTest, TryGetWidensNumbersLikeGet)
+{
+    const Value integer(7);
+    ASSERT_TRUE(integer.TryGet<double>().has_value());
+    EXPECT_DOUBLE_EQ(*integer.TryGet<double>(), 7.0);
+
+    const Value real(2.5);
+    ASSERT_TRUE(real.TryGet<float>().has_value());
+    EXPECT_FLOAT_EQ(*real.TryGet<float>(), 2.5F);
+    EXPECT_EQ(real.TryGet<int>(), std::nullopt);
+}
+
 TEST(ValidatorTest, MinValidator)
 {
     auto validator = Min(5);

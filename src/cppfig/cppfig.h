@@ -133,12 +133,10 @@
 ///         return obj;
 ///     }
 ///     static auto Deserialize(const cppfig::Value& v) -> std::optional<DatabaseConfig> {
-///         try {
-///             return DatabaseConfig{
-///                 v["host"].Get<std::string>(),
-///                 static_cast<int>(v["port"].Get<int64_t>())
-///             };
-///         } catch (...) { return std::nullopt; }
+///         auto host = v["host"].TryGet<std::string>();
+///         auto port = v["port"].TryGet<int>();
+///         if (!host || !port) { return std::nullopt; }
+///         return DatabaseConfig{*host, *port};
 ///     }
 ///     static auto ToString(const DatabaseConfig& c) -> std::string {
 ///         return c.host + ":" + std::to_string(c.port);

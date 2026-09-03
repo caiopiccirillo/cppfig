@@ -27,16 +27,19 @@ struct cppfig::ConfigTraits<Color> {
 
     // Deserialize from a cppfig::Value
     static auto Deserialize(const cppfig::Value& val) -> std::optional<Color> {
-        try {
-            return Color{
-                static_cast<uint8_t>(val["r"].Get<int64_t>()),
-                static_cast<uint8_t>(val["g"].Get<int64_t>()),
-                static_cast<uint8_t>(val["b"].Get<int64_t>()),
-                static_cast<uint8_t>(val["a"].Get<int64_t>())
-            };
-        } catch (...) {
+        auto r = val["r"].TryGet<int>();
+        auto g = val["g"].TryGet<int>();
+        auto b = val["b"].TryGet<int>();
+        auto a = val["a"].TryGet<int>();
+        if (!r || !g || !b || !a) {
             return std::nullopt;
         }
+        return Color{
+            static_cast<uint8_t>(*r),
+            static_cast<uint8_t>(*g),
+            static_cast<uint8_t>(*b),
+            static_cast<uint8_t>(*a)
+        };
     }
 
     // Convert to string (for logging/debugging)
@@ -147,15 +150,13 @@ struct cppfig::ConfigTraits<ServerEndpoint> {
     }
 
     static auto Deserialize(const cppfig::Value& val) -> std::optional<ServerEndpoint> {
-        try {
-            return ServerEndpoint{
-                val["host"].Get<std::string>(),
-                static_cast<int>(val["port"].Get<int64_t>()),
-                val["use_ssl"].Get<bool>()
-            };
-        } catch (...) {
+        auto host = val["host"].TryGet<std::string>();
+        auto port = val["port"].TryGet<int>();
+        auto use_ssl = val["use_ssl"].TryGet<bool>();
+        if (!host || !port || !use_ssl) {
             return std::nullopt;
         }
+        return ServerEndpoint{*host, *port, *use_ssl};
     }
 
     static auto ToString(const ServerEndpoint& e) -> std::string {
