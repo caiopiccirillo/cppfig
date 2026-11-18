@@ -1,489 +1,304 @@
 #pragma once
 
+#include <array>
+#include <bitset>
+#include <cstddef>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "cppfig/conf.h"
-#include "cppfig/diff.h"
-#include "cppfig/interface.h"
-#include "cppfig/logging.h"
-#include "cppfig/serializer.h"
-#include "cppfig/setting.h"
-#include "cppfig/thread_policy.h"
-#include "cppfig/traits.h"
-#include "cppfig/value.h"
+#include "cppfig/schema.h"
+#include "cppfig/status.h"
 
 namespace cppfig {
 
-/// @brief Main configuration manager.
+/// @brief An initialized, immutable configuration with direct typed storage.
 ///
-/// This class manages configuration values with:
-/// - Compile-time type-safe access via setting types
-/// - Environment variable overrides
-/// - Validation
-/// - Automatic file creation with defaults
-/// - Schema migration (adding new settings)
-/// - Optional thread safety via a pluggable ThreadPolicy
-///
-/// Thread Safety:
-/// By default, the class uses @c SingleThreadedPolicy (zero overhead).
-/// For concurrent access from multiple threads, specify @c MultiThreadedPolicy:
-///
-/// @code
-/// // Single-threaded (default, zero overhead):
-/// cppfig::Configuration<MySchema> config("config.json");
-///
-/// // Thread-safe (reader-writer locking):
-/// cppfig::Configuration<MySchema, cppfig::JsonSerializer, cppfig::MultiThreadedPolicy>
-///     config("config.json");
-/// @endcode
-///
-/// With @c MultiThreadedPolicy:
-/// - Multiple threads may call @c Get concurrently (shared/reader lock).
-/// - Calls to @c Set, @c Load mutate internal state under an exclusive/writer lock.
-/// - @c Save also takes the exclusive lock: it rewrites the file, so
-///   concurrent savers would race over the same path.
-/// - @c Diff and @c ValidateAll acquire a shared/reader lock.
-/// - Validation in @c Set is performed *before* acquiring the exclusive lock.
-///
-/// Usage:
-/// @code
-/// // Define settings
-/// struct AppName {
-///     static constexpr std::string_view path = "app.name";
-///     using value_type = std::string;
-///     static auto default_value() -> std::string { return "MyApp"; }
-/// };
-///
-/// struct ServerPort {
-///     static constexpr std::string_view path = "server.port";
-///     static constexpr std::string_view env_override = "SERVER_PORT";
-///     using value_type = int;
-///     static auto default_value() -> int { return 8080; }
-///     static auto validator() -> Validator<int> { return Range(1, 65535); }
-/// };
-///
-/// // Create schema and configuration
-/// using MySchema = ConfigSchema<AppName, ServerPort>;
-/// Configuration<MySchema> config("config.json");
-///
-/// // Load and use
-/// config.Load();
-/// std::string name = config.Get<AppName>();
-/// int port = config.Get<ServerPort>();
-/// config.Set<ServerPort>(9000);
-/// config.Save();
-/// @endcode
-///
-/// @tparam Schema The ConfigSchema type defining all settings.
-/// @tparam SerializerT The serializer to use (defaults to ConfSerializer).
-/// @tparam ThreadPolicy The threading policy (defaults to SingleThreadedPolicy).
-/// For type-erased access, wrap an instance in @c VirtualConfigAdapter rather
-/// than deriving from @c IConfigurationProviderVirtual here: a virtual base
-/// would put a vptr on every configuration, including the single-threaded,
-/// non-polymorphic default.
-template <typename Schema, Serializer SerializerT = ConfSerializer, typename ThreadPolicy = SingleThreadedPolicy>
-class Configuration : public IConfigurationProvider<Configuration<Schema, SerializerT, ThreadPolicy>, Schema> {
+/// Construction succeeds only after every default, file value and environment
+/// override has been parsed and validated. Get performs one compile-time tuple
+/// access and returns a reference tied to this object's lifetime.
+template <typename RegistryType>
+class Configuration {
 public:
-    using serializer_type = SerializerT;
-    using data_type = Value;
+    using registry_type = RegistryType;
+    using values_type = typename RegistryType::values_type;
 
-    /// @brief Creates a configuration manager with a file path.
-    ///
-    /// @param file_path Path to the configuration file.
-    explicit Configuration(std::string file_path)
-        : file_path_(std::move(file_path))
-        , file_values_(Value::Object())
+    Configuration(const Configuration&) = delete;
+    auto operator=(const Configuration&) -> Configuration& = delete;
+    Configuration(Configuration&&) = default;
+    auto operator=(Configuration&&) -> Configuration& = default;
+
+    /// Loads a flat .conf file and captures environment overrides once.
+    /// A missing file is represented by defaults in memory; call Save to create it.
+    [[nodiscard]] static auto Load(std::string file_path) -> StatusOr<Configuration>
     {
-        BuildDefaults();
-    }
+        if (file_path.empty()) {
+            return InvalidArgumentError("Configuration file path must not be empty");
+        }
 
-    /// @brief Gets the value for a setting type.
-    ///
-    /// Resolution order:
-    /// 1. Environment variable (if configured)
-    /// 2. File value (if present)
-    /// 3. Default value
-    ///
-    /// Thread safety: acquires a shared (reader) lock when reading file values.
-    template <IsSetting S>
-        requires(Schema::template has_setting<S>)
-    [[nodiscard]] auto GetImpl() const -> typename S::value_type
-    {
-        using value_type = typename S::value_type;
+        InitializationState state;
+        std::error_code error;
+        const bool exists = std::filesystem::exists(file_path, error);
+        if (error) {
+            return InternalError("Failed to inspect configuration file '" + file_path + "': " + error.message());
+        }
 
-        // 1. Check environment variable (no lock needed — no mutable state accessed)
-        constexpr auto env_override = GetEnvOverride<S>();
-        if constexpr (!env_override.empty()) {
-            if (const char* env_value = std::getenv(std::string(env_override).c_str())) {
-                auto parsed = ConfigTraits<value_type>::FromString(env_value);
-                if (!parsed.has_value()) {
-                    Logger::WarnF("Failed to parse environment variable %.*s='%s', using fallback",
-                                  static_cast<int>(env_override.size()), env_override.data(), env_value);
-                }
-                else {
-                    // An override that fails the setting's own validator must
-                    // not slip through unchecked; fall back and say so.
-                    auto validation = GetSettingValidator<S>()(*parsed);
-                    if (validation) {
-                        return *parsed;
-                    }
-                    Logger::WarnF("Environment variable %.*s='%s' is invalid (%s), using fallback",
-                                  static_cast<int>(env_override.size()), env_override.data(), env_value,
-                                  validation.error_message.c_str());
-                }
+        if (exists) {
+            std::ifstream input(file_path, std::ios::binary);
+            if (!input.is_open()) {
+                return InternalError("Failed to open configuration file '" + file_path + "'");
+            }
+            state.document.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+            if (input.bad()) {
+                return InternalError("Failed to read configuration file '" + file_path + "'");
             }
         }
 
-        // 2. Check file value (shared lock — concurrent readers allowed)
+        auto parse_status = ParseDocument(state);
+        if (!parse_status.ok()) {
+            return parse_status;
+        }
+
+        auto values = BuildValues(state, true);
+        if (!values.ok()) {
+            return std::move(values).status();
+        }
+
+        AppendMigrations(state);
+        return Configuration(std::move(file_path), std::move(values).value(), std::move(state.document));
+    }
+
+    /// Creates a configuration from defaults without file or environment input.
+    [[nodiscard]] static auto FromDefaults() -> StatusOr<Configuration>
+    {
+        InitializationState state;
+        auto values = BuildValues(state, false);
+        if (!values.ok()) {
+            return std::move(values).status();
+        }
+        AppendMigrations(state);
+        return Configuration({}, std::move(values).value(), std::move(state.document));
+    }
+
+    template <typename S>
+        requires(RegistryType::template has_setting<S>)
+    [[nodiscard]] auto Get() const noexcept -> const typename S::value_type&
+    {
+        return values_.template Get<RegistryType::template index<S>>();
+    }
+
+    /// Atomically persists the retained source document and any migrations.
+    /// Environment overrides are intentionally not serialized.
+    [[nodiscard]] auto Save() const -> Status
+    {
+        if (file_path_.empty()) {
+            return InvalidArgumentError("Cannot save a configuration that has no file path");
+        }
+
+        namespace fs = std::filesystem;
+        const fs::path destination(file_path_);
+        if (destination.has_parent_path()) {
+            std::error_code error;
+            fs::create_directories(destination.parent_path(), error);
+            if (error) {
+                return InternalError("Failed to create configuration directory: " + error.message());
+            }
+        }
+
+        fs::path temporary = destination;
+        temporary += ".cppfig.tmp";
         {
-            typename ThreadPolicy::shared_lock lock(mutex_);
-            auto file_result = file_values_.GetAtPath(S::path);
-            if (file_result.ok()) {
-                auto parsed = ConfigTraits<value_type>::Deserialize(*file_result);
-                if (parsed.has_value()) {
-                    return *parsed;
-                }
-                Logger::WarnF("Failed to parse file value for '%.*s', using default",
-                              static_cast<int>(S::path.size()), S::path.data());
+            std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+            if (!output.is_open()) {
+                return InternalError("Failed to open temporary configuration file '" + temporary.string() + "'");
+            }
+            output.write(document_.data(), static_cast<std::streamsize>(document_.size()));
+            output.flush();
+            if (!output) {
+                output.close();
+                std::error_code error;
+                fs::remove(temporary, error);
+                return InternalError("Failed to write temporary configuration file '" + temporary.string() + "'");
             }
         }
 
-        // 3. Return default value (immutable after construction — no lock needed)
-        return S::default_value();
-    }
-
-    /// @brief Reports whether an environment variable is overriding a setting.
-    ///
-    /// An override wins over the file value, so @c Set on such a setting is
-    /// recorded and saved but will not be what @c Get returns. Callers that
-    /// need to know can ask before writing.
-    template <IsSetting S>
-        requires(Schema::template has_setting<S>)
-    [[nodiscard]] auto IsOverriddenImpl() const -> bool
-    {
-        constexpr auto env_override = GetEnvOverride<S>();
-        if constexpr (env_override.empty()) {
-            return false;
+        std::error_code error;
+        fs::rename(temporary, destination, error);
+        if (error) {
+            fs::remove(temporary, error);
+            return InternalError("Failed to replace configuration file '" + file_path_ + "'");
         }
-        else {
-            return std::getenv(std::string(env_override).c_str()) != nullptr;
-        }
-    }
-
-    /// @brief Sets the value for a setting type.
-    ///
-    /// The value is stored and will be written by @c Save. If an environment
-    /// override is shadowing the setting, @c Get will keep returning the
-    /// override; that is logged, and @c IsOverridden reports it up front.
-    ///
-    /// Thread safety: validation runs without holding any lock; the actual
-    /// mutation of internal state acquires an exclusive (writer) lock.
-    template <IsSetting S>
-        requires(Schema::template has_setting<S>)
-    auto SetImpl(typename S::value_type value) -> Status
-    {
-        using value_type = typename S::value_type;
-
-        // Validate the value *before* acquiring the exclusive lock
-        auto validator = GetSettingValidator<S>();
-        auto validation = validator(value);
-        if (!validation) {
-            return InvalidArgumentError(validation.error_message);
-        }
-
-        // Returning OK from a write the next read will ignore is a trap.
-        constexpr auto env_override = GetEnvOverride<S>();
-        if constexpr (!env_override.empty()) {
-            if (IsOverriddenImpl<S>()) {
-                Logger::WarnF("Set('%.*s') stored, but %.*s is overriding it and Get will return the override",
-                              static_cast<int>(S::path.size()), S::path.data(),
-                              static_cast<int>(env_override.size()), env_override.data());
-            }
-        }
-
-        // Set the value under exclusive lock
-        typename ThreadPolicy::unique_lock lock(mutex_);
-        auto serialized = ConfigTraits<value_type>::Serialize(value);
-        file_values_.SetAtPath(S::path, serialized);
-
         return OkStatus();
     }
 
-    /// @brief Loads configuration from the file.
-    ///
-    /// Thread safety: acquires an exclusive (writer) lock for the entire
-    /// operation because it mutates @c file_values_.
-    [[nodiscard]] auto LoadImpl() -> Status
-    {
-        typename ThreadPolicy::unique_lock lock(mutex_);
-        return LoadUnlocked();
-    }
+    [[nodiscard]] auto GetFilePath() const noexcept -> std::string_view { return file_path_; }
 
-    /// @brief Saves the current configuration to the file.
-    ///
-    /// Thread safety: acquires an exclusive (writer) lock. Although only
-    /// @c file_values_ is read, the call also rewrites the file, and two
-    /// threads holding a shared lock would race over the same path.
-    /// Serializing saves costs nothing next to the file I/O they perform.
-    [[nodiscard]] auto SaveImpl() const -> Status
-    {
-        typename ThreadPolicy::unique_lock lock(mutex_);
-        return SaveUnlocked();
-    }
-
-    /// @brief Returns the diff between file values and defaults.
-    ///
-    /// Thread safety: acquires a shared (reader) lock.
-    [[nodiscard]] auto DiffImpl() const -> ConfigDiff
-    {
-        typename ThreadPolicy::shared_lock lock(mutex_);
-        return DiffFileFromDefaults(defaults_, file_values_);
-    }
-
-    /// @brief Validates all current values against their validators.
-    ///
-    /// Thread safety: acquires a shared (reader) lock.
-    [[nodiscard]] auto ValidateAllImpl() const -> Status
-    {
-        typename ThreadPolicy::shared_lock lock(mutex_);
-        return ValidateAllUnlocked();
-    }
-
-    /// @brief Returns the file path.
-    ///
-    /// Thread safety: @c file_path_ is immutable after construction — no lock needed.
-    [[nodiscard]] auto GetFilePathImpl() const -> std::string_view { return file_path_; }
-
-    /// @brief Returns a snapshot of the current file values.
-    ///
-    /// Returned by value: handing out a reference to @c file_values_ let it
-    /// escape the lock that guards it, so a reader could observe a tree being
-    /// mutated by @c Set or @c Load.
-    ///
-    /// Thread safety: acquires a shared (reader) lock.
-    [[nodiscard]] auto GetFileValues() const -> Value
-    {
-        typename ThreadPolicy::shared_lock lock(mutex_);
-        return file_values_;
-    }
-
-    /// @brief Returns a snapshot of the default values.
-    ///
-    /// Thread safety: @c defaults_ is immutable after construction — safe to call
-    /// concurrently without synchronization.
-    [[nodiscard]] auto GetDefaults() const -> Value { return defaults_; }
+    /// Returns the preserved source text, including not-yet-saved migrations.
+    [[nodiscard]] auto GetSourceText() const noexcept -> std::string_view { return document_; }
 
 private:
-    /// @brief Loads configuration from the file (caller must hold exclusive lock).
-    [[nodiscard]] auto LoadUnlocked() -> Status
+    using candidate_storage = typename RegistryType::template held_values_type<std::optional>;
+
+
+    struct InitializationState {
+        candidate_storage file_values;
+        std::bitset<RegistryType::size> seen;
+        std::string document;
+        std::string migrations;
+    };
+
+    using ParseFunction = auto (*)(std::string_view, InitializationState&) -> Status;
+
+    Configuration(std::string file_path, values_type values, std::string document)
+        : values_(std::move(values))
+        , file_path_(std::move(file_path))
+        , document_(std::move(document))
     {
-        namespace fs = std::filesystem;
-
-        if (!fs::exists(file_path_)) {
-            // File doesn't exist - create with defaults
-            Logger::InfoF("Configuration file '%s' not found, creating with defaults", file_path_.c_str());
-            file_values_ = defaults_;
-            auto save_status = SaveUnlocked();
-            if (!save_status.ok()) {
-                return save_status;
-            }
-            return ValidateFileValuesUnlocked();
-        }
-
-        // Load existing file
-        auto result = ReadFile<SerializerT>(file_path_);
-        if (!result.ok()) {
-            return result.status();
-        }
-
-        file_values_ = *result;
-        CoerceToSchemaTypes();
-
-        // Check for schema migration (new settings in defaults not in file)
-        auto diff = DiffDefaultsFromFile(defaults_, file_values_);
-        auto added = diff.Added();
-
-        if (!added.empty()) {
-            Logger::Warn("New settings detected in schema, adding to configuration file:");
-            for (const auto& entry : added) {
-                Logger::WarnF("  - %s = %s", entry.path.c_str(), entry.new_value.c_str());
-                // Copy the default value directly from the defaults tree
-                auto default_val = defaults_.GetAtPath(entry.path);
-                if (default_val.ok()) {
-                    file_values_.SetAtPath(entry.path, *default_val);
-                }
-            }
-
-            // Save the updated configuration
-            auto save_status = SaveUnlocked();
-            if (!save_status.ok()) {
-                Logger::ErrorF("Failed to save migrated configuration: %s",
-                               std::string(save_status.message()).c_str());
-                return save_status;
-            }
-        }
-
-        // A successful Load must leave the configuration holding only values
-        // the schema accepts; otherwise every caller of Get inherits an
-        // invalid value that nothing ever objected to.
-        return ValidateFileValuesUnlocked();
     }
 
-    /// @brief Saves the current configuration to the file (caller must hold the exclusive lock).
-    [[nodiscard]] auto SaveUnlocked() const -> Status
+    [[nodiscard]] static auto ParseDocument(InitializationState& state) -> Status
     {
-        namespace fs = std::filesystem;
-
-        // Create parent directories if needed
-        fs::path path(file_path_);
-        if (path.has_parent_path()) {
-            std::error_code error_code;
-            fs::create_directories(path.parent_path(), error_code);
-            if (error_code) {
-                return InternalError("Failed to create directory: " + error_code.message());
+        return ConfParser::ForEachEntry(state.document, [&state](const ConfEntry& entry) -> Status {
+            const std::size_t index = RegistryType::FindPath(entry.path);
+            if (index == RegistryType::size) {
+                return InvalidArgumentError("Unknown configuration setting '" + std::string(entry.path) + "' on line " +
+                                            std::to_string(entry.line));
             }
-        }
+            if (state.seen.test(index)) {
+                return InvalidArgumentError("Duplicate configuration setting '" + std::string(entry.path) + "' on line " +
+                                            std::to_string(entry.line));
+            }
+            state.seen.set(index);
 
-        return WriteFile<SerializerT>(file_path_, file_values_);
-    }
-
-    /// @brief Validates the loaded file values (caller must hold at least a shared lock).
-    ///
-    /// Covers only what @c Load read, so a successful @c Load does not depend
-    /// on the ambient environment.
-    [[nodiscard]] auto ValidateFileValuesUnlocked() const -> Status
-    {
-        Status status = OkStatus();
-
-        Schema::ForEachSetting([this, &status]<typename S>() {
+            auto status = parse_functions[index](entry.text, state);
             if (!status.ok()) {
-                return;  // Stop on first error
+                return InvalidArgumentError(std::string(status.message()) + " for '" + std::string(entry.path) + "' on line " +
+                                            std::to_string(entry.line));
             }
-
-            using value_type = typename S::value_type;
-            auto file_result = file_values_.GetAtPath(S::path);
-            if (!file_result.ok()) {
-                return;
-            }
-
-            auto parsed = ConfigTraits<value_type>::Deserialize(*file_result);
-            if (!parsed.has_value()) {
-                return;
-            }
-
-            auto validation = GetSettingValidator<S>()(*parsed);
-            if (!validation) {
-                status = InvalidArgumentError(std::string(S::path) + ": " + validation.error_message);
-            }
+            return OkStatus();
         });
-
-        return status;
     }
 
-    /// @brief Validates all values (caller must hold at least a shared lock).
-    ///
-    /// Checks every source that can supply a value: the environment override,
-    /// if one is set, and the file value. @c Get falls back past an invalid
-    /// override so the process keeps running, but the operator still has to
-    /// be able to find out that the override is wrong.
-    [[nodiscard]] auto ValidateAllUnlocked() const -> Status
+    template <std::size_t I>
+    [[nodiscard]] static auto ParseOne(std::string_view text, InitializationState& state) -> Status
     {
-        Status status = ValidateEnvOverridesUnlocked();
-        if (!status.ok()) {
-            return status;
+        using Setting = typename RegistryType::template SettingAt<I>;
+        using Value = typename Setting::value_type;
+        auto parsed = ConfigTraits<Value>::FromString(text);
+        if (!parsed) {
+            return InvalidArgumentError("Cannot parse value '" + std::string(text) + "'");
         }
-        return ValidateFileValuesUnlocked();
+        state.file_values.template Get<I>().emplace(std::move(*parsed));
+        return OkStatus();
     }
 
-    /// @brief Validates the environment overrides that are currently set.
-    [[nodiscard]] auto ValidateEnvOverridesUnlocked() const -> Status
+    template <std::size_t... I>
+    [[nodiscard]] static constexpr auto MakeParseFunctions(std::index_sequence<I...>) -> std::array<ParseFunction, sizeof...(I)>
     {
-        Status status = OkStatus();
-
-        Schema::ForEachSetting([&status]<typename S>() {
-            if (!status.ok()) {
-                return;  // Stop on first error
-            }
-
-            constexpr auto env_override = GetEnvOverride<S>();
-            if constexpr (!env_override.empty()) {
-                const char* env_value = std::getenv(std::string(env_override).c_str());
-                if (env_value == nullptr) {
-                    return;
-                }
-
-                using value_type = typename S::value_type;
-                auto parsed = ConfigTraits<value_type>::FromString(env_value);
-                if (!parsed.has_value()) {
-                    status = InvalidArgumentError(std::string(env_override) + ": cannot parse '" + env_value + "' as a value for '" + std::string(S::path) + "'");
-                    return;
-                }
-
-                auto validation = GetSettingValidator<S>()(*parsed);
-                if (!validation) {
-                    status = InvalidArgumentError(std::string(env_override) + ": " + validation.error_message);
-                }
-            }
-        });
-
-        return status;
+        return { &ParseOne<I>... };
     }
 
-    /// @brief Reinterprets parsed leaves as the types the schema declares.
-    ///
-    /// A flat format has to infer a leaf's type from its text, and the
-    /// inference cannot know that `2.5` was written for a std::string setting
-    /// or that `"8080"` was written for an int one. Where the parsed value
-    /// does not deserialize as its declared type, re-read it from its textual
-    /// form, so a hand-edited file keeps the value the user wrote instead of
-    /// silently reverting to the default.
-    ///
-    /// A value that cannot be reinterpreted either — an out-of-range int, say
-    /// — is left as parsed, so it still fails validation rather than being
-    /// coerced into something plausible.
-    void CoerceToSchemaTypes()
+    inline static constexpr std::array<ParseFunction, RegistryType::size> parse_functions =
+        MakeParseFunctions(std::make_index_sequence<RegistryType::size>());
+
+    template <typename Setting>
+    [[nodiscard]] static auto ValidationError(std::string_view source, const ValidationResult& result) -> Status
     {
-        Schema::ForEachSetting([this]<typename S>() {
-            using value_type = typename S::value_type;
-
-            auto file_result = file_values_.GetAtPath(S::path);
-            if (!file_result.ok()) {
-                return;
-            }
-            if (ConfigTraits<value_type>::Deserialize(*file_result).has_value()) {
-                return;
-            }
-
-            auto text = file_result->TryToText();
-            if (!text.has_value()) {
-                return;
-            }
-
-            auto parsed = ConfigTraits<value_type>::FromString(*text);
-            if (parsed.has_value()) {
-                file_values_.SetAtPath(S::path, ConfigTraits<value_type>::Serialize(*parsed));
-            }
-        });
+        return InvalidArgumentError(std::string(Setting::path) + " " + std::string(source) + " is invalid: " + result.error_message);
     }
 
-    void BuildDefaults()
+    template <std::size_t I>
+    [[nodiscard]] static auto BuildOne(InitializationState& state, candidate_storage& effective_values, bool apply_environment) -> Status
     {
-        defaults_ = Value::Object();
+        using Setting = typename RegistryType::template SettingAt<I>;
+        using Value = typename Setting::value_type;
 
-        Schema::ForEachSetting([this]<typename S>() {
-            using value_type = typename S::value_type;
-            auto serialized = ConfigTraits<value_type>::Serialize(S::default_value());
-            defaults_.SetAtPath(S::path, serialized);
-        });
+        Value default_value = Setting::default_value();
+        auto default_validation = ValidateSetting<Setting>(default_value);
+        if (!default_validation) {
+            return ValidationError<Setting>("default", default_validation);
+        }
+
+        auto& file_value = state.file_values.template Get<I>();
+        if (!file_value) {
+            state.migrations += std::string(Setting::path) + " = " + EscapeConfValue(ConfigTraits<Value>::ToString(default_value)) + "\n";
+        }
+        else {
+            auto file_validation = ValidateSetting<Setting>(*file_value);
+            if (!file_validation) {
+                return ValidationError<Setting>("file value", file_validation);
+            }
+        }
+
+        if constexpr (HasEnvOverride<Setting>) {
+            if (apply_environment) {
+                const std::string environment_name(GetEnvOverride<Setting>());
+                if (const char* text = std::getenv(environment_name.c_str())) {
+                    auto environment_value = ConfigTraits<Value>::FromString(text);
+                    if (!environment_value) {
+                        return InvalidArgumentError(std::string(Setting::path) + " environment override '" + environment_name +
+                                                    "' cannot be parsed");
+                    }
+                    auto environment_validation = ValidateSetting<Setting>(*environment_value);
+                    if (!environment_validation) {
+                        return ValidationError<Setting>("environment override", environment_validation);
+                    }
+                    effective_values.template Get<I>().emplace(std::move(*environment_value));
+                    return OkStatus();
+                }
+            }
+        }
+
+        if (file_value) {
+            effective_values.template Get<I>().emplace(std::move(*file_value));
+        }
+        else {
+            effective_values.template Get<I>().emplace(std::move(default_value));
+        }
+        return OkStatus();
     }
 
+    template <std::size_t... I>
+    [[nodiscard]] static auto BuildValues(InitializationState& state, bool apply_environment, std::index_sequence<I...>)
+        -> StatusOr<values_type>
+    {
+        candidate_storage effective_values;
+        Status error = OkStatus();
+        const bool valid = ((error = BuildOne<I>(state, effective_values, apply_environment), error.ok()) && ...);
+        if (!valid) {
+            return error;
+        }
+        return values_type { std::move(effective_values.template Get<I>().value())... };
+    }
+
+    [[nodiscard]] static auto BuildValues(InitializationState& state, bool apply_environment) -> StatusOr<values_type>
+    {
+        return BuildValues(state, apply_environment, std::make_index_sequence<RegistryType::size>());
+    }
+
+    static void AppendMigrations(InitializationState& state)
+    {
+        if (state.migrations.empty()) {
+            return;
+        }
+        if (!state.document.empty()) {
+            if (state.document.back() != '\n') {
+                state.document.push_back('\n');
+            }
+            state.document += "\n# Added by cppfig\n";
+        }
+        state.document += state.migrations;
+    }
+
+    values_type values_;
     std::string file_path_;
-    Value file_values_;
-    Value defaults_;
-    mutable typename ThreadPolicy::mutex_type mutex_;
+    std::string document_;
 };
 
 }  // namespace cppfig

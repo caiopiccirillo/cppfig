@@ -1,193 +1,123 @@
 #pragma once
 
-#include <gmock/gmock.h>
-
-#include <cstdint>
-#include <filesystem>
-#include <random>
+#include <cstddef>
+#include <optional>
 #include <string>
-#include <string_view>
-#include <system_error>
-#include <unordered_map>
+#include <utility>
 
-#include "cppfig/interface.h"
-#include "cppfig/setting.h"
-#include "cppfig/traits.h"
-#include "cppfig/value.h"
+#include "cppfig/configuration.h"
 
 namespace cppfig::testing {
 
-/// @brief Mock implementation of configuration for testing.
-///
-/// This class provides a simple in-memory configuration that can be used
-/// in unit tests. It stores values in a map and doesn't require file I/O.
-///
-/// Usage:
-/// @code
-/// // Define settings
-/// struct AppName {
-///     static constexpr std::string_view path = "app.name";
-///     using value_type = std::string;
-///     static auto default_value() -> std::string { return "MyApp"; }
-/// };
-///
-/// struct AppPort {
-///     static constexpr std::string_view path = "app.port";
-///     using value_type = int;
-///     static auto default_value() -> int { return 8080; }
-/// };
-///
-/// using Schema = ConfigSchema<AppName, AppPort>;
-/// MockConfiguration<Schema> config;
-///
-/// // Set values for testing
-/// config.SetValue<AppPort>(9000);
-///
-/// // Use in tests
-/// EXPECT_EQ(config.Get<AppPort>(), 9000);
-/// @endcode
-template <typename Schema>
+template <typename RegistryType>
+class MockConfigurationBuilder;
+
+/// @brief Frozen in-memory configuration for tests.
+template <typename RegistryType>
 class MockConfiguration {
 public:
-    using schema_type = Schema;
+    using values_type = typename RegistryType::values_type;
 
-    MockConfiguration() { BuildDefaults(); }
+    MockConfiguration(const MockConfiguration&) = delete;
+    auto operator=(const MockConfiguration&) -> MockConfiguration& = delete;
+    MockConfiguration(MockConfiguration&&) = default;
+    auto operator=(MockConfiguration&&) -> MockConfiguration& = default;
 
-    /// @brief Gets the value for a setting type.
-    template <IsSetting S>
-        requires(Schema::template has_setting<S>)
-    [[nodiscard]] auto Get() const -> typename S::value_type
+    [[nodiscard]] static auto FromDefaults() -> StatusOr<MockConfiguration>
     {
-        using value_type = typename S::value_type;
-        std::string key(S::path);
-
-        auto iter = values_.find(key);
-        if (iter != values_.end()) {
-            auto parsed = ConfigTraits<value_type>::Deserialize(iter->second);
-            if (parsed.has_value()) {
-                return *parsed;
-            }
-        }
-
-        // Return default
-        return S::default_value();
+        MockConfigurationBuilder<RegistryType> builder;
+        return builder.Build();
     }
 
-    /// @brief Sets the value for a setting type (bypasses validation for testing).
-    template <IsSetting S>
-        requires(Schema::template has_setting<S>)
-    void SetValue(typename S::value_type value)
+    template <typename S>
+        requires(RegistryType::template has_setting<S>)
+    [[nodiscard]] auto Get() const noexcept -> const typename S::value_type&
     {
-        using value_type = typename S::value_type;
-        std::string key(S::path);
-        values_[key] = ConfigTraits<value_type>::Serialize(value);
+        return values_.template Get<RegistryType::template index<S>>();
     }
-
-    /// @brief Sets the value with validation.
-    template <IsSetting S>
-        requires(Schema::template has_setting<S>)
-    auto Set(typename S::value_type value) -> Status
-    {
-        auto validator = GetSettingValidator<S>();
-        auto validation = validator(value);
-        if (!validation) {
-            return InvalidArgumentError(validation.error_message);
-        }
-
-        SetValue<S>(std::move(value));
-        return OkStatus();
-    }
-
-    /// @brief Simulates loading (no-op for mock).
-    [[nodiscard]] auto Load() -> Status { return OkStatus(); }
-
-    /// @brief Simulates saving (no-op for mock).
-    [[nodiscard]] auto Save() const -> Status { return OkStatus(); }
-
-    /// @brief Resets all values to defaults.
-    void Reset()
-    {
-        values_.clear();
-        BuildDefaults();
-    }
-
-    /// @brief Sets a raw Value for testing parse failure scenarios.
-    ///
-    /// This method allows tests to inject invalid values that will
-    /// cause Deserialize to fail, triggering the default value fallback path.
-    /// @param path The setting path (e.g., "app.name").
-    /// @param value The raw Value to set.
-    void SetRawValue(std::string_view path, Value value) { values_[std::string(path)] = std::move(value); }
-
-    /// @brief Clears a value by path for testing scenarios where key is not found.
-    ///
-    /// This method removes a value from the internal map, allowing tests
-    /// to verify the behavior when a setting key is not present.
-    /// @param path The setting path to clear.
-    void ClearValue(std::string_view path) { values_.erase(std::string(path)); }
 
 private:
-    void BuildDefaults()
+    friend class MockConfigurationBuilder<RegistryType>;
+
+    explicit MockConfiguration(values_type values)
+        : values_(std::move(values))
     {
-        Schema::ForEachSetting([this]<typename S>() {
-            using value_type = typename S::value_type;
-            std::string key(S::path);
-            values_[key] = ConfigTraits<value_type>::Serialize(S::default_value());
-        });
     }
 
-    std::unordered_map<std::string, Value> values_;
+    values_type values_;
 };
 
-/// @brief GMock-compatible mock for IConfigurationProviderVirtual.
-///
-/// This class uses GMock's MOCK_METHOD to create a fully mockable
-/// configuration provider for unit testing.
-///
-/// Usage:
-/// @code
-/// MockVirtualConfigurationProvider mock;
-/// EXPECT_CALL(mock, Load()).WillOnce(Return(cppfig::OkStatus()));
-/// EXPECT_CALL(mock, GetFilePath()).WillOnce(Return("config.json"));
-/// @endcode
-// LCOV_EXCL_START — GMock macro internals generate uninstrumented stubs
-class MockVirtualConfigurationProvider : public IConfigurationProviderVirtual {
+/// @brief Mutable setup stage for MockConfiguration; values freeze at Build.
+template <typename RegistryType>
+class MockConfigurationBuilder {
 public:
-    MOCK_METHOD(Status, Load, (), (override));
-    MOCK_METHOD(Status, Save, (), (const, override));
-    MOCK_METHOD(std::string_view, GetFilePath, (), (const, override));
-    MOCK_METHOD(Status, ValidateAll, (), (const, override));
-    MOCK_METHOD(std::string, GetDiffString, (), (const, override));
-};
-
-/// @brief Test fixture helper for configuration tests.
-///
-/// Provides utilities for setting up test configurations with
-/// temporary files and cleanup.
-class ConfigurationTestFixture {
-public:
-    /// @brief Creates a temporary file path for testing.
-    ///
-    /// Uses the platform's temporary directory rather than a hard-coded
-    /// "/tmp/", and a randomly seeded generator rather than std::rand, which
-    /// was never seeded and so produced the same sequence on every run.
-    [[nodiscard]] static auto CreateTempFilePath(std::string_view prefix = "test_config") -> std::string
+    template <typename S>
+        requires(RegistryType::template has_setting<S>)
+    auto Set(typename S::value_type value) -> MockConfigurationBuilder&
     {
-        static std::mt19937_64 generator { std::random_device {}() };
-        std::uniform_int_distribution<std::uint64_t> distribution;
-
-        const auto path = std::filesystem::temp_directory_path()
-            / (std::string(prefix) + "_" + std::to_string(distribution(generator)) + ".conf");
-        return path.string();
+        values_.template Get<RegistryType::template index<S>>().emplace(std::move(value));
+        return *this;
     }
 
-    /// @brief Removes a file if it exists.
-    static void RemoveFile(const std::string& path)
+    [[nodiscard]] auto Build() -> StatusOr<MockConfiguration<RegistryType>>
     {
-        std::error_code error_code;
-        std::filesystem::remove(path, error_code);
+        return Build(std::make_index_sequence<RegistryType::size>());
     }
+
+private:
+    using candidate_storage = typename RegistryType::template held_values_type<std::optional>;
+    using values_type = typename RegistryType::values_type;
+
+    template <typename T>
+    using result_holder = std::optional<StatusOr<T>>;
+    using result_storage = typename RegistryType::template held_values_type<result_holder>;
+
+    template <std::size_t I>
+    auto BuildOne() -> StatusOr<typename RegistryType::template SettingAt<I>::value_type>
+    {
+        using S = typename RegistryType::template SettingAt<I>;
+        auto& candidate = values_.template Get<I>();
+        if (candidate) {
+            auto validation = ValidateSetting<S>(*candidate);
+            if (!validation) {
+                return InvalidArgumentError(std::string(S::path) + " test value is invalid: " + validation.error_message);
+            }
+            return std::move(*candidate);
+        }
+
+        auto value = S::default_value();
+        auto validation = ValidateSetting<S>(value);
+        if (!validation) {
+            return InvalidArgumentError(std::string(S::path) + " default is invalid: " + validation.error_message);
+        }
+        return value;
+    }
+
+    template <std::size_t I, typename T>
+    auto StoreResult(result_storage& results, StatusOr<T> result, Status& error) -> bool
+    {
+        if (!result.ok()) {
+            error = std::move(result).status();
+            return false;
+        }
+        results.template Get<I>().emplace(std::move(result));
+        return true;
+    }
+
+    template <std::size_t... I>
+    auto Build(std::index_sequence<I...>) -> StatusOr<MockConfiguration<RegistryType>>
+    {
+        result_storage results;
+        Status error = OkStatus();
+        const bool valid = (StoreResult<I>(results, BuildOne<I>(), error) && ...);
+        if (!valid) {
+            return error;
+        }
+
+        return MockConfiguration<RegistryType>(values_type { std::move(results.template Get<I>().value()).value()... });
+    }
+
+    candidate_storage values_;
 };
-// LCOV_EXCL_STOP
 
 }  // namespace cppfig::testing

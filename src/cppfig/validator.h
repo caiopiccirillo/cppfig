@@ -2,211 +2,275 @@
 
 #include <concepts>
 #include <cstddef>
-#include <functional>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace cppfig {
 
-/// @brief Result of a validation operation.
+/// @brief Result of validating one candidate value.
 struct ValidationResult {
     bool is_valid = true;
     std::string error_message;
 
-    /// @brief Creates a successful validation result.
-    static auto Ok() -> ValidationResult { return { .is_valid = true, .error_message = "" }; }
+    [[nodiscard]] static constexpr auto Ok() -> ValidationResult { return {}; }
 
-    /// @brief Creates a failed validation result with an error message.
-    static auto Error(std::string message) -> ValidationResult { return { .is_valid = false, .error_message = std::move(message) }; }
+    [[nodiscard]] static constexpr auto Error(std::string message) -> ValidationResult
+    {
+        return { .is_valid = false, .error_message = std::move(message) };
+    }
 
-    explicit operator bool() const { return is_valid; }
+    [[nodiscard]] constexpr explicit operator bool() const { return is_valid; }
 };
 
-/// @brief Concept for validator types.
 template <typename V, typename T>
 concept ValidatorFor = requires(const V& validator, const T& value) {
     { validator(value) } -> std::same_as<ValidationResult>;
 };
 
-/// @brief Type-erased validator that can hold any validation function.
-template <typename T>
-class Validator {
-public:
-    using validator_fn = std::function<ValidationResult(const T&)>;
+template <typename Left, typename Right>
+struct AndValidator;
 
-    /// @brief Creates an always-valid validator.
-    Validator()
-        : fn_([](const T&) { return ValidationResult::Ok(); })
+template <typename Left, typename Right>
+struct OrValidator;
+
+/// @brief CRTP mixin providing allocation-free validator composition.
+template <typename Derived>
+struct ValidatorOps {
+    template <typename Right>
+    [[nodiscard]] constexpr auto And(Right right) const -> AndValidator<Derived, Right>
     {
+        return { {}, static_cast<const Derived&>(*this), std::move(right) };
     }
 
-    /// @brief Creates a validator from a function.
-    explicit Validator(validator_fn fn)
-        : fn_(std::move(fn))
+    template <typename Right>
+    [[nodiscard]] constexpr auto Or(Right right) const -> OrValidator<Derived, Right>
     {
+        return { {}, static_cast<const Derived&>(*this), std::move(right) };
     }
-
-    /// @brief Validates a value.
-    auto operator()(const T& value) const -> ValidationResult { return fn_(value); }
-
-    /// @brief Combines this validator with another (both must pass).
-    [[nodiscard]] auto And(Validator<T> other) const -> Validator<T>
-    {
-        auto this_fn = fn_;
-        auto other_fn = other.fn_;
-        return Validator<T>([this_fn, other_fn](const T& value) -> ValidationResult {
-            auto result = this_fn(value);
-            if (!result) {
-                return result;
-            }
-            return other_fn(value);
-        });
-    }
-
-    /// @brief Combines this validator with another (either must pass).
-    [[nodiscard]] auto Or(Validator<T> other) const -> Validator<T>
-    {
-        auto this_fn = fn_;
-        auto other_fn = other.fn_;
-        return Validator<T>([this_fn, other_fn](const T& value) -> ValidationResult {
-            auto result = this_fn(value);
-            if (result) {
-                return result;
-            }
-            return other_fn(value);
-        });
-    }
-
-private:
-    validator_fn fn_;
 };
 
-/// @brief Creates a validator that checks if a numeric value is at least min.
+template <typename Left, typename Right>
+struct AndValidator : ValidatorOps<AndValidator<Left, Right>> {
+    Left left;
+    Right right;
+
+    template <typename T>
+        requires ValidatorFor<Left, T> && ValidatorFor<Right, T>
+    [[nodiscard]] constexpr auto operator()(const T& value) const -> ValidationResult
+    {
+        auto result = left(value);
+        if (!result) {
+            return result;
+        }
+        return right(value);
+    }
+};
+
+template <typename Left, typename Right>
+struct OrValidator : ValidatorOps<OrValidator<Left, Right>> {
+    Left left;
+    Right right;
+
+    template <typename T>
+        requires ValidatorFor<Left, T> && ValidatorFor<Right, T>
+    [[nodiscard]] constexpr auto operator()(const T& value) const -> ValidationResult
+    {
+        auto result = left(value);
+        if (result) {
+            return result;
+        }
+        return right(value);
+    }
+};
+
 template <typename T>
-    requires std::is_arithmetic_v<T>
-auto Min(T min_value) -> Validator<T>
-{
-    return Validator<T>([min_value](const T& value) -> ValidationResult {
-        if (value < min_value) {
-            return ValidationResult::Error("Value " + std::to_string(value) + " is less than minimum " + std::to_string(min_value));
+struct MinValidator : ValidatorOps<MinValidator<T>> {
+    T minimum;
+
+    [[nodiscard]] constexpr auto operator()(const T& value) const -> ValidationResult
+    {
+        if (value < minimum) {
+            if (std::is_constant_evaluated()) {
+                return ValidationResult::Error("Value is less than the minimum");
+            }
+            return ValidationResult::Error("Value " + std::to_string(value) + " is less than minimum " + std::to_string(minimum));
         }
         return ValidationResult::Ok();
-    });
-}
+    }
+};
 
-/// @brief Creates a validator that checks if a numeric value is at most max.
 template <typename T>
-    requires std::is_arithmetic_v<T>
-auto Max(T max_value) -> Validator<T>
-{
-    return Validator<T>([max_value](const T& value) -> ValidationResult {
-        if (value > max_value) {
-            return ValidationResult::Error("Value " + std::to_string(value) + " exceeds maximum " + std::to_string(max_value));
+struct MaxValidator : ValidatorOps<MaxValidator<T>> {
+    T maximum;
+
+    [[nodiscard]] constexpr auto operator()(const T& value) const -> ValidationResult
+    {
+        if (value > maximum) {
+            if (std::is_constant_evaluated()) {
+                return ValidationResult::Error("Value exceeds the maximum");
+            }
+            return ValidationResult::Error("Value " + std::to_string(value) + " exceeds maximum " + std::to_string(maximum));
         }
         return ValidationResult::Ok();
-    });
-}
+    }
+};
 
-/// @brief Creates a validator that checks if a numeric value is within [min, max].
 template <typename T>
-    requires std::is_arithmetic_v<T>
-auto Range(T min_value, T max_value) -> Validator<T>
-{
-    return Min(min_value).And(Max(max_value));
-}
+struct RangeValidator : ValidatorOps<RangeValidator<T>> {
+    T minimum;
+    T maximum;
 
-/// @brief Creates a validator that checks if a numeric value is positive.
+    [[nodiscard]] constexpr auto operator()(const T& value) const -> ValidationResult
+    {
+        if (value < minimum || value > maximum) {
+            if (std::is_constant_evaluated()) {
+                return ValidationResult::Error("Value is outside the allowed range");
+            }
+            return ValidationResult::Error("Value " + std::to_string(value) + " is outside [" + std::to_string(minimum) + ", " +
+                                           std::to_string(maximum) + "]");
+        }
+        return ValidationResult::Ok();
+    }
+};
+
 template <typename T>
-    requires std::is_arithmetic_v<T>
-auto Positive() -> Validator<T>
-{
-    return Validator<T>([](const T& value) -> ValidationResult {
-        if (value <= T { 0 }) {
-            return ValidationResult::Error("Value must be positive");
-        }
-        return ValidationResult::Ok();
-    });
-}
+struct PositiveValidator : ValidatorOps<PositiveValidator<T>> {
+    [[nodiscard]] constexpr auto operator()(const T& value) const -> ValidationResult
+    {
+        return value > T { 0 } ? ValidationResult::Ok() : ValidationResult::Error("Value must be positive");
+    }
+};
 
-/// @brief Creates a validator that checks if a numeric value is non-negative.
 template <typename T>
-    requires std::is_arithmetic_v<T>
-auto NonNegative() -> Validator<T>
-{
-    return Validator<T>([](const T& value) -> ValidationResult {
-        if (value < T { 0 }) {
-            return ValidationResult::Error("Value must be non-negative");
+struct NonNegativeValidator : ValidatorOps<NonNegativeValidator<T>> {
+    [[nodiscard]] constexpr auto operator()(const T& value) const -> ValidationResult
+    {
+        return value >= T { 0 } ? ValidationResult::Ok() : ValidationResult::Error("Value must be non-negative");
+    }
+};
+
+struct NotEmptyValidator : ValidatorOps<NotEmptyValidator> {
+    [[nodiscard]] constexpr auto operator()(const std::string& value) const -> ValidationResult
+    {
+        return value.empty() ? ValidationResult::Error("Value must not be empty") : ValidationResult::Ok();
+    }
+};
+
+struct MinLengthValidator : ValidatorOps<MinLengthValidator> {
+    std::size_t minimum;
+
+    [[nodiscard]] auto operator()(const std::string& value) const -> ValidationResult
+    {
+        if (value.size() < minimum) {
+            return ValidationResult::Error("String length " + std::to_string(value.size()) + " is less than minimum " +
+                                           std::to_string(minimum));
         }
         return ValidationResult::Ok();
-    });
-}
+    }
+};
 
-/// @brief Creates a validator that checks if a string is not empty.
-inline auto NotEmpty() -> Validator<std::string>
-{
-    return Validator<std::string>([](const std::string& value) -> ValidationResult {
-        if (value.empty()) {
-            return ValidationResult::Error("Value must not be empty");
+struct MaxLengthValidator : ValidatorOps<MaxLengthValidator> {
+    std::size_t maximum;
+
+    [[nodiscard]] auto operator()(const std::string& value) const -> ValidationResult
+    {
+        if (value.size() > maximum) {
+            return ValidationResult::Error("String length " + std::to_string(value.size()) + " exceeds maximum " +
+                                           std::to_string(maximum));
         }
         return ValidationResult::Ok();
-    });
-}
+    }
+};
 
-/// @brief Creates a validator that checks if a string length is at most max.
-inline auto MaxLength(std::size_t max_len) -> Validator<std::string>
-{
-    return Validator<std::string>([max_len](const std::string& value) -> ValidationResult {
-        if (value.size() > max_len) {
-            return ValidationResult::Error("String length " + std::to_string(value.size()) + " exceeds maximum " + std::to_string(max_len));
-        }
-        return ValidationResult::Ok();
-    });
-}
-
-/// @brief Creates a validator that checks if a string length is at least min.
-inline auto MinLength(std::size_t min_len) -> Validator<std::string>
-{
-    return Validator<std::string>([min_len](const std::string& value) -> ValidationResult {
-        if (value.size() < min_len) {
-            return ValidationResult::Error("String length " + std::to_string(value.size()) + " is less than minimum " + std::to_string(min_len));
-        }
-        return ValidationResult::Ok();
-    });
-}
-
-/// @brief Creates a validator that checks if a value is one of the allowed values.
 template <typename T>
-auto OneOf(std::vector<T> allowed_values) -> Validator<T>
-{
-    return Validator<T>([allowed = std::move(allowed_values)](const T& value) -> ValidationResult {
-        for (const auto& allowed_value : allowed) {
-            if (value == allowed_value) {
+struct OneOfValidator : ValidatorOps<OneOfValidator<T>> {
+    std::vector<T> allowed_values;
+
+    [[nodiscard]] auto operator()(const T& value) const -> ValidationResult
+    {
+        for (const auto& allowed : allowed_values) {
+            if (value == allowed) {
                 return ValidationResult::Ok();
             }
         }
         return ValidationResult::Error("Value is not in the list of allowed values");
-    });
-}
+    }
+};
 
-/// @brief Creates a validator from a predicate function.
-template <typename T, typename Pred>
-    requires std::predicate<Pred, const T&>
-auto Predicate(Pred pred, std::string error_message) -> Validator<T>
-{
-    return Validator<T>([p = std::move(pred), msg = std::move(error_message)](const T& value) -> ValidationResult {
-        if (!p(value)) {
-            return ValidationResult::Error(msg);
-        }
-        return ValidationResult::Ok();
-    });
-}
+template <typename T, typename PredicateType>
+struct PredicateValidator : ValidatorOps<PredicateValidator<T, PredicateType>> {
+    PredicateType predicate;
+    std::string message;
 
-/// @brief Creates an always-valid validator.
+    [[nodiscard]] constexpr auto operator()(const T& value) const -> ValidationResult
+    {
+        return predicate(value) ? ValidationResult::Ok() : ValidationResult::Error(message);
+    }
+};
+
 template <typename T>
-auto AlwaysValid() -> Validator<T>
+struct AlwaysValidValidator : ValidatorOps<AlwaysValidValidator<T>> {
+    [[nodiscard]] constexpr auto operator()(const T&) const -> ValidationResult { return ValidationResult::Ok(); }
+};
+
+template <typename T>
+    requires std::is_arithmetic_v<T>
+[[nodiscard]] constexpr auto Min(T minimum) -> MinValidator<T>
 {
-    return Validator<T>();
+    return { {}, minimum };
+}
+
+template <typename T>
+    requires std::is_arithmetic_v<T>
+[[nodiscard]] constexpr auto Max(T maximum) -> MaxValidator<T>
+{
+    return { {}, maximum };
+}
+
+template <typename T>
+    requires std::is_arithmetic_v<T>
+[[nodiscard]] constexpr auto Range(T minimum, T maximum) -> RangeValidator<T>
+{
+    return { {}, minimum, maximum };
+}
+
+template <typename T>
+    requires std::is_arithmetic_v<T>
+[[nodiscard]] constexpr auto Positive() -> PositiveValidator<T>
+{
+    return {};
+}
+
+template <typename T>
+    requires std::is_arithmetic_v<T>
+[[nodiscard]] constexpr auto NonNegative() -> NonNegativeValidator<T>
+{
+    return {};
+}
+
+[[nodiscard]] constexpr auto NotEmpty() -> NotEmptyValidator { return {}; }
+[[nodiscard]] constexpr auto MinLength(std::size_t minimum) -> MinLengthValidator { return { {}, minimum }; }
+[[nodiscard]] constexpr auto MaxLength(std::size_t maximum) -> MaxLengthValidator { return { {}, maximum }; }
+
+template <typename T>
+[[nodiscard]] auto OneOf(std::vector<T> allowed_values) -> OneOfValidator<T>
+{
+    return { {}, std::move(allowed_values) };
+}
+
+template <typename T, typename PredicateType>
+    requires std::predicate<PredicateType, const T&>
+[[nodiscard]] constexpr auto Predicate(PredicateType predicate, std::string message) -> PredicateValidator<T, PredicateType>
+{
+    return { {}, std::move(predicate), std::move(message) };
+}
+
+template <typename T>
+[[nodiscard]] constexpr auto AlwaysValid() -> AlwaysValidValidator<T>
+{
+    return {};
 }
 
 }  // namespace cppfig

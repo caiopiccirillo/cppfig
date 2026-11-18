@@ -1,77 +1,94 @@
 #pragma once
 
+#include <concepts>
 #include <string_view>
+#include <type_traits>
 
 #include "cppfig/traits.h"
 #include "cppfig/validator.h"
 
 namespace cppfig {
 
-/// @brief Concept for valid setting types.
-///
-/// A type satisfies IsSetting if it provides all required static members
-/// and functions for configuration management.
-///
-/// Required:
-/// - path: std::string_view with the hierarchical key path
-/// - value_type: The type of the setting value
-/// - default_value(): Static function returning the default value
-///
-/// Optional:
-/// - env_override: std::string_view with environment variable name
-/// - validator(): Static function returning a Validator<value_type>
-///
-/// Example:
-/// @code
-/// struct ServerHost {
-///     static constexpr std::string_view path = "server.host";
-///     static constexpr std::string_view env_override = "SERVER_HOST";
-///     using value_type = std::string;
-///     static auto default_value() -> value_type { return "localhost"; }
-///     static auto validator() -> Validator<value_type> { return NotEmpty(); }
-/// };
-/// @endcode
 template <typename S>
-concept IsSetting = requires {
-    { S::path } -> std::convertible_to<std::string_view>;
+concept SettingDeclaration = requires {
     typename S::value_type;
+    { S::path } -> std::convertible_to<std::string_view>;
     { S::default_value() } -> std::same_as<typename S::value_type>;
 } && Configurable<typename S::value_type>;
 
-/// @brief Concept for settings with environment variable override.
 template <typename S>
-concept HasEnvOverride = IsSetting<S> && requires {
+concept HasEnvDeclaration = requires {
+    S::env_override;
+};
+
+template <typename S>
+concept HasValidatorDeclaration = requires {
+    S::validator();
+};
+
+template <typename S>
+concept ValidEnvDeclaration = requires {
     { S::env_override } -> std::convertible_to<std::string_view>;
 };
 
-/// @brief Concept for settings with custom validator.
 template <typename S>
-concept HasValidator = IsSetting<S> && requires {
-    { S::validator() } -> std::same_as<Validator<typename S::value_type>>;
+concept ValidValidatorDeclaration = requires(const typename S::value_type& value) {
+    { S::validator()(value) } -> std::same_as<ValidationResult>;
 };
 
-/// @brief Helper to get environment override for a setting (empty if not defined).
+/// @brief A complete setting declaration accepted by Registry.
+template <typename S>
+concept IsSetting = SettingDeclaration<S> && (!HasEnvDeclaration<S> || ValidEnvDeclaration<S>) &&
+                    (!HasValidatorDeclaration<S> || ValidValidatorDeclaration<S>);
+
+template <typename S>
+concept HasEnvOverride = IsSetting<S> && HasEnvDeclaration<S>;
+
+template <typename S>
+concept HasValidator = IsSetting<S> && HasValidatorDeclaration<S>;
+
 template <IsSetting S>
-constexpr auto GetEnvOverride() -> std::string_view
+[[nodiscard]] constexpr auto GetEnvOverride() -> std::string_view
 {
     if constexpr (HasEnvOverride<S>) {
         return S::env_override;
     }
-    else {
-        return "";
-    }
+    return {};
 }
 
-/// @brief Helper to get validator for a setting (always-valid if not defined).
 template <IsSetting S>
-auto GetSettingValidator() -> Validator<typename S::value_type>
+[[nodiscard]] constexpr auto ValidateSetting(const typename S::value_type& value) -> ValidationResult
 {
     if constexpr (HasValidator<S>) {
-        return S::validator();
+        return S::validator()(value);
     }
-    else {
-        return AlwaysValid<typename S::value_type>();
-    }
+    return ValidationResult::Ok();
 }
+
+namespace detail {
+
+    template <typename S>
+    consteval auto DefaultIsValid() -> bool
+    {
+        auto value = S::default_value();
+        return static_cast<bool>(ValidateSetting<S>(value));
+    }
+
+    template <typename S>
+    concept ConstantDefaultCheck = requires {
+        typename std::bool_constant<DefaultIsValid<S>()>;
+    };
+
+    /// Non-constexpr factories and validators are checked during Load instead.
+    template <typename S>
+    consteval auto CheckDefaultWhenPossible() -> bool
+    {
+        if constexpr (ConstantDefaultCheck<S>) {
+            return DefaultIsValid<S>();
+        }
+        return true;
+    }
+
+}  // namespace detail
 
 }  // namespace cppfig

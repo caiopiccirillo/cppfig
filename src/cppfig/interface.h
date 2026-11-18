@@ -1,167 +1,30 @@
 #pragma once
 
-#include <string>
-#include <string_view>
+#include <concepts>
+#include <type_traits>
 
-#include "cppfig/diff.h"
-#include "cppfig/setting.h"
+#include "cppfig/schema.h"
 
 namespace cppfig {
 
-/// @brief CRTP base class for configuration providers.
-///
-/// This class defines the interface that all configuration providers must
-/// implement. It uses CRTP to allow compile-time polymorphism while still
-/// being compatible with GMock for testing.
-///
-/// @tparam Derived The derived configuration provider class.
-/// @tparam Schema The ConfigSchema type.
-template <typename Derived, typename Schema>
-class IConfigurationProvider {
-public:
-    using schema_type = Schema;
-
-    /// @brief Gets the value for a setting type.
-    ///
-    /// Resolution order:
-    /// 1. Environment variable (if configured)
-    /// 2. File value (if present)
-    /// 3. Default value
-    ///
-    /// Usage: config.Get<MySettings::ServerPort>()
-    template <IsSetting S>
-        requires(Schema::template has_setting<S>)
-    [[nodiscard]] auto Get() const -> typename S::value_type
-    {
-        return static_cast<const Derived*>(this)->template GetImpl<S>();
-    }
-
-    /// @brief Sets the value for a setting type.
-    ///
-    /// The value is validated before being set. Returns an error if validation fails.
-    ///
-    /// Usage: config.Set<MySettings::ServerPort>(8080)
-    template <IsSetting S>
-        requires(Schema::template has_setting<S>)
-    auto Set(typename S::value_type value) -> Status
-    {
-        return static_cast<Derived*>(this)->template SetImpl<S>(std::move(value));
-    }
-
-    /// @brief Reports whether an environment variable is overriding a setting.
-    ///
-    /// An override takes precedence over both the file value and anything
-    /// passed to @c Set, so a write to an overridden setting is stored and
-    /// saved but is not what @c Get will return.
-    ///
-    /// Usage: config.IsOverridden<MySettings::ServerPort>()
-    template <IsSetting S>
-        requires(Schema::template has_setting<S>)
-    [[nodiscard]] auto IsOverridden() const -> bool
-    {
-        return static_cast<const Derived*>(this)->template IsOverriddenImpl<S>();
-    }
-
-    /// @brief Loads configuration from the file.
-    ///
-    /// If the file doesn't exist, it creates it with default values.
-    /// If new settings were added to the schema, they are appended to the file.
-    [[nodiscard]] auto Load() -> Status { return static_cast<Derived*>(this)->LoadImpl(); }
-
-    /// @brief Saves the current configuration to the file.
-    [[nodiscard]] auto Save() const -> Status { return static_cast<const Derived*>(this)->SaveImpl(); }
-
-    /// @brief Returns the diff between file values and defaults.
-    [[nodiscard]] auto Diff() const -> ConfigDiff { return static_cast<const Derived*>(this)->DiffImpl(); }
-
-    /// @brief Validates all current values against their validators.
-    [[nodiscard]] auto ValidateAll() const -> Status
-    {
-        return static_cast<const Derived*>(this)->ValidateAllImpl();
-    }
-
-    /// @brief Returns the file path.
-    [[nodiscard]] auto GetFilePath() const -> std::string_view
-    {
-        return static_cast<const Derived*>(this)->GetFilePathImpl();
-    }
-
-protected:
-    IConfigurationProvider() = default;
-    ~IConfigurationProvider() = default;
-    IConfigurationProvider(const IConfigurationProvider&) = default;
-    IConfigurationProvider(IConfigurationProvider&&) = default;
-    auto operator=(const IConfigurationProvider&) -> IConfigurationProvider& = default;
-    auto operator=(IConfigurationProvider&&) -> IConfigurationProvider& = default;
+/// @brief A type that exposes one frozen setting with reference semantics.
+template <typename Provider, typename S>
+concept SettingProvider = IsSetting<S> && requires(const Provider& provider) {
+    { provider.template Get<S>() } -> std::same_as<const typename S::value_type&>;
 };
 
-/// @brief Virtual interface for type-erased configuration access.
-///
-/// This interface can be used when compile-time type information is not needed,
-/// such as in plugin systems or when configuration needs to be passed through
-/// non-template code.
-class IConfigurationProviderVirtual {
-public:
-    virtual ~IConfigurationProviderVirtual() = default;
+namespace detail {
 
-    /// @brief Loads configuration from the file.
-    [[nodiscard]] virtual auto Load() -> Status = 0;
+    template <typename Provider, typename RegistryType>
+    struct IsConfigurationProvider : std::false_type { };
 
-    /// @brief Saves the current configuration to the file.
-    [[nodiscard]] virtual auto Save() const -> Status = 0;
+    template <typename Provider, IsSetting... Settings>
+    struct IsConfigurationProvider<Provider, Registry<Settings...>> : std::bool_constant<(SettingProvider<Provider, Settings> && ...)> { };
 
-    /// @brief Returns the file path.
-    [[nodiscard]] virtual auto GetFilePath() const -> std::string_view = 0;
+}  // namespace detail
 
-    /// @brief Validates all current values.
-    [[nodiscard]] virtual auto ValidateAll() const -> Status = 0;
-
-    /// @brief Gets a string representation of the diff.
-    [[nodiscard]] virtual auto GetDiffString() const -> std::string = 0;
-
-protected:
-    IConfigurationProviderVirtual() = default;
-    IConfigurationProviderVirtual(const IConfigurationProviderVirtual&) = default;
-    IConfigurationProviderVirtual(IConfigurationProviderVirtual&&) = default;
-    auto operator=(const IConfigurationProviderVirtual&) -> IConfigurationProviderVirtual& = default;
-    auto operator=(IConfigurationProviderVirtual&&) -> IConfigurationProviderVirtual& = default;
-};
-
-/// @brief Adapts a configuration provider to the type-erased interface.
-///
-/// Deriving Configuration from IConfigurationProviderVirtual directly gave
-/// every instance a vptr whether or not it was ever used polymorphically, and
-/// duplicated four names that the CRTP base already declared. Wrapping instead
-/// keeps that cost with the callers who ask for type erasure.
-///
-/// The adapter refers to the configuration; the configuration must outlive it.
-///
-/// Usage:
-/// @code
-/// Configuration<MySchema> config("config.conf");
-/// VirtualConfigAdapter adapter(config);
-/// IConfigurationProviderVirtual& erased = adapter;
-/// @endcode
-template <typename ConfigT>
-class VirtualConfigAdapter final : public IConfigurationProviderVirtual {
-public:
-    explicit VirtualConfigAdapter(ConfigT& config)
-        : config_(&config)
-    {
-    }
-
-    [[nodiscard]] auto Load() -> Status override { return config_->Load(); }
-
-    [[nodiscard]] auto Save() const -> Status override { return config_->Save(); }
-
-    [[nodiscard]] auto GetFilePath() const -> std::string_view override { return config_->GetFilePath(); }
-
-    [[nodiscard]] auto ValidateAll() const -> Status override { return config_->ValidateAll(); }
-
-    [[nodiscard]] auto GetDiffString() const -> std::string override { return config_->Diff().ToString(); }
-
-private:
-    ConfigT* config_;
-};
+/// @brief Compile-time dependency-injection contract for all registry settings.
+template <typename Provider, typename RegistryType>
+concept ConfigurationProvider = detail::IsConfigurationProvider<Provider, RegistryType>::value;
 
 }  // namespace cppfig

@@ -15,23 +15,6 @@ option(CPPFIG_BUILD_BENCHMARKS "Build the cppfig benchmarks" ${PROJECT_IS_TOP_LE
 option(CPPFIG_BUILD_EXAMPLES "Build the cppfig examples" ${PROJECT_IS_TOP_LEVEL})
 option(CPPFIG_INSTALL "Generate the cppfig install and package rules" ${PROJECT_IS_TOP_LEVEL})
 
-# Optional serializer back-ends
-option(CPPFIG_ENABLE_JSON "Enable JSON serializer (requires nlohmann-json)" OFF)
-
-# When building in-tree we always need JSON for the tests & benchmarks, so
-# enable it automatically if nlohmann-json is available. A consumer asking for
-# it explicitly gets a hard failure instead of a silent downgrade.
-if(PROJECT_IS_TOP_LEVEL)
-    find_package(nlohmann_json CONFIG QUIET)
-    if(nlohmann_json_FOUND)
-        set(CPPFIG_ENABLE_JSON ON CACHE BOOL "" FORCE)
-        message(STATUS "nlohmann-json found — CPPFIG_ENABLE_JSON=ON")
-    else()
-        message(STATUS "nlohmann-json not found — JSON serializer disabled")
-    endif()
-elseif(CPPFIG_ENABLE_JSON)
-    find_package(nlohmann_json CONFIG REQUIRED)
-endif()
 # Future: option(CPPFIG_ENABLE_TOML "Enable TOML serializer" OFF)
 
 option(STRICT_BUILD "Enable warnings as errors" ON)
