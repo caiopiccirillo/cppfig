@@ -2,12 +2,15 @@
 
 #include <charconv>
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 
 namespace cppfig {
 
@@ -55,6 +58,21 @@ namespace detail {
         }
     };
 
+    /// Character types hold text, not numbers, so they get no integer traits.
+    template <typename T>
+    concept CharacterType = std::is_same_v<T, char> || std::is_same_v<T, wchar_t> || std::is_same_v<T, char8_t>
+                            || std::is_same_v<T, char16_t> || std::is_same_v<T, char32_t>;
+
+    template <typename T>
+    concept ConfigurableInteger = std::is_integral_v<T> && !std::is_same_v<T, bool> && !CharacterType<T>;
+
+    /// Floating-point types the standard library can convert with from_chars/to_chars.
+    template <typename T>
+    concept ConfigurableFloating = std::is_floating_point_v<T> && requires(const char* text, char* buffer, T value) {
+        std::from_chars(text, text, value, std::chars_format::general);
+        std::to_chars(buffer, buffer, value, std::chars_format::general);
+    };
+
     template <typename T>
     struct FloatingTraits {
         static auto FromString(std::string_view text) -> std::optional<T>
@@ -74,7 +92,7 @@ namespace detail {
 
         static auto ToString(T value) -> std::string
         {
-            char buffer[128] {};
+            char buffer[160] {};
             const auto result = std::to_chars(std::begin(buffer), std::end(buffer), value, std::chars_format::general);
             return std::string(buffer, result.ptr);
         }
@@ -98,22 +116,89 @@ struct ConfigTraits<bool> {
     static auto ToString(bool value) -> std::string { return value ? "true" : "false"; }
 };
 
-template <>
-struct ConfigTraits<int> : detail::IntegerTraits<int> { };
+/// Every standard integer type except bool and the character types.
+/// Parsing is exact: no sign for unsigned types, no prefixes, no trailing text,
+/// and out-of-range values are rejected.
+template <detail::ConfigurableInteger T>
+struct ConfigTraits<T> : detail::IntegerTraits<T> { };
 
-template <>
-struct ConfigTraits<std::int64_t> : detail::IntegerTraits<std::int64_t> { };
-
-template <>
-struct ConfigTraits<float> : detail::FloatingTraits<float> { };
-
-template <>
-struct ConfigTraits<double> : detail::FloatingTraits<double> { };
+/// Every floating-point type the standard library can convert exactly.
+template <detail::ConfigurableFloating T>
+struct ConfigTraits<T> : detail::FloatingTraits<T> { };
 
 template <>
 struct ConfigTraits<std::string> {
     static auto FromString(std::string_view text) -> std::optional<std::string> { return std::string(text); }
     static auto ToString(const std::string& value) -> std::string { return value; }
+};
+
+/// Paths are stored as text in the native narrow encoding.
+template <>
+struct ConfigTraits<std::filesystem::path> {
+    static auto FromString(std::string_view text) -> std::optional<std::filesystem::path> { return std::filesystem::path(text); }
+    static auto ToString(const std::filesystem::path& value) -> std::string { return value.string(); }
+};
+
+/// @brief One enumerator and its name in a .conf file, for EnumTraits.
+template <typename E>
+    requires std::is_enum_v<E>
+struct EnumName {
+    E value;
+    std::string_view name;
+};
+
+/// @brief ConfigTraits for an enum, mapping enumerators to names through a
+/// constexpr table. Names are matched exactly; anything else fails to parse.
+///
+/// @code
+/// enum class Level { kDebug, kInfo };
+/// inline constexpr std::array<cppfig::EnumName<Level>, 2> kLevelNames { {
+///     { Level::kDebug, "debug" },
+///     { Level::kInfo, "info" },
+/// } };
+/// template <>
+/// struct cppfig::ConfigTraits<Level> : cppfig::EnumTraits<kLevelNames> { };
+/// @endcode
+///
+/// An enumerator missing from the table is written as its underlying number,
+/// which the table then fails to parse back; list every value a setting can hold.
+template <const auto& Names>
+struct EnumTraits {
+    using value_type = std::remove_cvref_t<decltype(Names[0].value)>;
+
+    static_assert(std::size(Names) > 0, "EnumTraits needs at least one name");
+    static_assert(
+        [] {
+            for (std::size_t i = 0; i < std::size(Names); ++i) {
+                for (std::size_t j = i + 1; j < std::size(Names); ++j) {
+                    if (Names[i].name == Names[j].name || Names[i].value == Names[j].value) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }(),
+        "EnumTraits names and values must each be unique");
+
+    static auto FromString(std::string_view text) -> std::optional<value_type>
+    {
+        for (const auto& entry : Names) {
+            if (entry.name == text) {
+                return entry.value;
+            }
+        }
+        return std::nullopt;
+    }
+
+    static auto ToString(const value_type& value) -> std::string
+    {
+        for (const auto& entry : Names) {
+            if (entry.value == value) {
+                return std::string(entry.name);
+            }
+        }
+        return ConfigTraits<std::underlying_type_t<value_type>>::ToString(static_cast<std::underlying_type_t<value_type>>(value));
+    }
 };
 
 }  // namespace cppfig

@@ -1,6 +1,6 @@
 include(GoogleTest)
 
-foreach(test_name registry_test configuration_test concurrency_test allocation_test)
+foreach(test_name registry_test configuration_test concurrency_test allocation_test traits_test)
     add_executable(${test_name} ${test_name}.cpp)
 
     target_link_libraries(${test_name}

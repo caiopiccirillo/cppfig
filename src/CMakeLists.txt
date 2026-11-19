@@ -1,5 +1,6 @@
 set(CPPFIG_CORE_HEADERS
     cppfig/cppfig.h
+    cppfig/chrono.h
     cppfig/conf.h
     cppfig/configuration.h
     cppfig/document.h
