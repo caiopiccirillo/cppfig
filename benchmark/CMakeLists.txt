@@ -6,7 +6,11 @@ find_package(benchmark CONFIG REQUIRED)
 add_executable(
     cppfig_benchmark
     benchmark_main.cpp
+    benchmark_scale.cpp
 )
+
+# The scale benchmarks share the registry generator with the compile-scale test.
+target_include_directories(cppfig_benchmark PRIVATE ${PROJECT_SOURCE_DIR}/test/compile_scale)
 
 # Link necessary libraries
 target_link_libraries(
