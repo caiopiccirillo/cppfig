@@ -1,217 +1,124 @@
 # Validators
 
-cppfig provides a composable validation system for ensuring configuration values meet your requirements.
+A validator checks a value that has the right type but may still be wrong: a port of 0, an empty host name, an unknown log level. Validators run while a configuration is created, never on `Get`.
 
-## Built-in Validators
-
-### Numeric Validators
-
-```cpp
-#include <cppfig/cppfig.h>
-using namespace cppfig;
-
-// Minimum value
-auto v1 = Min(0);           // value >= 0
-auto v2 = Min(1.5);         // value >= 1.5
-
-// Maximum value
-auto v3 = Max(100);         // value <= 100
-auto v4 = Max(99.9);        // value <= 99.9
-
-// Range (inclusive)
-auto v5 = Range(1, 65535);  // 1 <= value <= 65535
-auto v6 = Range(0.0, 1.0);  // 0.0 <= value <= 1.0
-
-// Positive (> 0)
-auto v7 = Positive<int>();
-auto v8 = Positive<double>();
-
-// Non-negative (>= 0)
-auto v9 = NonNegative<int>();
-auto v10 = NonNegative<double>();
-```
-
-### String Validators
-
-```cpp
-// Not empty
-auto v1 = NotEmpty();
-
-// Length constraints
-auto v2 = MinLength(3);     // length >= 3
-auto v3 = MaxLength(255);   // length <= 255
-```
-
-### Generic Validators
-
-```cpp
-// Value must be one of the allowed values
-auto v1 = OneOf<std::string>({"debug", "info", "warn", "error"});
-auto v2 = OneOf<int>({1, 2, 3, 5, 8, 13});
-
-// Custom predicate
-auto v3 = Predicate<std::string>(
-    [](const std::string& s) { return s.find('@') != std::string::npos; },
-    "Value must contain '@'"
-);
-
-// Always valid (default)
-auto v4 = AlwaysValid<int>();
-```
-
-## Combining Validators
-
-Validators can be combined using `And` and `Or`:
-
-```cpp
-// Both conditions must pass
-auto port_validator = Min(1).And(Max(65535));
-
-// Alternative: use Range
-auto port_validator2 = Range(1, 65535);
-
-// Either condition can pass
-auto level_validator = OneOf<std::string>({"low", "medium", "high"})
-    .Or(Predicate<std::string>(
-        [](const std::string& s) { return s.starts_with("custom_"); },
-        "Must be a standard level or start with 'custom_'"
-    ));
-
-// Complex validation
-auto password_validator = MinLength(8)
-    .And(MaxLength(128))
-    .And(Predicate<std::string>(
-        [](const std::string& s) {
-            return std::any_of(s.begin(), s.end(), ::isdigit);
-        },
-        "Must contain at least one digit"
-    ))
-    .And(Predicate<std::string>(
-        [](const std::string& s) {
-            return std::any_of(s.begin(), s.end(), ::isupper);
-        },
-        "Must contain at least one uppercase letter"
-    ));
-```
-
-## Using Validators in Settings
-
-Add a `validator()` static function to your setting:
+## Declaring a validator
 
 ```cpp
 struct ServerPort {
     static constexpr std::string_view path = "server.port";
     using value_type = int;
-    static auto default_value() -> int { return 8080; }
-
-    static auto validator() -> cppfig::Validator<int> {
-        return cppfig::Range(1, 65535);
-    }
+    static constexpr auto default_value() -> int { return 8080; }
+    static constexpr auto validator() { return cppfig::Range(1, 65535); }
 };
+```
 
-struct LogLevel {
-    static constexpr std::string_view path = "logging.level";
+`validator()` may return any callable that takes `const value_type&` and returns `cppfig::ValidationResult`. Its type is checked at compile time: a validator for the wrong type does not compile.
+
+## When validation runs
+
+- When the registry is instantiated, for defaults that can be evaluated at compile time. A failing constant default is a compile error.
+- During `Load`, for the default, the file value and the environment override, whichever are present. The first failure stops the load: the error names the setting and the source, and for file values gives `file:line:column`.
+- During `FromDefaults`, for every default.
+- During `MockConfigurationBuilder::Build`, for every value supplied by a test and every default.
+
+A configuration therefore never contains an invalid value.
+
+## Built-in validators
+
+Built-in validators are small value types composed without allocation or type erasure. Most are `constexpr`.
+
+### Numeric
+
+| Validator | Accepts |
+| --- | --- |
+| `Min(minimum)` | `value >= minimum` |
+| `Max(maximum)` | `value <= maximum` |
+| `Range(minimum, maximum)` | `minimum <= value <= maximum` |
+| `Positive<T>()` | `value > 0` |
+| `NonNegative<T>()` | `value >= 0` |
+
+The numeric validators take their type from the arguments, so match the setting's type: `Min<std::uint16_t>(1)` for a `std::uint16_t` setting, `Range(0.0, 1.0)` for a `double`.
+
+### Strings
+
+| Validator | Accepts |
+| --- | --- |
+| `NotEmpty()` | A non-empty string |
+| `MinLength(n)` | At least `n` characters |
+| `MaxLength(n)` | At most `n` characters |
+
+### Any type
+
+| Validator | Accepts |
+| --- | --- |
+| `OneOf<T>({ a, b, c })` | One of the listed values |
+| `Predicate<T>(function, message)` | Values for which `function(value)` is true; otherwise fails with `message` |
+| `AlwaysValid<T>()` | Everything |
+
+## Combining validators
+
+`And` requires both validators to pass and reports the first failure. `Or` passes when either does:
+
+```cpp
+static constexpr auto validator() { return cppfig::Min(1).And(cppfig::Max(100)); }
+
+static auto validator() { return cppfig::NotEmpty().And(cppfig::MaxLength(255)); }
+
+static constexpr auto validator() { return cppfig::Positive<int>().Or(cppfig::Range(-10, -1)); }
+```
+
+Combined validators are ordinary types, so combining them adds no allocation or indirect call.
+
+## Custom validators
+
+Any callable with the right signature works, including a lambda:
+
+```cpp
+struct Hostname {
+    static constexpr std::string_view path = "server.host";
     using value_type = std::string;
-    static auto default_value() -> std::string { return "info"; }
-
-    static auto validator() -> cppfig::Validator<std::string> {
-        return cppfig::OneOf<std::string>({"debug", "info", "warn", "error"});
-    }
-};
-
-struct ApiKey {
-    static constexpr std::string_view path = "api.key";
-    using value_type = std::string;
-    static auto default_value() -> std::string { return ""; }
-
-    static auto validator() -> cppfig::Validator<std::string> {
-        return cppfig::MinLength(32).And(cppfig::MaxLength(64));
+    static auto default_value() -> std::string { return "localhost"; }
+    static auto validator()
+    {
+        return [](const std::string& host) -> cppfig::ValidationResult {
+            if (host.find(' ') != std::string::npos) {
+                return cppfig::ValidationResult::Error("host name '" + host + "' contains a space");
+            }
+            return cppfig::ValidationResult::Ok();
+        };
     }
 };
 ```
 
-## Validation Behavior
-
-### On Set
-
-When calling `config.Set<Setting>(value)`, the validator is checked:
+For a simple yes-or-no rule, `Predicate` is shorter:
 
 ```cpp
-auto status = config.Set<settings::ServerPort>(99999);
-if (!status.ok()) {
-    // Validation failed
-    std::cerr << status.message() << std::endl;
-    // Output: "Value 99999 exceeds maximum 65535"
+static auto validator()
+{
+    return cppfig::Predicate<int>([](int value) { return value % 2 == 0; }, "value must be even");
 }
 ```
 
-### ValidateAll
+Make the validator and the default `constexpr` to have the default checked at compile time. The built-in numeric validators and `NotEmpty` are `constexpr`.
 
-Validate all current values at once:
-
-```cpp
-auto status = config.ValidateAll();
-if (!status.ok()) {
-    std::cerr << "Configuration invalid: " << status.message() << std::endl;
-}
-```
-
-### Validation on Load
-
-Values loaded from file are **not** automatically validated. Call `ValidateAll()` after loading if needed:
-
-```cpp
-auto status = config.Load();
-if (!status.ok()) { /* handle error */ }
-
-status = config.ValidateAll();
-if (!status.ok()) {
-    std::cerr << "Invalid configuration in file: " << status.message() << std::endl;
-}
-```
-
-## Custom Validator Function
-
-For complex validation logic, use a lambda:
-
-```cpp
-auto ip_validator = cppfig::Predicate<std::string>(
-    [](const std::string& ip) {
-        // Simple IPv4 validation
-        std::regex pattern(R"(^(\d{1,3}\.){3}\d{1,3}$)");
-        if (!std::regex_match(ip, pattern)) return false;
-
-        // Check each octet
-        std::istringstream iss(ip);
-        std::string octet;
-        while (std::getline(iss, octet, '.')) {
-            int n = std::stoi(octet);
-            if (n < 0 || n > 255) return false;
-        }
-        return true;
-    },
-    "Must be a valid IPv4 address"
-);
-```
+To build with `-fno-exceptions`, validators must not throw.
 
 ## ValidationResult
 
-Validators return a `ValidationResult`:
-
 ```cpp
-cppfig::ValidationResult result = validator(value);
+struct ValidationResult {
+    bool is_valid = true;
+    std::string error_message;
 
-if (result) {
-    // or: if (result.is_valid)
-    std::cout << "Valid!" << std::endl;
-} else {
-    std::cout << "Invalid: " << result.error_message << std::endl;
-}
+    static constexpr auto Ok() -> ValidationResult;
+    static constexpr auto Error(std::string message) -> ValidationResult;
+    constexpr explicit operator bool() const;  // is_valid
+};
 ```
 
-You can also create results manually:
+The message is included in the error that `Load` returns, for example:
 
-```cpp
-return cppfig::ValidationResult::Ok();
-return cppfig::ValidationResult::Error("Something went wrong");
+```
+app.conf:7:15: server.port file value is invalid: Value 0 is outside [1, 65535]
 ```

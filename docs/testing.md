@@ -1,276 +1,84 @@
 # Testing with cppfig
 
-cppfig provides utilities for testing code that uses configuration. Include `<cppfig/testing/mock.h>` to access testing helpers.
+Code that reads configuration is easiest to test when it does not touch files or the environment. cppfig offers two pieces for that: the `ConfigurationProvider` concept, which code can depend on instead of the concrete configuration, and `MockConfiguration`, an in-memory configuration for tests.
+
+## Depending on a provider
+
+Write components against the concept rather than `Configuration<AppRegistry>`:
+
+```cpp
+#include <cppfig/cppfig.h>
+
+template <cppfig::ConfigurationProvider<AppRegistry> Config>
+class Server {
+public:
+    explicit Server(const Config& config)
+        : config_(config)
+    {
+    }
+
+    [[nodiscard]] auto Address() const -> std::string
+    {
+        return config_.template Get<settings::ServerHost>() + ":" + std::to_string(config_.template Get<settings::ServerPort>());
+    }
+
+private:
+    const Config& config_;
+};
+```
+
+A type satisfies `ConfigurationProvider<AppRegistry>` when it has `Get<S>()` returning `const S::value_type&` for every setting in the registry. Production code instantiates `Server<cppfig::Configuration<AppRegistry>>`, tests use `Server<cppfig::testing::MockConfiguration<AppRegistry>>`, and neither pays for virtual calls.
+
+For a single setting there is `SettingProvider<Provider, S>`.
 
 ## MockConfiguration
 
-`MockConfiguration<Schema>` is an in-memory configuration that doesn't require file I/O:
+`MockConfiguration` behaves like a loaded configuration: it is frozen, satisfies the same concept and has the same `Get`. Build one with `MockConfigurationBuilder`:
 
 ```cpp
+#include <cppfig/testing/mock.h>
 #include <gtest/gtest.h>
-#include <cppfig/cppfig.h>
-#include <cppfig/testing/mock.h>
 
-// Your settings
-namespace settings {
-struct ServerPort {
-    static constexpr std::string_view path = "server.port";
-    using value_type = int;
-    static auto default_value() -> int { return 8080; }
-};
+TEST(ServerTest, FormatsTheAddress)
+{
+    cppfig::testing::MockConfigurationBuilder<AppRegistry> builder;
+    builder.Set<settings::ServerHost>("example.com").Set<settings::ServerPort>(9000);
+    auto config = builder.Build();
+    ASSERT_TRUE(config.ok()) << config.status().message();
 
-struct ServerHost {
-    static constexpr std::string_view path = "server.host";
-    using value_type = std::string;
-    static auto default_value() -> std::string { return "localhost"; }
-};
-}
-
-using TestSchema = cppfig::ConfigSchema<settings::ServerPort, settings::ServerHost>;
-
-TEST(MyServerTest, UsesConfiguredPort) {
-    // Create mock configuration
-    cppfig::testing::MockConfiguration<TestSchema> config;
-
-    // Set test values
-    config.SetValue<settings::ServerPort>(9000);
-    config.SetValue<settings::ServerHost>("test.example.com");
-
-    // Use in your code
-    MyServer server(config.Get<settings::ServerHost>(),
-                    config.Get<settings::ServerPort>());
-
-    EXPECT_EQ(server.GetPort(), 9000);
-}
-
-TEST(MyServerTest, DefaultValues) {
-    cppfig::testing::MockConfiguration<TestSchema> config;
-
-    // Uses default values
-    EXPECT_EQ(config.Get<settings::ServerPort>(), 8080);
-    EXPECT_EQ(config.Get<settings::ServerHost>(), "localhost");
-}
-
-TEST(MyServerTest, Reset) {
-    cppfig::testing::MockConfiguration<TestSchema> config;
-
-    config.SetValue<settings::ServerPort>(9000);
-    EXPECT_EQ(config.Get<settings::ServerPort>(), 9000);
-
-    config.Reset();  // Reset to defaults
-    EXPECT_EQ(config.Get<settings::ServerPort>(), 8080);
+    Server server(config.value());
+    EXPECT_EQ(server.Address(), "example.com:9000");
 }
 ```
 
-## MockConfiguration API
+- Settings you do not `Set` take their defaults.
+- `Build()` validates every value with the settings' validators, as `Load` would, and returns an error naming the setting when one fails. Tests cannot build a configuration that production code could never receive.
+- `Build()` moves the values out of the builder; make a new builder for another configuration.
+- `MockConfiguration<AppRegistry>::FromDefaults()` builds one from defaults alone.
 
-| Method | Description |
-|--------|-------------|
-| `Get<Setting>()` | Get value (same as real Configuration) |
-| `SetValue<Setting>(value)` | Set value without validation |
-| `Set<Setting>(value)` | Set value with validation |
-| `Load()` | No-op, returns OkStatus |
-| `Save()` | No-op, returns OkStatus |
-| `Reset()` | Reset all values to defaults |
+`Set` only accepts settings in the registry, with their own value type, so a test cannot set a value the application never declared.
 
-## Dependency Injection Pattern
+The mock reads no files and no environment variables, so tests that use it are independent of the machine they run on.
 
-Design your classes to accept configuration through interfaces:
+### Getting the header
+
+`<cppfig/testing/mock.h>` ships and installs with the library and needs nothing beyond `cppfig::cppfig`. It does not depend on GoogleTest or any other test framework.
+
+## Testing loading itself
+
+To test how your application reacts to a real file, write one to a temporary directory and load it:
 
 ```cpp
-// Your application code
-template <typename Config>
-class HttpServer {
-public:
-    explicit HttpServer(const Config& config)
-        : port_(config.template Get<settings::ServerPort>())
-        , host_(config.template Get<settings::ServerHost>()) {}
+TEST(ConfigTest, RejectsAnInvalidPort)
+{
+    const auto path = std::filesystem::temp_directory_path() / "config_test.conf";
+    std::ofstream(path) << "server.port = 0\n";
 
-    void Start() {
-        // Use port_ and host_
-    }
+    auto loaded = cppfig::Configuration<AppRegistry>::Load(path.string());
+    EXPECT_FALSE(loaded.ok());
 
-private:
-    int port_;
-    std::string host_;
-};
-
-// Production usage
-int main() {
-    cppfig::Configuration<MySchema> config("config.json");
-    config.Load();
-
-    HttpServer server(config);
-    server.Start();
-}
-
-// Test usage
-TEST(HttpServerTest, StartsWithConfiguredPort) {
-    cppfig::testing::MockConfiguration<MySchema> config;
-    config.SetValue<settings::ServerPort>(9000);
-
-    HttpServer server(config);
-    // Test server behavior
+    std::filesystem::remove(path);
 }
 ```
 
-## Using Virtual Interface for Mocking
-
-For code that can't use templates, use `IConfigurationProviderVirtual`. A
-`Configuration` does not derive from it — that would put a vtable pointer on
-every instance, including the ones that never need it — so wrap it in
-`VirtualConfigAdapter` at the point where you need type erasure:
-
-```cpp
-cppfig::Configuration<MySchema> config("config.conf");
-cppfig::VirtualConfigAdapter adapter(config);
-
-// The adapter refers to the configuration, so keep the configuration alive
-// for at least as long as the adapter.
-Service service(adapter);
-```
-
-```cpp
-// Your code using virtual interface
-class Service {
-public:
-    explicit Service(cppfig::IConfigurationProviderVirtual& config)
-        : config_(config) {}
-
-    void Initialize() {
-        auto status = config_.Load();
-        if (!status.ok()) {
-            throw std::runtime_error(std::string(status.message()));
-        }
-    }
-
-private:
-    cppfig::IConfigurationProviderVirtual& config_;
-};
-
-// Test with GMock
-TEST(ServiceTest, InitializeLoadsConfig) {
-    cppfig::testing::MockVirtualConfigurationProvider mock_config;
-
-    EXPECT_CALL(mock_config, Load())
-        .WillOnce(testing::Return(cppfig::OkStatus()));
-
-    Service service(mock_config);
-    EXPECT_NO_THROW(service.Initialize());
-}
-
-TEST(ServiceTest, InitializeFailsOnLoadError) {
-    cppfig::testing::MockVirtualConfigurationProvider mock_config;
-
-    EXPECT_CALL(mock_config, Load())
-        .WillOnce(testing::Return(cppfig::InternalError("File not found")));
-
-    Service service(mock_config);
-    EXPECT_THROW(service.Initialize(), std::runtime_error);
-}
-```
-
-## MockVirtualConfigurationProvider
-
-GMock-compatible mock for the virtual interface:
-
-```cpp
-class MockVirtualConfigurationProvider : public IConfigurationProviderVirtual {
-public:
-    MOCK_METHOD(cppfig::Status, Load, (), (override));
-    MOCK_METHOD(cppfig::Status, Save, (), (const, override));
-    MOCK_METHOD(std::string_view, GetFilePath, (), (const, override));
-    MOCK_METHOD(cppfig::Status, ValidateAll, (), (const, override));
-    MOCK_METHOD(std::string, GetDiffString, (), (const, override));
-};
-```
-
-## Testing with Temporary Files
-
-For integration tests that need real file I/O:
-
-```cpp
-#include <filesystem>
-
-class ConfigurationIntegrationTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        // Create temp file path
-        temp_path_ = std::filesystem::temp_directory_path() / "test_config.json";
-    }
-
-    void TearDown() override {
-        // Clean up
-        std::filesystem::remove(temp_path_);
-    }
-
-    std::filesystem::path temp_path_;
-};
-
-TEST_F(ConfigurationIntegrationTest, SaveAndLoad) {
-    // First instance - save
-    {
-        cppfig::Configuration<MySchema> config(temp_path_.string());
-        ASSERT_TRUE(config.Load().ok());
-        ASSERT_TRUE(config.Set<settings::ServerPort>(9000).ok());
-        ASSERT_TRUE(config.Save().ok());
-    }
-
-    // Second instance - load saved value
-    {
-        cppfig::Configuration<MySchema> config(temp_path_.string());
-        ASSERT_TRUE(config.Load().ok());
-        EXPECT_EQ(config.Get<settings::ServerPort>(), 9000);
-    }
-}
-```
-
-## ConfigurationTestFixture Helper
-
-Use the provided fixture helper:
-
-```cpp
-#include <cppfig/testing/mock.h>
-
-class MyTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        file_path_ = cppfig::testing::ConfigurationTestFixture::CreateTempFilePath("mytest");
-    }
-
-    void TearDown() override {
-        cppfig::testing::ConfigurationTestFixture::RemoveFile(file_path_);
-    }
-
-    std::string file_path_;
-};
-```
-
-## Testing Validators
-
-Test your validators independently:
-
-```cpp
-TEST(ValidatorTest, PortRange) {
-    auto validator = cppfig::Range(1, 65535);
-
-    EXPECT_TRUE(validator(1));
-    EXPECT_TRUE(validator(8080));
-    EXPECT_TRUE(validator(65535));
-
-    EXPECT_FALSE(validator(0));
-    EXPECT_FALSE(validator(-1));
-    EXPECT_FALSE(validator(65536));
-}
-
-TEST(ValidatorTest, LogLevel) {
-    auto validator = cppfig::OneOf<std::string>({"debug", "info", "warn", "error"});
-
-    EXPECT_TRUE(validator("info"));
-    EXPECT_TRUE(validator("error"));
-
-    auto result = validator("invalid");
-    EXPECT_FALSE(result);
-    EXPECT_FALSE(result.error_message.empty());
-}
-```
+Tests that set environment variables should restore them afterwards, because the environment is shared by the whole test process.

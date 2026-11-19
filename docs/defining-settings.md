@@ -1,192 +1,145 @@
 # Defining Settings
 
-Settings in cppfig are defined as structs with specific static members. This design enables compile-time type safety and IDE autocompletion.
+A setting is a struct that describes one configuration value. A registry lists the settings an application uses. Both are checked at compile time.
 
-## Setting Structure
+## Setting members
 
-### Required Members
-
-Every setting must have these three members:
-
-```cpp
-struct MySetting {
-    // Path in the config file (dot-separated for hierarchy)
-    static constexpr std::string_view path = "category.subcategory.name";
-
-    // The value type
-    using value_type = int;
-
-    // Default value factory function
-    static auto default_value() -> int { return 42; }
-};
-```
-
-### Optional Members
-
-#### Environment Variable Override
-
-Allow the setting to be overridden via environment variable:
-
-```cpp
-struct ServerHost {
-    static constexpr std::string_view path = "server.host";
-    static constexpr std::string_view env_override = "SERVER_HOST";  // Optional
-    using value_type = std::string;
-    static auto default_value() -> std::string { return "localhost"; }
-};
-```
-
-When `SERVER_HOST` environment variable is set, it takes precedence over the file value.
-
-#### Validator
-
-Add validation to ensure values are within acceptable bounds:
+### Required
 
 ```cpp
 struct ServerPort {
     static constexpr std::string_view path = "server.port";
     using value_type = int;
-    static auto default_value() -> int { return 8080; }
-
-    // Optional: Validator for this setting
-    static auto validator() -> cppfig::Validator<int> {
-        return cppfig::Range(1, 65535);
-    }
+    static constexpr auto default_value() -> int { return 8080; }
 };
 ```
 
-## Complete Example
+| Member | Meaning |
+| --- | --- |
+| `path` | The key in the `.conf` file. Convertible to `std::string_view`. |
+| `value_type` | The type `Get` returns a reference to. It needs a [`ConfigTraits`](custom-types.md) conversion. |
+| `default_value()` | Returns exactly `value_type`. Called once per `Load` or `FromDefaults`. |
 
-Here's a comprehensive example with all features:
+Make `default_value()` `constexpr` when you can: a constant default is checked against the validator at compile time.
+
+### Optional: environment override
 
 ```cpp
-namespace settings {
-
-// Simple setting
-struct AppName {
-    static constexpr std::string_view path = "app.name";
-    using value_type = std::string;
-    static auto default_value() -> std::string { return "MyApplication"; }
-};
-
-// Setting with environment override
-struct DatabaseUrl {
-    static constexpr std::string_view path = "database.url";
-    static constexpr std::string_view env_override = "DATABASE_URL";
-    using value_type = std::string;
-    static auto default_value() -> std::string {
-        return "postgresql://localhost:5432/mydb";
-    }
-};
-
-// Setting with validator
-struct MaxConnections {
-    static constexpr std::string_view path = "database.pool.max_connections";
-    using value_type = int;
-    static auto default_value() -> int { return 10; }
-    static auto validator() -> cppfig::Validator<int> {
-        return cppfig::Range(1, 100);
-    }
-};
-
-// Setting with environment override AND validator
-struct ServerPort {
-    static constexpr std::string_view path = "server.port";
-    static constexpr std::string_view env_override = "PORT";
-    using value_type = int;
-    static auto default_value() -> int { return 8080; }
-    static auto validator() -> cppfig::Validator<int> {
-        return cppfig::Range(1, 65535);
-    }
-};
-
-// Boolean setting
-struct DebugMode {
-    static constexpr std::string_view path = "app.debug";
-    static constexpr std::string_view env_override = "DEBUG";
-    using value_type = bool;
-    static auto default_value() -> bool { return false; }
-};
-
-// Enum-like string setting
-struct LogLevel {
-    static constexpr std::string_view path = "logging.level";
-    using value_type = std::string;
-    static auto default_value() -> std::string { return "info"; }
-    static auto validator() -> cppfig::Validator<std::string> {
-        return cppfig::OneOf<std::string>({"debug", "info", "warn", "error"});
-    }
-};
-
-}  // namespace settings
+static constexpr std::string_view env_override = "SERVER_PORT";
 ```
 
-## Supported Value Types
+When the variable is set at load time, its value is parsed with the same conversion as the file and takes precedence over the file and the default. The environment is read once, during `Load`; later changes do not affect an existing configuration. Overrides are never written to the file.
 
-Out of the box, cppfig supports:
-
-| Type | File Representation | Environment Variable |
-|------|-------------------|---------------------|
-| `bool` | `true` / `false` | `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off` |
-| `int` | integer literal | Integer string |
-| `std::int64_t` | integer literal | Integer string |
-| `float` | decimal literal | Decimal string |
-| `double` | decimal literal | Decimal string |
-| `std::string` | string value | As-is |
-
-For custom types, see [Custom Types](custom-types.md).
-
-## Hierarchical Configuration
-
-Use dot-separated paths to create hierarchical structure:
+### Optional: validator
 
 ```cpp
-struct DatabaseHost {
-    static constexpr std::string_view path = "database.connection.host";
-    // ...
-};
-
-struct DatabasePort {
-    static constexpr std::string_view path = "database.connection.port";
-    // ...
-};
-
-struct DatabasePoolSize {
-    static constexpr std::string_view path = "database.pool.max_size";
-    // ...
-};
+static constexpr auto validator() { return cppfig::Range(1, 65535); }
 ```
 
-This generates a `.conf` file like:
+`validator()` returns any callable taking `const value_type&` and returning `cppfig::ValidationResult`. Every effective value is validated: the default, a file value and an override. See [Validators](validators.md).
+
+## Registries
+
+```cpp
+struct AppRegistry : cppfig::Registry<settings::ServerHost, settings::ServerPort, settings::LogLevel> { };
+```
+
+or
+
+```cpp
+using AppRegistry = cppfig::Registry<settings::ServerHost, settings::ServerPort, settings::LogLevel>;
+```
+
+Both work everywhere. The derived struct gives the registry its own short name, so compiler errors, clangd hovers and symbol names show `Configuration<AppRegistry>` rather than the whole list of settings, and large registries compile slightly faster.
+
+The registry holds no values, only compile-time metadata. Each `Configuration<AppRegistry>` stores one value per setting, laid out by alignment so that there is no padding between them.
+
+## Compile-time checks
+
+Instantiating a registry checks:
+
+| Rule | Diagnostic |
+| --- | --- |
+| Every member is a valid setting: `path`, `value_type`, `default_value()` returning `value_type`, a `ConfigTraits` conversion, a validator of the right type | Unsatisfied `IsSetting` constraint naming the setting |
+| Paths are well formed: non-empty dot-separated segments without whitespace, `=`, `#`, `"` or `\` | `Registry paths must be non-empty and contain only valid non-empty segments` |
+| Paths are unique, and no path is a prefix of another (`server` next to `server.port`); this also rejects listing a setting twice | `Registry paths must be unique and neither path may be a prefix of another` |
+| Environment variable names match `[A-Za-z_][A-Za-z0-9_]*` | `Environment override names must be non-empty and match [A-Za-z_][A-Za-z0-9_]*` |
+| Environment variable names are unique | `Environment override names must be unique within a Registry` |
+| A default that can be evaluated at compile time passes its validator | `A constexpr-evaluable default value failed its setting validator` |
+
+Using the registry checks:
+
+| Rule | Diagnostic |
+| --- | --- |
+| `Get<S>()` names a setting in the registry | No matching `Get`; the unsatisfied constraint is `has_setting<S>` |
+| `Get` is not called on a temporary configuration | Use of the deleted `Get() const&&` |
+
+Defaults that are not `constexpr`, such as most `std::string` defaults, are validated when the configuration is created instead.
+
+## Value types
+
+Built in: `bool`, every standard integer type, `float`, `double`, `long double` where the standard library supports it, `std::string` and `std::filesystem::path`. With `#include <cppfig/chrono.h>`, `std::chrono` durations too. Enums and your own types need a `ConfigTraits` specialization. See [Custom Types](custom-types.md).
+
+## Paths
+
+Paths are flat keys. Dots are a naming convention that groups related settings; they do not create nested objects:
 
 ```conf
 database.connection.host = localhost
 database.connection.port = 5432
-database.pool.max_size = 10
+cache.enabled = true
 ```
 
-Or, when using `JsonSerializer`:
+Paths are case-sensitive.
 
-```json
-{
-    "database": {
-        "connection": {
-            "host": "localhost",
-            "port": 5432
-        },
-        "pool": {
-            "max_size": 10
-        }
-    }
-}
+## Value precedence
+
+For each setting, the effective value is the first available of:
+
+1. the environment override, when `env_override` is declared and the variable is set;
+2. the value in the file;
+3. the default.
+
+Each value that is used is validated, and so is the default, even when an override or a file value replaces it. `Load` fails rather than skipping an invalid value.
+
+## A complete example
+
+```cpp
+#include <cppfig/cppfig.h>
+
+namespace settings {
+
+struct DatabaseHost {
+    static constexpr std::string_view path = "database.host";
+    static constexpr std::string_view env_override = "DB_HOST";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "localhost"; }
+    static auto validator() { return cppfig::NotEmpty(); }
+};
+
+struct DatabasePort {
+    static constexpr std::string_view path = "database.port";
+    static constexpr std::string_view env_override = "DB_PORT";
+    using value_type = std::uint16_t;
+    static constexpr auto default_value() -> std::uint16_t { return 5432; }
+    static constexpr auto validator() { return cppfig::Min<std::uint16_t>(1); }
+};
+
+struct PoolSize {
+    static constexpr std::string_view path = "database.pool_size";
+    using value_type = int;
+    static constexpr auto default_value() -> int { return 10; }
+    static constexpr auto validator() { return cppfig::Range(1, 100); }
+};
+
+struct LogLevel {
+    static constexpr std::string_view path = "logging.level";
+    using value_type = std::string;
+    static auto default_value() -> std::string { return "info"; }
+    static auto validator() { return cppfig::OneOf<std::string>({ "debug", "info", "warn", "error" }); }
+};
+
+}  // namespace settings
+
+struct AppRegistry : cppfig::Registry<settings::DatabaseHost, settings::DatabasePort, settings::PoolSize, settings::LogLevel> { };
 ```
-
-## Value Resolution Order
-
-When calling `config.Get<MySetting>()`, values are resolved in this order:
-
-1. **Environment variable** (if `env_override` is defined and the env var is set)
-2. **File value** (if present in the configuration file)
-3. **Default value** (from `default_value()`)
-
-This means environment variables always take precedence, making it easy to override configuration in production without modifying files.
