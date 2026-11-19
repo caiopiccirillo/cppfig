@@ -39,6 +39,22 @@ namespace detail {
         return true;
     }
 
+    /// Portable POSIX environment variable name: [A-Za-z_][A-Za-z0-9_]*.
+    [[nodiscard]] consteval auto IsEnvNameWellFormed(std::string_view name) -> bool
+    {
+        if (name.empty() || (name.front() >= '0' && name.front() <= '9')) {
+            return false;
+        }
+        for (const char c : name) {
+            const bool alpha = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+            const bool digit = c >= '0' && c <= '9';
+            if (!alpha && !digit && c != '_') {
+                return false;
+            }
+        }
+        return true;
+    }
+
     struct PathEntry {
         std::string_view path;
         std::size_t index;
@@ -147,7 +163,47 @@ private:
         return true;
     }
 
+    static constexpr std::size_t env_override_count = (std::size_t { HasEnvOverride<Settings> } + ... + 0);
+
+    [[nodiscard]] static consteval auto MakeSortedEnvNames() -> std::array<std::string_view, env_override_count>
+    {
+        std::array<std::string_view, env_override_count> names {};
+        std::size_t count = 0;
+        ([&] {
+            if constexpr (HasEnvOverride<Settings>) {
+                names[count++] = GetEnvOverride<Settings>();
+            }
+        }(), ...);
+        std::sort(names.begin(), names.end());
+        return names;
+    }
+
+    inline static constexpr std::array<std::string_view, env_override_count> sorted_env_names = MakeSortedEnvNames();
+
+    [[nodiscard]] static consteval auto AllEnvNamesWellFormed() -> bool
+    {
+        for (const auto name : sorted_env_names) {
+            if (!detail::IsEnvNameWellFormed(name)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    [[nodiscard]] static consteval auto SortedEnvNamesAreUnique() -> bool
+    {
+        for (std::size_t i = 1; i < sorted_env_names.size(); ++i) {
+            if (sorted_env_names[i - 1] == sorted_env_names[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     static_assert(AllPathsWellFormed(), "Registry paths must be non-empty and contain only valid non-empty segments");
+    static_assert(AllEnvNamesWellFormed(),
+                  "Environment override names must be non-empty and match [A-Za-z_][A-Za-z0-9_]*");
+    static_assert(SortedEnvNamesAreUnique(), "Environment override names must be unique within a Registry");
     static_assert(SortedPathsAreUnique(), "Registry paths must be unique and neither path may be a prefix of another");
 };
 
