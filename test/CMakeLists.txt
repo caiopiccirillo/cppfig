@@ -27,8 +27,9 @@ set(compile_fail_duplicate_setting_regex "Registry paths must be unique")
 set(compile_fail_unregistered_setting_regex "has_setting")
 set(compile_fail_duplicate_env_regex "Environment override names must be unique")
 set(compile_fail_malformed_env_regex "Environment override names must be non-empty")
+set(compile_fail_get_on_temporary_regex "deleted")
 
-foreach(case_name invalid_default duplicate_setting unregistered_setting duplicate_env malformed_env)
+foreach(case_name invalid_default duplicate_setting unregistered_setting duplicate_env malformed_env get_on_temporary)
     set(test_name compile_fail_${case_name})
     add_test(
         NAME ${test_name}

@@ -32,11 +32,17 @@ public:
 
     template <typename S>
         requires(RegistryType::template has_setting<S>)
-    [[nodiscard]] auto Get() const noexcept -> const typename S::value_type&
+    [[nodiscard]] auto Get() const& noexcept -> const typename S::value_type&
     {
         using Slot = detail::StorageSlot<RegistryType::template index<S>, typename S::value_type>;
         return static_cast<const Slot&>(values_).value;
     }
+
+    /// Reading from a temporary would return a reference that dangles at the
+    /// end of the full expression; keep the configuration in a variable instead.
+    template <typename S>
+        requires(RegistryType::template has_setting<S>)
+    auto Get() const&& -> const typename S::value_type& = delete;
 
 private:
     friend class MockConfigurationBuilder<RegistryType>;
