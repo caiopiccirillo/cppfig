@@ -118,12 +118,8 @@ jobs:
             ./third/vcpkg/bootstrap-vcpkg.sh
             cmake --workflow --preset=${{ matrix.preset }}
             mkdir -p build/test-results
-            ./build/${{ matrix.build_dir }}/test/unit_test \
-              --gtest_output=xml:build/test-results/unit_test.xml
-            ./build/${{ matrix.build_dir }}/test/integration_test \
-              --gtest_output=xml:build/test-results/integration_test.xml
-            ./build/${{ matrix.build_dir }}/test/thread_safety_test \
-              --gtest_output=xml:build/test-results/thread_safety_test.xml
+            ctest --test-dir build/${{ matrix.build_dir }} --output-on-failure \
+              --output-junit "$PWD/build/test-results/ctest.xml"
 
       - name: Upload test results
         if: success() || failure()
@@ -291,7 +287,8 @@ jobs:
             cmake --build build/release/clang
             cmake --install build/release/clang
             test -f build/install/lib/cmake/cppfig/cppfig-config.cmake
-            test -f build/install/include/cppfig/thread_policy.h
+            test -f build/install/include/cppfig/document.h
+            test -f build/install/include/cppfig/chrono.h
 
   coverage:
     name: Coverage
@@ -342,9 +339,11 @@ jobs:
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             llvm-cov report \
-              build/coverage/test/unit_test \
-              --object=build/coverage/test/integration_test \
-              --object=build/coverage/test/thread_safety_test \
+              build/coverage/test/configuration_test \
+              --object=build/coverage/test/registry_test \
+              --object=build/coverage/test/traits_test \
+              --object=build/coverage/test/concurrency_test \
+              --object=build/coverage/test/allocation_test \
               -instr-profile=build/coverage/coverage.profdata \
               "-ignore-filename-regex=(third|test|benchmark|build|examples|vcpkg_installed)/.*" \
               2>/dev/null >> "$GITHUB_STEP_SUMMARY"

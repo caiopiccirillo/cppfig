@@ -15,8 +15,6 @@ option(CPPFIG_BUILD_BENCHMARKS "Build the cppfig benchmarks" ${PROJECT_IS_TOP_LE
 option(CPPFIG_BUILD_EXAMPLES "Build the cppfig examples" ${PROJECT_IS_TOP_LEVEL})
 option(CPPFIG_INSTALL "Generate the cppfig install and package rules" ${PROJECT_IS_TOP_LEVEL})
 
-# Future: option(CPPFIG_ENABLE_TOML "Enable TOML serializer" OFF)
-
 option(STRICT_BUILD "Enable warnings as errors" ON)
 
 # Warnings live on an INTERFACE target rather than in add_compile_options, so
