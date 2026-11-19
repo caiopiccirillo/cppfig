@@ -152,6 +152,22 @@ namespace {
         EXPECT_EQ(*built->Get<MoveOnlySetting>().value, 9);
     }
 
+    /// Deriving gives the registry a short name of its own, which keeps
+    /// diagnostics, clangd hovers and symbol names readable.
+    struct DerivedRegistry : Registry<settings::ServerPort, settings::AppName> { };
+
+    static_assert(ConfigurationProvider<Configuration<DerivedRegistry>, DerivedRegistry>);
+    static_assert(ConfigurationProvider<testing::MockConfiguration<DerivedRegistry>, DerivedRegistry>);
+    static_assert(!ConfigurationProvider<Configuration<DerivedRegistry>, TestRegistry>);
+
+    TEST(RegistryTest, DerivedRegistryWorksLikeItsBase)
+    {
+        auto loaded = Configuration<DerivedRegistry>::FromDefaults();
+        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        EXPECT_EQ(loaded->Get<settings::ServerPort>(), 8080);
+        EXPECT_EQ(loaded->Get<settings::AppName>(), "MyApplication");
+    }
+
     TEST(RegistryTest, FindsEveryDeclaredPathAndRejectsUnknownPaths)
     {
         TestRegistry::ForEachSetting([]<typename S>() {

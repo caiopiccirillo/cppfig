@@ -55,6 +55,11 @@ namespace detail {
         return true;
     }
 
+    /// A plain list of setting types, for matching a registry's settings
+    /// without naming Registry itself (a registry may be a derived struct).
+    template <typename... Settings>
+    struct SettingList { };
+
     struct PathEntry {
         std::string_view path;
         std::size_t index;
@@ -63,10 +68,18 @@ namespace detail {
 }  // namespace detail
 
 /// @brief Compile-time list of unique setting types and their static metadata.
+///
+/// Use it through an alias or, for shorter names in diagnostics, clangd
+/// hovers and symbols, as the base of a struct of your own:
+/// @code
+/// struct AppRegistry : cppfig::Registry<settings::Port, settings::Host> { };
+/// @endcode
 template <IsSetting... Settings>
 class Registry {
 public:
     static constexpr std::size_t size = sizeof...(Settings);
+
+    using setting_list = detail::SettingList<Settings...>;
 
     template <typename S>
     static constexpr bool has_setting = (std::is_same_v<S, Settings> || ...);
