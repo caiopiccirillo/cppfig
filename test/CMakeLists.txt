@@ -6,7 +6,6 @@ foreach(test_name registry_test configuration_test concurrency_test allocation_t
     target_link_libraries(${test_name}
         PRIVATE
         cppfig::cppfig
-        cppfig::testing
         cppfig_warnings
         GTest::gtest_main
     )

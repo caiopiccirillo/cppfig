@@ -86,8 +86,8 @@ endif()
 # Uncomment to enable clang-tidy during compilation
 # set(CMAKE_CXX_CLANG_TIDY clang-tidy;-fix;-fix-errors)
 
-# Both are needed by src/: GTest for the cppfig::testing target, and the
-# header self-containment check that is built alongside it.
+# GTest for the test suite, and the header self-containment check that src/
+# builds alongside the tests.
 if(CPPFIG_BUILD_TESTS)
     find_package(GTest CONFIG REQUIRED)
     include(HeaderSelfContainment)
