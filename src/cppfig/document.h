@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -14,6 +15,17 @@
 #include <vector>
 
 #include "cppfig/status.h"
+
+#if __has_include(<unistd.h>)
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include <cerrno>
+#define CPPFIG_HAS_POSIX_IO 1
+#else
+#define CPPFIG_HAS_POSIX_IO 0
+#endif
 
 namespace cppfig {
 
@@ -41,6 +53,120 @@ struct UnknownKey {
     std::size_t line = 0;
 };
 
+namespace detail {
+
+#if CPPFIG_HAS_POSIX_IO
+    [[nodiscard]] inline auto ErrorText(int code) -> std::string { return std::generic_category().message(code); }
+
+    /// Writes all of data to fd, retrying short writes and interruptions.
+    /// Returns 0 or the failing errno value.
+    [[nodiscard]] inline auto WriteAll(int fd, std::string_view data) -> int
+    {
+        while (!data.empty()) {
+            const ::ssize_t written = ::write(fd, data.data(), data.size());
+            if (written < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                return errno;
+            }
+            data.remove_prefix(static_cast<std::size_t>(written));
+        }
+        return 0;
+    }
+
+    [[nodiscard]] inline auto ReplaceFileAtomically(const std::filesystem::path& destination, std::string_view text) -> Status
+    {
+        // Unique per process and call, so concurrent saves never share a temporary.
+        static std::atomic<unsigned long> counter = 0;
+        std::filesystem::path temporary;
+        int fd = -1;
+        for (int attempt = 0; attempt < 16 && fd < 0; ++attempt) {
+            temporary = destination;
+            temporary += ".cppfig-" + std::to_string(::getpid()) + "-" + std::to_string(counter.fetch_add(1)) + ".tmp";
+            // 0666 lets the process umask decide the mode of a newly created file.
+            fd = ::open(temporary.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0666);
+            if (fd < 0 && errno != EEXIST) {
+                return InternalError("Failed to create temporary configuration file '" + temporary.string() + "': " + ErrorText(errno));
+            }
+        }
+        if (fd < 0) {
+            return InternalError("Failed to create a unique temporary file for '" + destination.string() + "'");
+        }
+
+        const auto fail = [&](std::string_view action, int code) -> Status {
+            if (fd >= 0) {
+                ::close(fd);
+            }
+            ::unlink(temporary.c_str());
+            return InternalError("Failed to " + std::string(action) + " '" + destination.string() + "': " + ErrorText(code));
+        };
+
+        struct ::stat existing {};
+        if (::stat(destination.c_str(), &existing) == 0) {
+            if (::fchmod(fd, existing.st_mode & 07777) != 0) {
+                return fail("copy the permissions of", errno);
+            }
+            // Changing the owner needs privileges; without them the new file
+            // belongs to the saving user, as any rewrite by that user would.
+            if (::fchown(fd, existing.st_uid, existing.st_gid) != 0) {
+            }
+        }
+
+        if (const int code = WriteAll(fd, text); code != 0) {
+            return fail("write the temporary file for", code);
+        }
+        if (::fsync(fd) != 0) {
+            return fail("flush the temporary file for", errno);
+        }
+        const int closed = ::close(fd);
+        fd = -1;
+        if (closed != 0) {
+            return fail("close the temporary file for", errno);
+        }
+        if (::rename(temporary.c_str(), destination.c_str()) != 0) {
+            return fail("replace", errno);
+        }
+
+        // Make the rename itself durable. The new file is already in place, so
+        // a failure here is not reported as a failed save.
+        const auto directory = destination.has_parent_path() ? destination.parent_path() : std::filesystem::path(".");
+        const int directory_fd = ::open(directory.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        if (directory_fd >= 0) {
+            ::fsync(directory_fd);
+            ::close(directory_fd);
+        }
+        return OkStatus();
+    }
+#else
+    [[nodiscard]] inline auto ReplaceFileAtomically(const std::filesystem::path& destination, std::string_view text) -> Status
+    {
+        static std::atomic<unsigned long> counter = 0;
+        auto temporary = destination;
+        temporary += ".cppfig-" + std::to_string(counter.fetch_add(1)) + ".tmp";
+        {
+            std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+            output.write(text.data(), static_cast<std::streamsize>(text.size()));
+            output.flush();
+            if (!output) {
+                output.close();
+                std::error_code error;
+                std::filesystem::remove(temporary, error);
+                return InternalError("Failed to write temporary configuration file '" + temporary.string() + "'");
+            }
+        }
+        std::error_code error;
+        std::filesystem::rename(temporary, destination, error);
+        if (error) {
+            std::filesystem::remove(temporary, error);
+            return InternalError("Failed to replace configuration file '" + destination.string() + "': " + error.message());
+        }
+        return OkStatus();
+    }
+#endif
+
+}  // namespace detail
+
 /// @brief The flat .conf source a configuration was loaded from, with any
 /// migrations appended.
 ///
@@ -65,42 +191,31 @@ public:
 
     /// Atomically persists the source text and any migrations.
     /// Environment overrides are never part of the document.
+    ///
+    /// The text is written to a temporary file unique to this call, flushed to
+    /// disk and renamed over the destination, so readers and concurrent savers
+    /// see either the old or the new file. An existing file keeps its
+    /// permissions (and owner, where the process may set it); a symlink keeps
+    /// pointing at its target, which is what gets replaced.
     [[nodiscard]] auto Save() const -> Status
     {
         namespace fs = std::filesystem;
-        const fs::path destination(file_path_);
+        fs::path destination(file_path_);
+        std::error_code error;
+        if (fs::is_symlink(fs::symlink_status(destination, error))) {
+            auto target = fs::canonical(destination, error);
+            if (error) {
+                return InternalError("Failed to resolve configuration symlink '" + file_path_ + "': " + error.message());
+            }
+            destination = std::move(target);
+        }
         if (destination.has_parent_path()) {
-            std::error_code error;
             fs::create_directories(destination.parent_path(), error);
             if (error) {
                 return InternalError("Failed to create configuration directory: " + error.message());
             }
         }
-
-        fs::path temporary = destination;
-        temporary += ".cppfig.tmp";
-        {
-            std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-            if (!output.is_open()) {
-                return InternalError("Failed to open temporary configuration file '" + temporary.string() + "'");
-            }
-            output.write(text_.data(), static_cast<std::streamsize>(text_.size()));
-            output.flush();
-            if (!output) {
-                output.close();
-                std::error_code error;
-                fs::remove(temporary, error);
-                return InternalError("Failed to write temporary configuration file '" + temporary.string() + "'");
-            }
-        }
-
-        std::error_code error;
-        fs::rename(temporary, destination, error);
-        if (error) {
-            fs::remove(temporary, error);
-            return InternalError("Failed to replace configuration file '" + file_path_ + "'");
-        }
-        return OkStatus();
+        return detail::ReplaceFileAtomically(destination, text_);
     }
 
 private:

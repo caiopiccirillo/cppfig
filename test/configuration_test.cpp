@@ -2,10 +2,13 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <string_view>
+#include <thread>
 
 #include "test_settings.h"
 
@@ -294,6 +297,106 @@ namespace {
         TestConfiguration config = std::move(loaded->config);
         loaded = InvalidArgumentError("discarded");
         EXPECT_EQ(config.Get<settings::ServerPort>(), 9000);
+    }
+
+    TEST(ConfigurationIOTest, SavePreservesExistingFilePermissions)
+    {
+        namespace fs = std::filesystem;
+        const TempDirectory directory;
+        directory.write("app.conf", "app.name = Secret\n");
+        fs::permissions(directory.file("app.conf"), fs::perms::owner_read | fs::perms::owner_write);
+
+        auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        ASSERT_TRUE(loaded->document.NeedsSave());
+        ASSERT_TRUE(loaded->document.Save().ok());
+
+        EXPECT_EQ(fs::status(directory.file("app.conf")).permissions(), fs::perms::owner_read | fs::perms::owner_write);
+    }
+
+    TEST(ConfigurationIOTest, SaveWritesThroughSymlinkToItsTarget)
+    {
+        namespace fs = std::filesystem;
+        const TempDirectory directory;
+        fs::create_directories(directory.file("real"));
+        directory.write("real/app.conf", "app.name = Linked\n");
+        fs::create_symlink(directory.file("real/app.conf"), directory.file("app.conf"));
+
+        auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        ASSERT_TRUE(loaded->document.Save().ok());
+
+        EXPECT_TRUE(fs::is_symlink(fs::symlink_status(directory.file("app.conf"))));
+        EXPECT_EQ(directory.read("real/app.conf"), loaded->document.GetSourceText());
+    }
+
+    TEST(ConfigurationIOTest, SaveLeavesNoTemporaryFiles)
+    {
+        namespace fs = std::filesystem;
+        const TempDirectory directory;
+        auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        ASSERT_TRUE(loaded->document.Save().ok());
+        ASSERT_TRUE(loaded->document.Save().ok());
+
+        std::size_t entries = 0;
+        for (const auto& entry : fs::directory_iterator(directory.path())) {
+            EXPECT_EQ(entry.path().filename(), "app.conf");
+            ++entries;
+        }
+        EXPECT_EQ(entries, 1U);
+    }
+
+    TEST(ConfigurationIOTest, ConcurrentSavesToOnePathNeverInterleave)
+    {
+        const TempDirectory directory;
+        const auto path = directory.file("app.conf").string();
+        // Two documents bound to the same destination with different contents.
+        directory.write("app.conf", "app.name = First\n");
+        auto first = TestConfiguration::Load(path);
+        directory.write("app.conf", "app.name = Second\n");
+        auto second = TestConfiguration::Load(path);
+        ASSERT_TRUE(first.ok() && second.ok());
+        const std::string first_text(first->document.GetSourceText());
+        const std::string second_text(second->document.GetSourceText());
+
+        std::atomic<bool> failed = false;
+        auto save_repeatedly = [&failed](const ConfDocument& document) {
+            for (int i = 0; i < 200; ++i) {
+                if (!document.Save().ok()) {
+                    failed = true;
+                }
+            }
+        };
+        std::thread writer_one(save_repeatedly, std::cref(first->document));
+        std::thread writer_two(save_repeatedly, std::cref(second->document));
+        writer_one.join();
+        writer_two.join();
+
+        EXPECT_FALSE(failed);
+        const auto final_text = directory.read("app.conf");
+        EXPECT_TRUE(final_text == first_text || final_text == second_text) << final_text;
+    }
+
+    TEST(ConfigurationIOTest, FailedSaveLeavesTheOriginalFileIntact)
+    {
+        namespace fs = std::filesystem;
+        if (::geteuid() == 0) {
+            GTEST_SKIP() << "permission checks do not apply to root";
+        }
+        const TempDirectory directory;
+        fs::create_directories(directory.file("locked"));
+        const std::string original = "app.name = Original\n";
+        directory.write("locked/app.conf", original);
+
+        auto loaded = TestConfiguration::Load(directory.file("locked/app.conf").string());
+        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        fs::permissions(directory.file("locked"), fs::perms::owner_read | fs::perms::owner_exec);
+        const auto status = loaded->document.Save();
+        fs::permissions(directory.file("locked"), fs::perms::owner_all);
+
+        EXPECT_FALSE(status.ok());
+        EXPECT_EQ(directory.read("locked/app.conf"), original);
     }
 
     TEST(ConfigurationIOTest, SaveCreatesParentDirectories)

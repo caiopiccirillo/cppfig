@@ -17,6 +17,7 @@ endforeach()
 
 find_package(Threads REQUIRED)
 target_link_libraries(concurrency_test PRIVATE Threads::Threads)
+target_link_libraries(configuration_test PRIVATE Threads::Threads)
 
 # Each case must fail to compile with its own diagnostic. Matching the message
 # (rather than only expecting a non-zero exit) keeps an unrelated error, such as
