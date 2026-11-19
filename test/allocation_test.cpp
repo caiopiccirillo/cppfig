@@ -5,24 +5,67 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdlib>
+#include <new>
 
 #include "test_settings.h"
 
 namespace {
 std::atomic<std::size_t> allocation_count = 0;
-}
 
-void* operator new(std::size_t size)
+// Every replaceable allocation form is routed through these two functions so
+// that no allocation goes uncounted and every pointer is released by the same
+// allocator family that produced it (otherwise ASan reports alloc-dealloc mismatches).
+auto CountedAllocate(std::size_t size, std::size_t alignment) noexcept -> void*
 {
     allocation_count.fetch_add(1, std::memory_order_relaxed);
-    if (void* pointer = std::malloc(size)) {
+    if (size == 0) {
+        size = 1;
+    }
+    if (alignment <= __STDCPP_DEFAULT_NEW_ALIGNMENT__) {
+        return std::malloc(size);
+    }
+    const std::size_t rounded = (size + alignment - 1) / alignment * alignment;
+    return std::aligned_alloc(alignment, rounded);
+}
+
+auto CountedAllocateOrAbort(std::size_t size, std::size_t alignment) -> void*
+{
+    if (void* pointer = CountedAllocate(size, alignment)) {
         return pointer;
     }
     std::abort();
 }
+}  // namespace
+
+// NOLINTBEGIN(misc-new-delete-overloads)
+void* operator new(std::size_t size) { return CountedAllocateOrAbort(size, 0); }
+void* operator new[](std::size_t size) { return CountedAllocateOrAbort(size, 0); }
+void* operator new(std::size_t size, std::align_val_t alignment) { return CountedAllocateOrAbort(size, static_cast<std::size_t>(alignment)); }
+void* operator new[](std::size_t size, std::align_val_t alignment) { return CountedAllocateOrAbort(size, static_cast<std::size_t>(alignment)); }
+void* operator new(std::size_t size, const std::nothrow_t&) noexcept { return CountedAllocate(size, 0); }
+void* operator new[](std::size_t size, const std::nothrow_t&) noexcept { return CountedAllocate(size, 0); }
+void* operator new(std::size_t size, std::align_val_t alignment, const std::nothrow_t&) noexcept
+{
+    return CountedAllocate(size, static_cast<std::size_t>(alignment));
+}
+void* operator new[](std::size_t size, std::align_val_t alignment, const std::nothrow_t&) noexcept
+{
+    return CountedAllocate(size, static_cast<std::size_t>(alignment));
+}
 
 void operator delete(void* pointer) noexcept { std::free(pointer); }
+void operator delete[](void* pointer) noexcept { std::free(pointer); }
 void operator delete(void* pointer, std::size_t) noexcept { std::free(pointer); }
+void operator delete[](void* pointer, std::size_t) noexcept { std::free(pointer); }
+void operator delete(void* pointer, std::align_val_t) noexcept { std::free(pointer); }
+void operator delete[](void* pointer, std::align_val_t) noexcept { std::free(pointer); }
+void operator delete(void* pointer, std::size_t, std::align_val_t) noexcept { std::free(pointer); }
+void operator delete[](void* pointer, std::size_t, std::align_val_t) noexcept { std::free(pointer); }
+void operator delete(void* pointer, const std::nothrow_t&) noexcept { std::free(pointer); }
+void operator delete[](void* pointer, const std::nothrow_t&) noexcept { std::free(pointer); }
+void operator delete(void* pointer, std::align_val_t, const std::nothrow_t&) noexcept { std::free(pointer); }
+void operator delete[](void* pointer, std::align_val_t, const std::nothrow_t&) noexcept { std::free(pointer); }
+// NOLINTEND(misc-new-delete-overloads)
 
 namespace cppfig::test {
 namespace {
@@ -31,6 +74,34 @@ namespace {
     void DoNotOptimize(const T& value)
     {
         asm volatile("" : : "g"(&value) : "memory");
+    }
+
+    // Guards against a vacuous zero-allocation result: the counter must see
+    // ordinary, over-aligned and nothrow allocations alike.
+    TEST(AllocationTest, CounterObservesEveryAllocationForm)
+    {
+        struct alignas(64) OverAligned {
+            char bytes[64];
+        };
+
+        // DoNotOptimize keeps the compiler from eliding the new/delete pairs.
+        allocation_count = 0;
+        auto* plain = new int(1);
+        DoNotOptimize(plain);
+        delete plain;
+        EXPECT_EQ(allocation_count.load(), 1U);
+
+        allocation_count = 0;
+        auto* aligned = new OverAligned {};
+        DoNotOptimize(aligned);
+        delete aligned;
+        EXPECT_EQ(allocation_count.load(), 1U);
+
+        allocation_count = 0;
+        auto* nothrow = new (std::nothrow) int(1);
+        DoNotOptimize(nothrow);
+        delete nothrow;
+        EXPECT_EQ(allocation_count.load(), 1U);
     }
 
     TEST(AllocationTest, TypedReadsNeverAllocate)
