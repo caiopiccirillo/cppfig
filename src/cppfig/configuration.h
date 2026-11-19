@@ -86,6 +86,7 @@ namespace detail {
         std::string_view source;
         std::string migrations;
         bool apply_environment = false;
+        bool record_migrations = false;
     };
 
     /// Selects the effective value with precedence environment > file > default.
@@ -100,14 +101,18 @@ namespace detail {
             return status;
         }
 
-        if (!file_value) {
-            context.migrations += std::string(info.path) + " = " + EscapeConfValue(ConfigTraits<T>::ToString(default_value)) + "\n";
-        }
-        else {
+        if (file_value) {
             status = CheckSettingValue(info, *file_value, "file value");
             if (!status.ok()) {
                 return LocatedError(context.source, location.line, location.column, status.message());
             }
+        }
+        else if (context.record_migrations) {
+            // Appended in place: building the line from temporaries cost one
+            // allocation per setting whenever it outgrew the small-string buffer.
+            context.migrations.append(info.path).append(" = ");
+            AppendConfValue(context.migrations, ConfigTraits<T>::ToString(default_value));
+            context.migrations.push_back('\n');
         }
 
         if (context.apply_environment && !info.env_override.empty()) {
@@ -366,6 +371,7 @@ auto Configuration<RegistryType>::Load(std::string file_path, LoadOptions option
     auto& state = *state_owner;
     state.context.source = file_path;
     state.context.apply_environment = true;
+    state.context.record_migrations = true;
     state.unknown_key_policy = options.unknown_keys;
 
     bool exists = false;

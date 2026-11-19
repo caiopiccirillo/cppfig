@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <new>
 
+#include "generated_registry.h"
 #include "test_settings.h"
 
 namespace {
@@ -102,6 +103,32 @@ namespace {
         DoNotOptimize(nothrow);
         delete nothrow;
         EXPECT_EQ(allocation_count.load(), 1U);
+    }
+
+    // 128 settings, a quarter of them strings short enough for the small-string
+    // buffer: initialization should allocate a bounded number of times, not once
+    // per setting.
+    using ScaleRegistry = scale::GeneratedRegistry<128>;
+
+    TEST(AllocationTest, FromDefaultsDoesNotAllocatePerSetting)
+    {
+        allocation_count = 0;
+        auto loaded = Configuration<ScaleRegistry>::FromDefaults();
+        const auto allocations = allocation_count.load();
+        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        EXPECT_LT(allocations, 8U);
+    }
+
+    TEST(AllocationTest, MigrationDoesNotAllocatePerSetting)
+    {
+        const TempDirectory directory;
+        const auto path = directory.file("app.conf").string();
+        allocation_count = 0;
+        auto loaded = Configuration<ScaleRegistry>::Load(path);
+        const auto allocations = allocation_count.load();
+        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        EXPECT_NE(loaded->document.GetSourceText().find("scale.s127 = 0.5\n"), std::string_view::npos);
+        EXPECT_LT(allocations, 40U);
     }
 
     TEST(AllocationTest, TypedReadsNeverAllocate)

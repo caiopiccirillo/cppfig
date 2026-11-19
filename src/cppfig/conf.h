@@ -181,40 +181,47 @@ private:
     }
 };
 
-/// @brief Escapes a serialized value only when the flat grammar requires quotes.
-[[nodiscard]] inline auto EscapeConfValue(std::string_view value) -> std::string
+/// @brief Appends a serialized value to out, quoted and escaped only when the
+/// flat grammar requires it.
+inline void AppendConfValue(std::string& out, std::string_view value)
 {
-    const bool needs_quotes = value.empty() || value.front() == ' ' || value.back() == ' ' || value.front() == '\t' ||
-                              value.back() == '\t' || value.find_first_of("=#\"\\\n\r\t") != std::string_view::npos;
+    const bool needs_quotes = value.empty() || value.front() == ' ' || value.back() == ' ' || value.front() == '\t'
+                              || value.back() == '\t' || value.find_first_of("=#\"\\\n\r\t") != std::string_view::npos;
     if (!needs_quotes) {
-        return std::string(value);
+        out.append(value);
+        return;
     }
 
-    std::string escaped;
-    escaped.reserve(value.size() + 2);
-    escaped.push_back('"');
+    out.push_back('"');
     for (const char c : value) {
         switch (c) {
         case '\\':
-            escaped += "\\\\";
+            out.append("\\\\");
             break;
         case '"':
-            escaped += "\\\"";
+            out.append("\\\"");
             break;
         case '\n':
-            escaped += "\\n";
+            out.append("\\n");
             break;
         case '\r':
-            escaped += "\\r";
+            out.append("\\r");
             break;
         case '\t':
-            escaped += "\\t";
+            out.append("\\t");
             break;
         default:
-            escaped.push_back(c);
+            out.push_back(c);
         }
     }
-    escaped.push_back('"');
+    out.push_back('"');
+}
+
+/// @brief Escapes a serialized value only when the flat grammar requires quotes.
+[[nodiscard]] inline auto EscapeConfValue(std::string_view value) -> std::string
+{
+    std::string escaped;
+    AppendConfValue(escaped, value);
     return escaped;
 }
 
