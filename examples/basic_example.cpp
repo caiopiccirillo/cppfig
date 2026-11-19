@@ -48,11 +48,13 @@ int main()
     std::cout << "Server: " << config.Get<settings::ServerHost>() << ":" << config.Get<settings::ServerPort>() << '\n';
     std::cout << "Logging enabled: " << (config.Get<settings::LoggingEnabled>() ? "yes" : "no") << '\n';
 
-    // Creates the file, or appends settings missing from it, on first run.
-    const auto status = loaded->document.Save();
-    if (!status.ok()) {
-        std::cerr << "Failed to save configuration: " << status.message() << '\n';
-        return 1;
+    // Creates the file, or appends settings missing from it, only when needed.
+    if (loaded->document.NeedsSave()) {
+        const auto status = loaded->document.Save();
+        if (!status.ok()) {
+            std::cerr << "Failed to save configuration: " << status.message() << '\n';
+            return 1;
+        }
     }
     return 0;
 }

@@ -30,6 +30,10 @@ public:
     /// Returns the preserved source text, including not-yet-saved migrations.
     [[nodiscard]] auto GetSourceText() const noexcept -> std::string_view { return text_; }
 
+    /// True when the file did not exist or settings were appended to it, so
+    /// the text differs from what is on disk. Reflects the state at load time.
+    [[nodiscard]] auto NeedsSave() const noexcept -> bool { return needs_save_; }
+
     /// Atomically persists the source text and any migrations.
     /// Environment overrides are never part of the document.
     [[nodiscard]] auto Save() const -> Status
@@ -74,21 +78,23 @@ private:
     template <typename RegistryType>
     friend class Configuration;
 
-    ConfDocument(std::string file_path, std::string text)
+    ConfDocument(std::string file_path, std::string text, bool needs_save)
         : file_path_(std::move(file_path))
         , text_(std::move(text))
+        , needs_save_(needs_save)
     {
     }
 
-    /// Reads file_path into text. A missing file leaves text empty and succeeds.
-    [[nodiscard]] static auto ReadFile(const std::string& file_path, std::string& text) -> Status
+    /// Reads file_path into text and reports whether it exists. A missing file
+    /// leaves text empty and succeeds.
+    [[nodiscard]] static auto ReadFile(const std::string& file_path, std::string& text, bool& exists) -> Status
     {
         if (file_path.empty()) {
             return InvalidArgumentError("Configuration file path must not be empty");
         }
 
         std::error_code error;
-        const bool exists = std::filesystem::exists(file_path, error);
+        exists = std::filesystem::exists(file_path, error);
         if (error) {
             return InternalError("Failed to inspect configuration file '" + file_path + "': " + error.message());
         }
@@ -124,6 +130,7 @@ private:
 
     std::string file_path_;
     std::string text_;
+    bool needs_save_ = false;
 };
 
 }  // namespace cppfig

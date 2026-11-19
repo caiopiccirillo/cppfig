@@ -338,7 +338,8 @@ auto Configuration<RegistryType>::Load(std::string file_path) -> StatusOr<LoadRe
     auto& state = *state_owner;
     state.apply_environment = true;
 
-    auto status = ConfDocument::ReadFile(file_path, state.document);
+    bool exists = false;
+    auto status = ConfDocument::ReadFile(file_path, state.document, exists);
     if (!status.ok()) {
         return status;
     }
@@ -351,8 +352,9 @@ auto Configuration<RegistryType>::Load(std::string file_path) -> StatusOr<LoadRe
         return status;
     }
 
+    const bool needs_save = !exists || !state.migrations.empty();
     ConfDocument::AppendMigrations(state.document, state.migrations);
-    return LoadResult<RegistryType> { Configuration(state), ConfDocument(std::move(file_path), std::move(state.document)) };
+    return LoadResult<RegistryType> { Configuration(state), ConfDocument(std::move(file_path), std::move(state.document), needs_save) };
 }
 
 }  // namespace cppfig

@@ -222,6 +222,24 @@ namespace {
         EXPECT_NE(loaded.status().message().find("custom.point"), std::string_view::npos);
     }
 
+    TEST(ConfigurationIOTest, NeedsSaveOnlyWhenTheFileIsMissingOrIncomplete)
+    {
+        const TempDirectory directory;
+        auto missing = TestConfiguration::Load(directory.file("app.conf").string());
+        ASSERT_TRUE(missing.ok()) << missing.status().message();
+        EXPECT_TRUE(missing->document.NeedsSave());
+        ASSERT_TRUE(missing->document.Save().ok());
+
+        auto complete = TestConfiguration::Load(directory.file("app.conf").string());
+        ASSERT_TRUE(complete.ok()) << complete.status().message();
+        EXPECT_FALSE(complete->document.NeedsSave());
+
+        directory.write("partial.conf", "app.name = Partial\n");
+        auto partial = TestConfiguration::Load(directory.file("partial.conf").string());
+        ASSERT_TRUE(partial.ok()) << partial.status().message();
+        EXPECT_TRUE(partial->document.NeedsSave());
+    }
+
     TEST(ConfigurationIOTest, LoadedConfigurationHoldsOnlyTypedValues)
     {
         static_assert(sizeof(TestConfiguration) == sizeof(TestRegistry::values_type));
