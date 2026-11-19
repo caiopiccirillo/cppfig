@@ -1,13 +1,17 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <ios>
 #include <iterator>
+#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include "cppfig/status.h"
 
@@ -15,6 +19,27 @@ namespace cppfig {
 
 template <typename RegistryType>
 class Configuration;
+
+/// @brief How Load treats file entries whose path is not in the registry.
+enum class UnknownKeyPolicy : std::uint8_t {
+    /// Fail initialization. Catches typos, but an older binary then rejects a
+    /// file written by a newer one, and removing a setting breaks existing files.
+    kReject,
+    /// Leave the entry in the document untouched and report it through
+    /// ConfDocument::GetUnknownKeys. Duplicate known keys are still rejected.
+    kPreserve,
+};
+
+/// @brief Options for Configuration::Load.
+struct LoadOptions {
+    UnknownKeyPolicy unknown_keys = UnknownKeyPolicy::kReject;
+};
+
+/// @brief A file entry kept under UnknownKeyPolicy::kPreserve.
+struct UnknownKey {
+    std::string path;
+    std::size_t line = 0;
+};
 
 /// @brief The flat .conf source a configuration was loaded from, with any
 /// migrations appended.
@@ -33,6 +58,10 @@ public:
     /// True when the file did not exist or settings were appended to it, so
     /// the text differs from what is on disk. Reflects the state at load time.
     [[nodiscard]] auto NeedsSave() const noexcept -> bool { return needs_save_; }
+
+    /// Entries that were kept because their path is not in the registry, in
+    /// file order. Always empty under UnknownKeyPolicy::kReject.
+    [[nodiscard]] auto GetUnknownKeys() const noexcept -> std::span<const UnknownKey> { return unknown_keys_; }
 
     /// Atomically persists the source text and any migrations.
     /// Environment overrides are never part of the document.
@@ -78,9 +107,10 @@ private:
     template <typename RegistryType>
     friend class Configuration;
 
-    ConfDocument(std::string file_path, std::string text, bool needs_save)
+    ConfDocument(std::string file_path, std::string text, std::vector<UnknownKey> unknown_keys, bool needs_save)
         : file_path_(std::move(file_path))
         , text_(std::move(text))
+        , unknown_keys_(std::move(unknown_keys))
         , needs_save_(needs_save)
     {
     }
@@ -130,6 +160,7 @@ private:
 
     std::string file_path_;
     std::string text_;
+    std::vector<UnknownKey> unknown_keys_;
     bool needs_save_ = false;
 };
 

@@ -113,6 +113,46 @@ namespace {
         EXPECT_NE(duplicate.status().message().find("line 2"), std::string_view::npos);
     }
 
+    TEST(ConfigurationIOTest, PreservePolicyKeepsUnknownKeysAndReportsThem)
+    {
+        const TempDirectory directory;
+        const std::string document = CompleteDocument() + "legacy.removed = 1\n# about the next key\nfuture.added = \"x\"\n";
+        directory.write("app.conf", document);
+
+        auto loaded = TestConfiguration::Load(directory.file("app.conf").string(), { .unknown_keys = UnknownKeyPolicy::kPreserve });
+        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        EXPECT_EQ(loaded->config.Get<settings::ServerPort>(), 9000);
+        EXPECT_FALSE(loaded->document.NeedsSave());
+
+        const auto unknown = loaded->document.GetUnknownKeys();
+        ASSERT_EQ(unknown.size(), 2U);
+        EXPECT_EQ(unknown[0].path, "legacy.removed");
+        EXPECT_EQ(unknown[0].line, 10U);
+        EXPECT_EQ(unknown[1].path, "future.added");
+        EXPECT_EQ(unknown[1].line, 12U);
+
+        ASSERT_TRUE(loaded->document.Save().ok());
+        EXPECT_EQ(directory.read("app.conf"), document);
+    }
+
+    TEST(ConfigurationIOTest, PreservePolicyStillRejectsDuplicateKnownKeys)
+    {
+        const TempDirectory directory;
+        directory.write("app.conf", "server.port = 1\nserver.port = 2\n");
+        auto loaded = TestConfiguration::Load(directory.file("app.conf").string(), { .unknown_keys = UnknownKeyPolicy::kPreserve });
+        ASSERT_FALSE(loaded.ok());
+        EXPECT_NE(loaded.status().message().find("Duplicate configuration setting"), std::string_view::npos);
+    }
+
+    TEST(ConfigurationIOTest, RejectPolicyIsTheDefault)
+    {
+        const TempDirectory directory;
+        directory.write("app.conf", "legacy.removed = 1\n");
+        auto loaded = TestConfiguration::Load(directory.file("app.conf").string(), { .unknown_keys = UnknownKeyPolicy::kReject });
+        ASSERT_FALSE(loaded.ok());
+        EXPECT_EQ(LoadOptions {}.unknown_keys, UnknownKeyPolicy::kReject);
+    }
+
     TEST(ConfigurationIOTest, RejectsMalformedSyntaxWithLineInformation)
     {
         const TempDirectory directory;

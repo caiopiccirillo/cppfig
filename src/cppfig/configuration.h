@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "cppfig/conf.h"
 #include "cppfig/document.h"
@@ -230,7 +231,7 @@ public:
     /// Loads a flat .conf file and captures environment overrides once.
     /// A missing file yields defaults and a document holding them; save the
     /// document to create the file.
-    [[nodiscard]] static auto Load(std::string file_path) -> StatusOr<LoadResult<RegistryType>>;
+    [[nodiscard]] static auto Load(std::string file_path, LoadOptions options = {}) -> StatusOr<LoadResult<RegistryType>>;
 
     /// Creates a configuration from defaults without file or environment input.
     [[nodiscard]] static auto FromDefaults() -> StatusOr<Configuration>
@@ -265,6 +266,8 @@ private:
         std::bitset<RegistryType::size> seen;
         std::string document;
         std::string migrations;
+        std::vector<UnknownKey> unknown_keys;
+        UnknownKeyPolicy unknown_key_policy = UnknownKeyPolicy::kReject;
         bool apply_environment = false;
 
         // The slot addresses point into this object.
@@ -284,19 +287,23 @@ private:
         return ConfParser::ForEachEntry(state.document, [&state](const ConfEntry& entry) -> Status {
             const std::size_t index = RegistryType::FindPath(entry.path);
             if (index == RegistryType::size) {
-                return InvalidArgumentError("Unknown configuration setting '" + std::string(entry.path) + "' on line " +
-                                            std::to_string(entry.line));
+                if (state.unknown_key_policy == UnknownKeyPolicy::kPreserve) {
+                    state.unknown_keys.push_back(UnknownKey { std::string(entry.path), entry.line });
+                    return OkStatus();
+                }
+                return InvalidArgumentError("Unknown configuration setting '" + std::string(entry.path) + "' on line "
+                                            + std::to_string(entry.line));
             }
             if (state.seen.test(index)) {
-                return InvalidArgumentError("Duplicate configuration setting '" + std::string(entry.path) + "' on line " +
-                                            std::to_string(entry.line));
+                return InvalidArgumentError("Duplicate configuration setting '" + std::string(entry.path) + "' on line "
+                                            + std::to_string(entry.line));
             }
             state.seen.set(index);
 
             auto status = slot_table::parse[index](entry.text, state.file_slots[index]);
             if (!status.ok()) {
-                return InvalidArgumentError(std::string(status.message()) + " for '" + std::string(entry.path) + "' on line " +
-                                            std::to_string(entry.line));
+                return InvalidArgumentError(std::string(status.message()) + " for '" + std::string(entry.path) + "' on line "
+                                            + std::to_string(entry.line));
             }
             return OkStatus();
         });
@@ -332,11 +339,12 @@ struct LoadResult {
 };
 
 template <typename RegistryType>
-auto Configuration<RegistryType>::Load(std::string file_path) -> StatusOr<LoadResult<RegistryType>>
+auto Configuration<RegistryType>::Load(std::string file_path, LoadOptions options) -> StatusOr<LoadResult<RegistryType>>
 {
     auto state_owner = std::make_unique<InitializationState>();
     auto& state = *state_owner;
     state.apply_environment = true;
+    state.unknown_key_policy = options.unknown_keys;
 
     bool exists = false;
     auto status = ConfDocument::ReadFile(file_path, state.document, exists);
@@ -354,7 +362,7 @@ auto Configuration<RegistryType>::Load(std::string file_path) -> StatusOr<LoadRe
 
     const bool needs_save = !exists || !state.migrations.empty();
     ConfDocument::AppendMigrations(state.document, state.migrations);
-    return LoadResult<RegistryType> { Configuration(state), ConfDocument(std::move(file_path), std::move(state.document), needs_save) };
+    return LoadResult<RegistryType> { Configuration(state), ConfDocument(std::move(file_path), std::move(state.document), std::move(state.unknown_keys), needs_save) };
 }
 
 }  // namespace cppfig
