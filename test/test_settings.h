@@ -43,8 +43,8 @@ struct cppfig::ConfigTraits<cppfig::test::Point> {
         const auto first = std::from_chars(text.data(), text.data() + comma, point.x);
         const auto* second_begin = text.data() + comma + 1;
         const auto second = std::from_chars(second_begin, text.data() + text.size(), point.y);
-        if (first.ec != std::errc {} || first.ptr != text.data() + comma || second.ec != std::errc {} ||
-            second.ptr != text.data() + text.size()) {
+        if (first.ec != std::errc {} || first.ptr != text.data() + comma || second.ec != std::errc {}
+            || second.ptr != text.data() + text.size()) {
             return std::nullopt;
         }
         return point;

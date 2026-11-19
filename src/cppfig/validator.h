@@ -128,8 +128,8 @@ struct RangeValidator : ValidatorOps<RangeValidator<T>> {
             if (std::is_constant_evaluated()) {
                 return ValidationResult::Error("Value is outside the allowed range");
             }
-            return ValidationResult::Error("Value " + std::to_string(value) + " is outside [" + std::to_string(minimum) + ", " +
-                                           std::to_string(maximum) + "]");
+            return ValidationResult::Error("Value " + std::to_string(value) + " is outside [" + std::to_string(minimum) + ", "
+                                           + std::to_string(maximum) + "]");
         }
         return ValidationResult::Ok();
     }
@@ -164,8 +164,8 @@ struct MinLengthValidator : ValidatorOps<MinLengthValidator> {
     [[nodiscard]] auto operator()(const std::string& value) const -> ValidationResult
     {
         if (value.size() < minimum) {
-            return ValidationResult::Error("String length " + std::to_string(value.size()) + " is less than minimum " +
-                                           std::to_string(minimum));
+            return ValidationResult::Error("String length " + std::to_string(value.size()) + " is less than minimum "
+                                           + std::to_string(minimum));
         }
         return ValidationResult::Ok();
     }
@@ -177,8 +177,8 @@ struct MaxLengthValidator : ValidatorOps<MaxLengthValidator> {
     [[nodiscard]] auto operator()(const std::string& value) const -> ValidationResult
     {
         if (value.size() > maximum) {
-            return ValidationResult::Error("String length " + std::to_string(value.size()) + " exceeds maximum " +
-                                           std::to_string(maximum));
+            return ValidationResult::Error("String length " + std::to_string(value.size()) + " exceeds maximum "
+                                           + std::to_string(maximum));
         }
         return ValidationResult::Ok();
     }

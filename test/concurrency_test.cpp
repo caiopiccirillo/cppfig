@@ -26,8 +26,8 @@ namespace {
             thread = std::thread([&] {
                 const auto* name = std::addressof(config.Get<settings::AppName>());
                 for (int i = 0; i < iterations; ++i) {
-                    if (config.Get<settings::ServerPort>() != 8080 || config.Get<settings::AppName>() != "MyApplication" ||
-                        std::addressof(config.Get<settings::AppName>()) != name) {
+                    if (config.Get<settings::ServerPort>() != 8080 || config.Get<settings::AppName>() != "MyApplication"
+                        || std::addressof(config.Get<settings::AppName>()) != name) {
                         valid = false;
                     }
                 }

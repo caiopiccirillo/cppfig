@@ -38,8 +38,8 @@ concept ValidValidatorDeclaration = requires(const typename S::value_type& value
 
 /// @brief A complete setting declaration accepted by Registry.
 template <typename S>
-concept IsSetting = SettingDeclaration<S> && (!HasEnvDeclaration<S> || ValidEnvDeclaration<S>) &&
-                    (!HasValidatorDeclaration<S> || ValidValidatorDeclaration<S>);
+concept IsSetting = SettingDeclaration<S> && (!HasEnvDeclaration<S> || ValidEnvDeclaration<S>)
+                    && (!HasValidatorDeclaration<S> || ValidValidatorDeclaration<S>);
 
 template <typename S>
 concept HasEnvOverride = IsSetting<S> && HasEnvDeclaration<S>;
