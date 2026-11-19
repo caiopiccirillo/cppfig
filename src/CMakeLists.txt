@@ -2,6 +2,7 @@ set(CPPFIG_CORE_HEADERS
     cppfig/cppfig.h
     cppfig/conf.h
     cppfig/configuration.h
+    cppfig/document.h
     cppfig/interface.h
     cppfig/schema.h
     cppfig/setting.h

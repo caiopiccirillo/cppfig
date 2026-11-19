@@ -151,6 +151,11 @@ public:
     /// @pre ok() must be true.
     [[nodiscard]] auto value() const& -> const T& { return std::get<T>(storage_); }
 
+    /// @brief Returns a mutable reference to the value.
+    ///
+    /// @pre ok() must be true.
+    [[nodiscard]] auto value() & -> T& { return std::get<T>(storage_); }
+
     /// @brief Returns an rvalue reference to the value.
     ///
     /// @pre ok() must be true.
@@ -159,11 +164,17 @@ public:
     /// @brief Dereferences to the stored value (const).
     [[nodiscard]] auto operator*() const& -> const T& { return value(); }
 
+    /// @brief Dereferences to the stored value (mutable).
+    [[nodiscard]] auto operator*() & -> T& { return value(); }
+
     /// @brief Dereferences to the stored value (move).
     [[nodiscard]] auto operator*() && -> T&& { return std::move(*this).value(); }
 
     /// @brief Arrow operator for member access on the stored value.
     [[nodiscard]] auto operator->() const -> const T* { return &value(); }
+
+    /// @brief Arrow operator for mutable member access on the stored value.
+    [[nodiscard]] auto operator->() -> T* { return &value(); }
 
 private:
     std::variant<Status, T> storage_;

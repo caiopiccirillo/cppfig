@@ -43,12 +43,13 @@ int main()
         return 1;
     }
 
-    const auto& config = loaded.value();
+    const auto& config = loaded->config;
     std::cout << "Application: " << config.Get<settings::AppName>() << '\n';
     std::cout << "Server: " << config.Get<settings::ServerHost>() << ":" << config.Get<settings::ServerPort>() << '\n';
     std::cout << "Logging enabled: " << (config.Get<settings::LoggingEnabled>() ? "yes" : "no") << '\n';
 
-    const auto status = config.Save();
+    // Creates the file, or appends settings missing from it, on first run.
+    const auto status = loaded->document.Save();
     if (!status.ok()) {
         std::cerr << "Failed to save configuration: " << status.message() << '\n';
         return 1;

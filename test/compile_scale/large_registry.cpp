@@ -103,7 +103,7 @@ static_assert(LargeRegistry::size == CPPFIG_SCALE_SETTINGS);
 auto LoadLarge(const std::string& path) -> int
 {
     auto loaded = cppfig::Configuration<scale::LargeRegistry>::Load(path);
-    if (!loaded.ok() || !loaded->Save().ok()) {
+    if (!loaded.ok() || !loaded->document.Save().ok()) {
         return -1;
     }
     auto defaults = cppfig::Configuration<scale::LargeRegistry>::FromDefaults();
@@ -112,5 +112,5 @@ auto LoadLarge(const std::string& path) -> int
         return -1;
     }
     constexpr std::size_t last = CPPFIG_SCALE_SETTINGS - 4;
-    return loaded->Get<scale::Setting<last>>() + defaults->Get<scale::Setting<0>>() + fake->Get<scale::Setting<4>>();
+    return loaded->config.Get<scale::Setting<last>>() + defaults->Get<scale::Setting<0>>() + fake->Get<scale::Setting<4>>();
 }

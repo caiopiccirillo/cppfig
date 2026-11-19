@@ -45,16 +45,16 @@ namespace {
         auto loaded = TestConfiguration::Load(path.string());
         ASSERT_TRUE(loaded.ok()) << loaded.status().message();
         EXPECT_FALSE(std::filesystem::exists(path));
-        EXPECT_EQ(loaded->Get<settings::ServerPort>(), 8080);
-        EXPECT_NE(loaded->GetSourceText().find("app.name = MyApplication\n"), std::string_view::npos);
+        EXPECT_EQ(loaded->config.Get<settings::ServerPort>(), 8080);
+        EXPECT_NE(loaded->document.GetSourceText().find("app.name = MyApplication\n"), std::string_view::npos);
 
-        ASSERT_TRUE(loaded->Save().ok());
+        ASSERT_TRUE(loaded->document.Save().ok());
         ASSERT_TRUE(std::filesystem::exists(path));
-        EXPECT_EQ(directory.read("app.conf"), loaded->GetSourceText());
+        EXPECT_EQ(directory.read("app.conf"), loaded->document.GetSourceText());
 
         auto reloaded = TestConfiguration::Load(path.string());
         ASSERT_TRUE(reloaded.ok()) << reloaded.status().message();
-        EXPECT_EQ(reloaded->GetSourceText(), loaded->GetSourceText());
+        EXPECT_EQ(reloaded->document.GetSourceText(), loaded->document.GetSourceText());
     }
 
     TEST(ConfigurationIOTest, LoadsTypedFileValuesAndPreservesLayout)
@@ -64,15 +64,15 @@ namespace {
         auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
         ASSERT_TRUE(loaded.ok()) << loaded.status().message();
 
-        EXPECT_EQ(loaded->Get<settings::AppName>(), "TestApp");
-        EXPECT_EQ(loaded->Get<settings::ServerHost>(), "filehost");
-        EXPECT_EQ(loaded->Get<settings::ServerPort>(), 9000);
-        EXPECT_FALSE(loaded->Get<settings::LoggingEnabled>());
-        EXPECT_DOUBLE_EQ(loaded->Get<settings::Ratio>(), 2.5);
-        EXPECT_EQ(loaded->Get<settings::Origin>(), (Point { 3, 4 }));
-        EXPECT_EQ(loaded->Get<settings::Aligned>().value, 32);
+        EXPECT_EQ(loaded->config.Get<settings::AppName>(), "TestApp");
+        EXPECT_EQ(loaded->config.Get<settings::ServerHost>(), "filehost");
+        EXPECT_EQ(loaded->config.Get<settings::ServerPort>(), 9000);
+        EXPECT_FALSE(loaded->config.Get<settings::LoggingEnabled>());
+        EXPECT_DOUBLE_EQ(loaded->config.Get<settings::Ratio>(), 2.5);
+        EXPECT_EQ(loaded->config.Get<settings::Origin>(), (Point { 3, 4 }));
+        EXPECT_EQ(loaded->config.Get<settings::Aligned>().value, 32);
 
-        ASSERT_TRUE(loaded->Save().ok());
+        ASSERT_TRUE(loaded->document.Save().ok());
         EXPECT_EQ(directory.read("app.conf"), CompleteDocument());
     }
 
@@ -83,15 +83,15 @@ namespace {
         directory.write("app.conf", original);
         auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
         ASSERT_TRUE(loaded.ok()) << loaded.status().message();
-        EXPECT_EQ(loaded->Get<settings::AppName>(), "Existing");
-        EXPECT_EQ(loaded->Get<settings::ServerPort>(), 8080);
-        EXPECT_TRUE(loaded->GetSourceText().starts_with(original));
-        EXPECT_NE(loaded->GetSourceText().find("# Added by cppfig\n"), std::string_view::npos);
+        EXPECT_EQ(loaded->config.Get<settings::AppName>(), "Existing");
+        EXPECT_EQ(loaded->config.Get<settings::ServerPort>(), 8080);
+        EXPECT_TRUE(loaded->document.GetSourceText().starts_with(original));
+        EXPECT_NE(loaded->document.GetSourceText().find("# Added by cppfig\n"), std::string_view::npos);
 
-        ASSERT_TRUE(loaded->Save().ok());
+        ASSERT_TRUE(loaded->document.Save().ok());
         auto migrated = TestConfiguration::Load(directory.file("app.conf").string());
         ASSERT_TRUE(migrated.ok()) << migrated.status().message();
-        EXPECT_EQ(migrated->GetSourceText(), loaded->GetSourceText());
+        EXPECT_EQ(migrated->document.GetSourceText(), loaded->document.GetSourceText());
         EXPECT_EQ(directory.read("app.conf"), original + "\n# Added by cppfig\n" +
                                                        "server.host = localhost\nserver.port = 8080\nlogging.enabled = true\n" +
                                                        "numeric.ratio = 1.5\ncustom.point = 1,2\naligned.value = 16\n");
@@ -134,8 +134,8 @@ namespace {
 
         auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
         ASSERT_TRUE(loaded.ok()) << loaded.status().message();
-        EXPECT_EQ(loaded->Get<settings::AppName>(), "line 1\n\t\"name\"\\end");
-        ASSERT_TRUE(loaded->Save().ok());
+        EXPECT_EQ(loaded->config.Get<settings::AppName>(), "line 1\n\t\"name\"\\end");
+        ASSERT_TRUE(loaded->document.Save().ok());
         EXPECT_EQ(directory.read("app.conf"), document);
     }
 
@@ -146,12 +146,12 @@ namespace {
         const auto path = directory.file("escaped.conf");
         auto loaded = Configuration<Registry<EscapedSetting>>::Load(path.string());
         ASSERT_TRUE(loaded.ok()) << loaded.status().message();
-        EXPECT_EQ(loaded->GetSourceText(), "text.value = \"a#b\\n\"\n");
-        ASSERT_TRUE(loaded->Save().ok());
+        EXPECT_EQ(loaded->document.GetSourceText(), "text.value = \"a#b\\n\"\n");
+        ASSERT_TRUE(loaded->document.Save().ok());
 
         auto reloaded = Configuration<Registry<EscapedSetting>>::Load(path.string());
         ASSERT_TRUE(reloaded.ok()) << reloaded.status().message();
-        EXPECT_EQ(reloaded->Get<EscapedSetting>(), "a#b\n");
+        EXPECT_EQ(reloaded->config.Get<EscapedSetting>(), "a#b\n");
     }
 
     TEST(ConfigurationIOTest, CapturesEnvironmentOnceWithoutPersistingOverrides)
@@ -163,15 +163,15 @@ namespace {
 
         auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
         ASSERT_TRUE(loaded.ok()) << loaded.status().message();
-        EXPECT_EQ(loaded->Get<settings::ServerHost>(), "environment-host");
-        EXPECT_EQ(loaded->Get<settings::ServerPort>(), 10000);
+        EXPECT_EQ(loaded->config.Get<settings::ServerHost>(), "environment-host");
+        EXPECT_EQ(loaded->config.Get<settings::ServerPort>(), 10000);
 
         setenv("CPPFIG_TEST_SERVER_HOST", "changed-later", 1);
         setenv("CPPFIG_TEST_SERVER_PORT", "11000", 1);
-        EXPECT_EQ(loaded->Get<settings::ServerHost>(), "environment-host");
-        EXPECT_EQ(loaded->Get<settings::ServerPort>(), 10000);
+        EXPECT_EQ(loaded->config.Get<settings::ServerHost>(), "environment-host");
+        EXPECT_EQ(loaded->config.Get<settings::ServerPort>(), 10000);
 
-        ASSERT_TRUE(loaded->Save().ok());
+        ASSERT_TRUE(loaded->document.Save().ok());
         EXPECT_EQ(directory.read("app.conf"), CompleteDocument());
     }
 
@@ -181,7 +181,6 @@ namespace {
         auto loaded = TestConfiguration::FromDefaults();
         ASSERT_TRUE(loaded.ok());
         EXPECT_EQ(loaded->Get<settings::ServerHost>(), "localhost");
-        EXPECT_FALSE(loaded->Save().ok());
     }
 
     TEST(ConfigurationIOTest, RejectsInvalidEnvironmentAndFileValues)
@@ -223,13 +222,29 @@ namespace {
         EXPECT_NE(loaded.status().message().find("custom.point"), std::string_view::npos);
     }
 
+    TEST(ConfigurationIOTest, LoadedConfigurationHoldsOnlyTypedValues)
+    {
+        static_assert(sizeof(TestConfiguration) == sizeof(TestRegistry::values_type));
+
+        const TempDirectory directory;
+        directory.write("app.conf", CompleteDocument());
+        auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        EXPECT_EQ(loaded->document.GetFilePath(), directory.file("app.conf").string());
+
+        // The configuration outlives the document it was loaded with.
+        TestConfiguration config = std::move(loaded->config);
+        loaded = InvalidArgumentError("discarded");
+        EXPECT_EQ(config.Get<settings::ServerPort>(), 9000);
+    }
+
     TEST(ConfigurationIOTest, SaveCreatesParentDirectories)
     {
         const TempDirectory directory;
         const auto path = directory.file("one/two/app.conf");
         auto loaded = TestConfiguration::Load(path.string());
         ASSERT_TRUE(loaded.ok());
-        ASSERT_TRUE(loaded->Save().ok());
+        ASSERT_TRUE(loaded->document.Save().ok());
         EXPECT_TRUE(std::filesystem::exists(path));
     }
 

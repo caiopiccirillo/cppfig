@@ -4,9 +4,6 @@
 #include <bitset>
 #include <cstddef>
 #include <cstdlib>
-#include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -14,6 +11,7 @@
 #include <utility>
 
 #include "cppfig/conf.h"
+#include "cppfig/document.h"
 #include "cppfig/schema.h"
 #include "cppfig/status.h"
 
@@ -208,11 +206,15 @@ namespace detail {
 
 }  // namespace detail
 
+template <typename RegistryType>
+struct LoadResult;
+
 /// @brief An initialized, immutable configuration with direct typed storage.
 ///
 /// Construction succeeds only after every default, file value and environment
-/// override has been parsed and validated. Get performs one compile-time tuple
-/// access and returns a reference tied to this object's lifetime.
+/// override has been parsed and validated. The object holds nothing but the
+/// typed values: Get is a compile-time slot access returning a reference tied
+/// to this object's lifetime.
 template <typename RegistryType>
 class Configuration {
 public:
@@ -223,61 +225,24 @@ public:
     auto operator=(const Configuration&) -> Configuration& = delete;
     Configuration(Configuration&&) = default;
     auto operator=(Configuration&&) -> Configuration& = default;
+    ~Configuration() = default;
 
     /// Loads a flat .conf file and captures environment overrides once.
-    /// A missing file is represented by defaults in memory; call Save to create it.
-    [[nodiscard]] static auto Load(std::string file_path) -> StatusOr<Configuration>
-    {
-        if (file_path.empty()) {
-            return InvalidArgumentError("Configuration file path must not be empty");
-        }
-
-        // Candidate storage scales with the registry; keep it off the caller's stack.
-        auto state_owner = std::make_unique<InitializationState>();
-        auto& state = *state_owner;
-        state.apply_environment = true;
-        std::error_code error;
-        const bool exists = std::filesystem::exists(file_path, error);
-        if (error) {
-            return InternalError("Failed to inspect configuration file '" + file_path + "': " + error.message());
-        }
-
-        if (exists) {
-            std::ifstream input(file_path, std::ios::binary);
-            if (!input.is_open()) {
-                return InternalError("Failed to open configuration file '" + file_path + "'");
-            }
-            state.document.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
-            if (input.bad()) {
-                return InternalError("Failed to read configuration file '" + file_path + "'");
-            }
-        }
-
-        auto parse_status = ParseDocument(state);
-        if (!parse_status.ok()) {
-            return parse_status;
-        }
-
-        auto build_status = BuildValues(state);
-        if (!build_status.ok()) {
-            return build_status;
-        }
-
-        AppendMigrations(state);
-        return Configuration(std::move(file_path), state, std::move(state.document));
-    }
+    /// A missing file yields defaults and a document holding them; save the
+    /// document to create the file.
+    [[nodiscard]] static auto Load(std::string file_path) -> StatusOr<LoadResult<RegistryType>>;
 
     /// Creates a configuration from defaults without file or environment input.
     [[nodiscard]] static auto FromDefaults() -> StatusOr<Configuration>
     {
+        // Candidate storage scales with the registry; keep it off the caller's stack.
         auto state_owner = std::make_unique<InitializationState>();
         auto& state = *state_owner;
         auto build_status = BuildValues(state);
         if (!build_status.ok()) {
             return build_status;
         }
-        AppendMigrations(state);
-        return Configuration({}, state, std::move(state.document));
+        return Configuration(state);
     }
 
     template <typename S>
@@ -287,55 +252,6 @@ public:
         using Slot = detail::StorageSlot<RegistryType::template index<S>, typename S::value_type>;
         return static_cast<const Slot&>(values_).value;
     }
-
-    /// Atomically persists the retained source document and any migrations.
-    /// Environment overrides are intentionally not serialized.
-    [[nodiscard]] auto Save() const -> Status
-    {
-        if (file_path_.empty()) {
-            return InvalidArgumentError("Cannot save a configuration that has no file path");
-        }
-
-        namespace fs = std::filesystem;
-        const fs::path destination(file_path_);
-        if (destination.has_parent_path()) {
-            std::error_code error;
-            fs::create_directories(destination.parent_path(), error);
-            if (error) {
-                return InternalError("Failed to create configuration directory: " + error.message());
-            }
-        }
-
-        fs::path temporary = destination;
-        temporary += ".cppfig.tmp";
-        {
-            std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-            if (!output.is_open()) {
-                return InternalError("Failed to open temporary configuration file '" + temporary.string() + "'");
-            }
-            output.write(document_.data(), static_cast<std::streamsize>(document_.size()));
-            output.flush();
-            if (!output) {
-                output.close();
-                std::error_code error;
-                fs::remove(temporary, error);
-                return InternalError("Failed to write temporary configuration file '" + temporary.string() + "'");
-            }
-        }
-
-        std::error_code error;
-        fs::rename(temporary, destination, error);
-        if (error) {
-            fs::remove(temporary, error);
-            return InternalError("Failed to replace configuration file '" + file_path_ + "'");
-        }
-        return OkStatus();
-    }
-
-    [[nodiscard]] auto GetFilePath() const noexcept -> std::string_view { return file_path_; }
-
-    /// Returns the preserved source text, including not-yet-saved migrations.
-    [[nodiscard]] auto GetSourceText() const noexcept -> std::string_view { return document_; }
 
 private:
     using candidate_storage = typename RegistryType::template held_values_type<std::optional>;
@@ -358,10 +274,8 @@ private:
     };
 
     /// Requires every effective value in state to be engaged.
-    Configuration(std::string file_path, InitializationState& state, std::string document)
+    explicit Configuration(InitializationState& state)
         : values_(detail::from_engaged, state.effective_values)
-        , file_path_(std::move(file_path))
-        , document_(std::move(document))
     {
     }
 
@@ -404,23 +318,41 @@ private:
         return OkStatus();
     }
 
-    static void AppendMigrations(InitializationState& state)
-    {
-        if (state.migrations.empty()) {
-            return;
-        }
-        if (!state.document.empty()) {
-            if (state.document.back() != '\n') {
-                state.document.push_back('\n');
-            }
-            state.document += "\n# Added by cppfig\n";
-        }
-        state.document += state.migrations;
+    values_type values_;
+};
+
+/// @brief A loaded configuration together with the document it was loaded from.
+///
+/// Save the document if it has migrations to persist, then keep the
+/// configuration; the document may be discarded independently.
+template <typename RegistryType>
+struct LoadResult {
+    Configuration<RegistryType> config;
+    ConfDocument document;
+};
+
+template <typename RegistryType>
+auto Configuration<RegistryType>::Load(std::string file_path) -> StatusOr<LoadResult<RegistryType>>
+{
+    auto state_owner = std::make_unique<InitializationState>();
+    auto& state = *state_owner;
+    state.apply_environment = true;
+
+    auto status = ConfDocument::ReadFile(file_path, state.document);
+    if (!status.ok()) {
+        return status;
+    }
+    status = ParseDocument(state);
+    if (!status.ok()) {
+        return status;
+    }
+    status = BuildValues(state);
+    if (!status.ok()) {
+        return status;
     }
 
-    values_type values_;
-    std::string file_path_;
-    std::string document_;
-};
+    ConfDocument::AppendMigrations(state.document, state.migrations);
+    return LoadResult<RegistryType> { Configuration(state), ConfDocument(std::move(file_path), std::move(state.document)) };
+}
 
 }  // namespace cppfig

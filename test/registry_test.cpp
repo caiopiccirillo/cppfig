@@ -175,7 +175,6 @@ namespace {
         EXPECT_DOUBLE_EQ(config.Get<settings::Ratio>(), 1.5);
         EXPECT_EQ(config.Get<settings::Origin>(), (Point { 1, 2 }));
         EXPECT_EQ(config.Get<settings::Aligned>().value, 16);
-        EXPECT_TRUE(config.GetFilePath().empty());
     }
 
     TEST(ConfigurationTest, GetReturnsStableConstReferences)

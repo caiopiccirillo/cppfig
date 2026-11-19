@@ -107,7 +107,7 @@ static void LoadAndSave(benchmark::State& state)
         auto loaded = BenchmarkConfiguration::Load(path.string());
         benchmark::DoNotOptimize(loaded);
         if (loaded.ok()) {
-            benchmark::DoNotOptimize(loaded->Save());
+            benchmark::DoNotOptimize(loaded->document.Save());
         }
     }
     std::error_code error;

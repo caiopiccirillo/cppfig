@@ -44,7 +44,8 @@ namespace {
         const TempDirectory directory;
         auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
         ASSERT_TRUE(loaded.ok());
-        const auto& config = loaded.value();
+        const auto& config = loaded->config;
+        const auto& document = loaded->document;
         const auto* host = std::addressof(config.Get<settings::ServerHost>());
 
         std::atomic<bool> valid = true;
@@ -57,7 +58,7 @@ namespace {
             }
         });
         for (int i = 0; i < 20; ++i) {
-            if (!config.Save().ok()) {
+            if (!document.Save().ok()) {
                 valid = false;
             }
         }
