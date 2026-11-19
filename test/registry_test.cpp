@@ -41,6 +41,117 @@ namespace {
         }
     };
 
+    // Declared so that naive declaration-order storage would pad after each bool.
+    struct LayoutFlagA {
+        static constexpr std::string_view path = "layout.flag_a";
+        using value_type = bool;
+        static auto default_value() -> bool { return true; }
+    };
+
+    struct LayoutWideA {
+        static constexpr std::string_view path = "layout.wide_a";
+        using value_type = double;
+        static auto default_value() -> double { return 1.5; }
+    };
+
+    struct LayoutFlagB {
+        static constexpr std::string_view path = "layout.flag_b";
+        using value_type = bool;
+        static auto default_value() -> bool { return false; }
+    };
+
+    struct LayoutWideB {
+        static constexpr std::string_view path = "layout.wide_b";
+        using value_type = double;
+        static auto default_value() -> double { return 2.5; }
+    };
+
+    using InterleavedRegistry = Registry<LayoutFlagA, LayoutWideA, LayoutFlagB, LayoutWideB>;
+
+    struct PackedReference {
+        double wide_a;
+        double wide_b;
+        bool flag_a;
+        bool flag_b;
+    };
+
+    /// A type that can be neither default-constructed nor copied.
+    struct MoveOnlyValue {
+        explicit MoveOnlyValue(int initial)
+            : value(std::make_unique<int>(initial))
+        {
+        }
+
+        std::unique_ptr<int> value;
+    };
+
+}  // namespace
+}  // namespace cppfig::test
+
+template <>
+struct cppfig::ConfigTraits<cppfig::test::MoveOnlyValue> {
+    static auto FromString(std::string_view text) -> std::optional<cppfig::test::MoveOnlyValue>
+    {
+        auto parsed = ConfigTraits<int>::FromString(text);
+        if (!parsed) {
+            return std::nullopt;
+        }
+        return cppfig::test::MoveOnlyValue { *parsed };
+    }
+
+    static auto ToString(const cppfig::test::MoveOnlyValue& value) -> std::string { return ConfigTraits<int>::ToString(*value.value); }
+};
+
+namespace cppfig::test {
+namespace {
+
+    struct MoveOnlySetting {
+        static constexpr std::string_view path = "move.only";
+        using value_type = MoveOnlyValue;
+        static auto default_value() -> MoveOnlyValue { return MoveOnlyValue { 5 }; }
+    };
+
+    static_assert(!std::is_default_constructible_v<MoveOnlyValue>);
+    static_assert(!std::is_copy_constructible_v<MoveOnlyValue>);
+
+    TEST(LayoutTest, StorageIsOrderedToAvoidInterleavedPadding)
+    {
+        EXPECT_EQ(sizeof(InterleavedRegistry::values_type), sizeof(PackedReference));
+    }
+
+    TEST(LayoutTest, ReorderedStorageKeepsDeclarationIndexing)
+    {
+        static_assert(InterleavedRegistry::index<LayoutFlagA> == 0);
+        static_assert(InterleavedRegistry::index<LayoutWideB> == 3);
+
+        auto loaded = Configuration<InterleavedRegistry>::FromDefaults();
+        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        EXPECT_TRUE(loaded->Get<LayoutFlagA>());
+        EXPECT_DOUBLE_EQ(loaded->Get<LayoutWideA>(), 1.5);
+        EXPECT_FALSE(loaded->Get<LayoutFlagB>());
+        EXPECT_DOUBLE_EQ(loaded->Get<LayoutWideB>(), 2.5);
+
+        InterleavedRegistry::ForEachSetting([&]<typename S>() {
+            const auto address = reinterpret_cast<std::uintptr_t>(std::addressof(loaded->Get<S>()));
+            EXPECT_EQ(address % alignof(typename S::value_type), 0U) << S::path;
+        });
+    }
+
+    TEST(ConfigurationTest, SupportsMoveOnlyNonDefaultConstructibleValues)
+    {
+        using MoveOnlyRegistry = Registry<MoveOnlySetting, LayoutFlagA>;
+        auto loaded = Configuration<MoveOnlyRegistry>::FromDefaults();
+        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        EXPECT_EQ(*loaded->Get<MoveOnlySetting>().value, 5);
+        EXPECT_TRUE(loaded->Get<LayoutFlagA>());
+
+        testing::MockConfigurationBuilder<MoveOnlyRegistry> builder;
+        builder.Set<MoveOnlySetting>(MoveOnlyValue { 9 });
+        auto built = builder.Build();
+        ASSERT_TRUE(built.ok()) << built.status().message();
+        EXPECT_EQ(*built->Get<MoveOnlySetting>().value, 9);
+    }
+
     TEST(RegistryTest, FindsEveryDeclaredPathAndRejectsUnknownPaths)
     {
         TestRegistry::ForEachSetting([]<typename S>() {

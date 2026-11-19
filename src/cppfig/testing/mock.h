@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -33,7 +34,8 @@ public:
         requires(RegistryType::template has_setting<S>)
     [[nodiscard]] auto Get() const noexcept -> const typename S::value_type&
     {
-        return values_.template Get<RegistryType::template index<S>>();
+        using Slot = detail::StorageSlot<RegistryType::template index<S>, typename S::value_type>;
+        return static_cast<const Slot&>(values_).value;
     }
 
 private:
@@ -55,67 +57,29 @@ public:
         requires(RegistryType::template has_setting<S>)
     auto Set(typename S::value_type value) -> MockConfigurationBuilder&
     {
-        values_.template Get<RegistryType::template index<S>>().emplace(std::move(value));
+        using Slot = detail::StorageSlot<RegistryType::template index<S>, std::optional<typename S::value_type>>;
+        static_cast<Slot&>(values_).value.emplace(std::move(value));
         return *this;
     }
 
+    /// Validates the supplied values, fills the rest from defaults and freezes
+    /// them. The builder's values are moved into the result.
     [[nodiscard]] auto Build() -> StatusOr<MockConfiguration<RegistryType>>
     {
-        return Build(std::make_index_sequence<RegistryType::size>());
+        const auto slots = slot_table::Addresses(values_);
+        for (std::size_t i = 0; i < RegistryType::size; ++i) {
+            auto status = slot_table::check_test[i](slots[i]);
+            if (!status.ok()) {
+                return status;
+            }
+        }
+        return MockConfiguration<RegistryType>(values_type(detail::from_engaged, values_));
     }
 
 private:
     using candidate_storage = typename RegistryType::template held_values_type<std::optional>;
     using values_type = typename RegistryType::values_type;
-
-    template <typename T>
-    using result_holder = std::optional<StatusOr<T>>;
-    using result_storage = typename RegistryType::template held_values_type<result_holder>;
-
-    template <std::size_t I>
-    auto BuildOne() -> StatusOr<typename RegistryType::template SettingAt<I>::value_type>
-    {
-        using S = typename RegistryType::template SettingAt<I>;
-        auto& candidate = values_.template Get<I>();
-        if (candidate) {
-            auto validation = ValidateSetting<S>(*candidate);
-            if (!validation) {
-                return InvalidArgumentError(std::string(S::path) + " test value is invalid: " + validation.error_message);
-            }
-            return std::move(*candidate);
-        }
-
-        auto value = S::default_value();
-        auto validation = ValidateSetting<S>(value);
-        if (!validation) {
-            return InvalidArgumentError(std::string(S::path) + " default is invalid: " + validation.error_message);
-        }
-        return value;
-    }
-
-    template <std::size_t I, typename T>
-    auto StoreResult(result_storage& results, StatusOr<T> result, Status& error) -> bool
-    {
-        if (!result.ok()) {
-            error = std::move(result).status();
-            return false;
-        }
-        results.template Get<I>().emplace(std::move(result));
-        return true;
-    }
-
-    template <std::size_t... I>
-    auto Build(std::index_sequence<I...>) -> StatusOr<MockConfiguration<RegistryType>>
-    {
-        result_storage results;
-        Status error = OkStatus();
-        const bool valid = (StoreResult<I>(results, BuildOne<I>(), error) && ...);
-        if (!valid) {
-            return error;
-        }
-
-        return MockConfiguration<RegistryType>(values_type { std::move(results.template Get<I>().value()).value()... });
-    }
+    using slot_table = detail::SlotTable<RegistryType>;
 
     candidate_storage values_;
 };

@@ -39,3 +39,18 @@ foreach(case_name invalid_default duplicate_setting unregistered_setting duplica
     )
     set_tests_properties(${test_name} PROPERTIES PASS_REGULAR_EXPRESSION "${${test_name}_regex}")
 endforeach()
+
+# Compile-time budget: the full initialization path for a 1024-setting registry
+# must build at -O2 well within the timeout. Exclude with `ctest -LE compile-scale`.
+add_test(
+    NAME compile_scale_1024
+    COMMAND ${CMAKE_CXX_COMPILER}
+        -std=c++20
+        -O2
+        -Wall -Wextra -Wpedantic -Werror
+        -DCPPFIG_SCALE_SETTINGS=1024
+        -I${PROJECT_SOURCE_DIR}/src
+        -c ${CMAKE_CURRENT_SOURCE_DIR}/compile_scale/large_registry.cpp
+        -o ${CMAKE_CURRENT_BINARY_DIR}/compile_scale_1024.o
+)
+set_tests_properties(compile_scale_1024 PROPERTIES TIMEOUT 120 LABELS compile-scale)
