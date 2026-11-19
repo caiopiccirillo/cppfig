@@ -95,25 +95,28 @@ namespace {
         auto migrated = TestConfiguration::Load(directory.file("app.conf").string());
         ASSERT_TRUE(migrated.ok()) << migrated.status().message();
         EXPECT_EQ(migrated->document.GetSourceText(), loaded->document.GetSourceText());
-        EXPECT_EQ(directory.read("app.conf"), original + "\n# Added by cppfig\n" +
-                                                       "server.host = localhost\nserver.port = 8080\nlogging.enabled = true\n" +
-                                                       "numeric.ratio = 1.5\ncustom.point = 1,2\naligned.value = 16\n");
+        EXPECT_EQ(directory.read("app.conf"), original + "\n# Added by cppfig\n"
+                                                  + "server.host = localhost\nserver.port = 8080\nlogging.enabled = true\n"
+                                                  + "numeric.ratio = 1.5\ncustom.point = 1,2\naligned.value = 16\n");
     }
 
     TEST(ConfigurationIOTest, RejectsUnknownAndDuplicateKeys)
     {
         const TempDirectory directory;
         directory.write("unknown.conf", "server.unknown = 1\n");
-        auto unknown = TestConfiguration::Load(directory.file("unknown.conf").string());
+        const auto unknown_path = directory.file("unknown.conf").string();
+        auto unknown = TestConfiguration::Load(unknown_path);
         ASSERT_FALSE(unknown.ok());
-        EXPECT_NE(unknown.status().message().find("Unknown configuration setting"), std::string_view::npos);
-        EXPECT_NE(unknown.status().message().find("line 1"), std::string_view::npos);
+        EXPECT_TRUE(unknown.status().message().starts_with(unknown_path + ":1:1: ")) << unknown.status().message();
+        EXPECT_NE(unknown.status().message().find("Unknown configuration setting 'server.unknown'"), std::string_view::npos);
 
-        directory.write("duplicate.conf", "server.port = 1\nserver.port = 2\n");
-        auto duplicate = TestConfiguration::Load(directory.file("duplicate.conf").string());
+        directory.write("duplicate.conf", "server.port = 1\n  server.port = 2\n");
+        const auto duplicate_path = directory.file("duplicate.conf").string();
+        auto duplicate = TestConfiguration::Load(duplicate_path);
         ASSERT_FALSE(duplicate.ok());
-        EXPECT_NE(duplicate.status().message().find("Duplicate configuration setting"), std::string_view::npos);
-        EXPECT_NE(duplicate.status().message().find("line 2"), std::string_view::npos);
+        EXPECT_TRUE(duplicate.status().message().starts_with(duplicate_path + ":2:3: ")) << duplicate.status().message();
+        EXPECT_NE(duplicate.status().message().find("Duplicate configuration setting 'server.port' (first set on line 1)"),
+                  std::string_view::npos);
     }
 
     TEST(ConfigurationIOTest, PreservePolicyKeepsUnknownKeysAndReportsThem)
@@ -160,10 +163,59 @@ namespace {
     {
         const TempDirectory directory;
         directory.write("app.conf", "# comment\nserver.port 9000\n");
-        auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+        const auto path = directory.file("app.conf").string();
+        auto loaded = TestConfiguration::Load(path);
         ASSERT_FALSE(loaded.ok());
-        EXPECT_NE(loaded.status().message().find("line 2"), std::string_view::npos);
+        EXPECT_TRUE(loaded.status().message().starts_with(path + ":2:1: ")) << loaded.status().message();
         EXPECT_NE(loaded.status().message().find("missing '='"), std::string_view::npos);
+    }
+
+    TEST(ConfigurationIOTest, ReportsTheColumnOfABadValue)
+    {
+        const TempDirectory directory;
+        directory.write("app.conf", "server.port =   abc\n");
+        const auto path = directory.file("app.conf").string();
+        auto loaded = TestConfiguration::Load(path);
+        ASSERT_FALSE(loaded.ok());
+        EXPECT_TRUE(loaded.status().message().starts_with(path + ":1:17: ")) << loaded.status().message();
+        EXPECT_NE(loaded.status().message().find("'server.port'"), std::string_view::npos);
+    }
+
+    TEST(ConfigurationIOTest, ReportsTheLineOfAnInvalidFileValue)
+    {
+        const TempDirectory directory;
+        directory.write("app.conf", "# ports\n\nserver.port = 0\n");
+        const auto path = directory.file("app.conf").string();
+        auto loaded = TestConfiguration::Load(path);
+        ASSERT_FALSE(loaded.ok());
+        EXPECT_TRUE(loaded.status().message().starts_with(path + ":3:15: ")) << loaded.status().message();
+        EXPECT_NE(loaded.status().message().find("file value is invalid"), std::string_view::npos);
+    }
+
+    TEST(ConfigurationIOTest, ReportsTheColumnOfAnUnterminatedQuote)
+    {
+        const TempDirectory directory;
+        directory.write("app.conf", "app.name = \"abc\n");
+        const auto path = directory.file("app.conf").string();
+        auto loaded = TestConfiguration::Load(path);
+        ASSERT_FALSE(loaded.ok());
+        EXPECT_TRUE(loaded.status().message().starts_with(path + ":1:12: ")) << loaded.status().message();
+        EXPECT_NE(loaded.status().message().find("unterminated quoted value"), std::string_view::npos);
+    }
+
+    TEST(ConfigurationIOTest, HashOutsideQuotesStartsAComment)
+    {
+        const TempDirectory directory;
+        const std::string document = "server.port = 9000 # http\n"
+                                     "app.name = \"a # b\"  # quoted hash is data\n"
+                                     "server.host = example#comment\n";
+        directory.write("app.conf", document);
+        auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        EXPECT_EQ(loaded->config.Get<settings::ServerPort>(), 9000);
+        EXPECT_EQ(loaded->config.Get<settings::AppName>(), "a # b");
+        EXPECT_EQ(loaded->config.Get<settings::ServerHost>(), "example");
+        EXPECT_TRUE(loaded->document.GetSourceText().starts_with(document));
     }
 
     TEST(ConfigurationIOTest, ParsesQuotedStringsAndEscapes)

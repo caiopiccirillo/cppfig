@@ -58,27 +58,41 @@ namespace detail {
         }
         auto result = info.validate(value);
         if (!result) {
-            return InvalidArgumentError(std::string(info.path) + " " + std::string(source) + " is invalid: " + result.error_message);
+            return InvalidArgumentError(std::string(info.path) + " " + std::string(source) + " is invalid: "
+                                        + result.error_message);
         }
         return OkStatus();
     }
 
     template <typename T>
-    [[nodiscard]] auto ParseSettingText(std::string_view text, std::optional<T>& slot) -> Status
+    [[nodiscard]] auto ParseSettingText(const SettingInfo<T>& info, std::string_view text, std::optional<T>& slot) -> Status
     {
         auto parsed = ConfigTraits<T>::FromString(text);
         if (!parsed) {
-            return InvalidArgumentError("Cannot parse value '" + std::string(text) + "'");
+            return InvalidArgumentError("Cannot parse value '" + std::string(text) + "' for '" + std::string(info.path) + "'");
         }
         slot.emplace(std::move(*parsed));
         return OkStatus();
     }
 
+    /// Where a setting's file value was read from.
+    struct FileLocation {
+        std::size_t line = 0;
+        std::size_t column = 0;
+    };
+
+    /// State shared by every setting while resolving effective values.
+    struct ResolveContext {
+        std::string_view source;
+        std::string migrations;
+        bool apply_environment = false;
+    };
+
     /// Selects the effective value with precedence environment > file > default.
     /// A missing file entry records the default (never an environment value) as a migration.
     template <typename T>
     [[nodiscard]] auto ResolveSetting(const SettingInfo<T>& info, T default_value, std::optional<T>& file_value,
-                                      std::optional<T>& effective_value, std::string& migrations, bool apply_environment)
+                                      std::optional<T>& effective_value, const FileLocation& location, ResolveContext& context)
         -> Status
     {
         auto status = CheckSettingValue(info, default_value, "default");
@@ -87,22 +101,22 @@ namespace detail {
         }
 
         if (!file_value) {
-            migrations += std::string(info.path) + " = " + EscapeConfValue(ConfigTraits<T>::ToString(default_value)) + "\n";
+            context.migrations += std::string(info.path) + " = " + EscapeConfValue(ConfigTraits<T>::ToString(default_value)) + "\n";
         }
         else {
             status = CheckSettingValue(info, *file_value, "file value");
             if (!status.ok()) {
-                return status;
+                return LocatedError(context.source, location.line, location.column, status.message());
             }
         }
 
-        if (apply_environment && !info.env_override.empty()) {
+        if (context.apply_environment && !info.env_override.empty()) {
             const std::string environment_name(info.env_override);
             if (const char* text = std::getenv(environment_name.c_str())) {
                 auto environment_value = ConfigTraits<T>::FromString(text);
                 if (!environment_value) {
-                    return InvalidArgumentError(std::string(info.path) + " environment override '" + environment_name +
-                                                "' cannot be parsed");
+                    return InvalidArgumentError(std::string(info.path) + " environment override '" + environment_name
+                                                + "' cannot be parsed");
                 }
                 status = CheckSettingValue(info, *environment_value, "environment override");
                 if (!status.ok()) {
@@ -131,21 +145,22 @@ namespace detail {
     using OptionalSlot = std::optional<typename S::value_type>;
 
     using ParseSlotFunction = auto (*)(std::string_view text, void* file_slot) -> Status;
-    using ResolveSlotFunction = auto (*)(void* file_slot, void* effective_slot, std::string& migrations, bool apply_environment)
-        -> Status;
+    using ResolveSlotFunction = auto (*)(void* file_slot, void* effective_slot, const FileLocation& location,
+                                         ResolveContext& context) -> Status;
     using CheckSlotFunction = auto (*)(void* slot) -> Status;
 
     template <typename S>
     [[nodiscard]] auto ParseSlot(std::string_view text, void* file_slot) -> Status
     {
-        return ParseSettingText(text, *static_cast<OptionalSlot<S>*>(file_slot));
+        return ParseSettingText(setting_info<S>, text, *static_cast<OptionalSlot<S>*>(file_slot));
     }
 
     template <typename S>
-    [[nodiscard]] auto ResolveSlot(void* file_slot, void* effective_slot, std::string& migrations, bool apply_environment) -> Status
+    [[nodiscard]] auto ResolveSlot(void* file_slot, void* effective_slot, const FileLocation& location, ResolveContext& context)
+        -> Status
     {
         return ResolveSetting(setting_info<S>, S::default_value(), *static_cast<OptionalSlot<S>*>(file_slot),
-                              *static_cast<OptionalSlot<S>*>(effective_slot), migrations, apply_environment);
+                              *static_cast<OptionalSlot<S>*>(effective_slot), location, context);
     }
 
     /// Fills an empty test slot from the setting's default and validates the result.
@@ -269,12 +284,12 @@ private:
         candidate_storage effective_values;
         std::array<void*, RegistryType::size> file_slots = slot_table::Addresses(file_values);
         std::array<void*, RegistryType::size> effective_slots = slot_table::Addresses(effective_values);
+        std::array<detail::FileLocation, RegistryType::size> locations {};
         std::bitset<RegistryType::size> seen;
         std::string document;
-        std::string migrations;
+        detail::ResolveContext context;
         std::vector<UnknownKey> unknown_keys;
         UnknownKeyPolicy unknown_key_policy = UnknownKeyPolicy::kReject;
-        bool apply_environment = false;
 
         // The slot addresses point into this object.
         InitializationState() = default;
@@ -290,26 +305,27 @@ private:
 
     [[nodiscard]] static auto ParseDocument(InitializationState& state) -> Status
     {
-        return ConfParser::ForEachEntry(state.document, [&state](const ConfEntry& entry) -> Status {
+        const auto source = state.context.source;
+        return ConfParser::ForEachEntry(state.document, source, [&state, source](const ConfEntry& entry) -> Status {
             const std::size_t index = RegistryType::FindPath(entry.path);
             if (index == RegistryType::size) {
                 if (state.unknown_key_policy == UnknownKeyPolicy::kPreserve) {
                     state.unknown_keys.push_back(UnknownKey { std::string(entry.path), entry.line });
                     return OkStatus();
                 }
-                return InvalidArgumentError("Unknown configuration setting '" + std::string(entry.path) + "' on line "
-                                            + std::to_string(entry.line));
+                return LocatedError(source, entry.line, entry.column, "Unknown configuration setting '" + std::string(entry.path) + "'");
             }
             if (state.seen.test(index)) {
-                return InvalidArgumentError("Duplicate configuration setting '" + std::string(entry.path) + "' on line "
-                                            + std::to_string(entry.line));
+                return LocatedError(source, entry.line, entry.column,
+                                    "Duplicate configuration setting '" + std::string(entry.path) + "' (first set on line "
+                                        + std::to_string(state.locations[index].line) + ")");
             }
             state.seen.set(index);
+            state.locations[index] = detail::FileLocation { entry.line, entry.value_column };
 
             auto status = slot_table::parse[index](entry.text, state.file_slots[index]);
             if (!status.ok()) {
-                return InvalidArgumentError(std::string(status.message()) + " for '" + std::string(entry.path) + "' on line "
-                                            + std::to_string(entry.line));
+                return LocatedError(source, entry.line, entry.value_column, status.message());
             }
             return OkStatus();
         });
@@ -322,8 +338,7 @@ private:
     [[nodiscard]] static auto BuildValues(InitializationState& state) -> Status
     {
         for (std::size_t i = 0; i < RegistryType::size; ++i) {
-            auto status = slot_table::resolve[i](state.file_slots[i], state.effective_slots[i], state.migrations,
-                                                 state.apply_environment);
+            auto status = slot_table::resolve[i](state.file_slots[i], state.effective_slots[i], state.locations[i], state.context);
             if (!status.ok()) {
                 return status;
             }
@@ -349,7 +364,8 @@ auto Configuration<RegistryType>::Load(std::string file_path, LoadOptions option
 {
     auto state_owner = std::make_unique<InitializationState>();
     auto& state = *state_owner;
-    state.apply_environment = true;
+    state.context.source = file_path;
+    state.context.apply_environment = true;
     state.unknown_key_policy = options.unknown_keys;
 
     bool exists = false;
@@ -366,8 +382,8 @@ auto Configuration<RegistryType>::Load(std::string file_path, LoadOptions option
         return status;
     }
 
-    const bool needs_save = !exists || !state.migrations.empty();
-    ConfDocument::AppendMigrations(state.document, state.migrations);
+    const bool needs_save = !exists || !state.context.migrations.empty();
+    ConfDocument::AppendMigrations(state.document, state.context.migrations);
     return LoadResult<RegistryType> { Configuration(state), ConfDocument(std::move(file_path), std::move(state.document), std::move(state.unknown_keys), needs_save) };
 }
 

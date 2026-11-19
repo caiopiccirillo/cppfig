@@ -9,51 +9,67 @@
 
 namespace cppfig {
 
+/// @brief One `path = value` entry. Columns are 1-based byte offsets in the line.
 struct ConfEntry {
     std::string_view path;
     std::string_view text;
     std::size_t line;
     std::size_t column;
+    std::size_t value_column;
 };
+
+/// @brief Formats an error as `source:line:column: message`, the layout
+/// compilers use, so editors and terminals can jump to the location.
+[[nodiscard]] inline auto LocatedError(std::string_view source, std::size_t line, std::size_t column, std::string_view message)
+    -> Status
+{
+    return InvalidArgumentError(std::string(source) + ":" + std::to_string(line) + ":" + std::to_string(column) + ": "
+                                + std::string(message));
+}
 
 /// @brief Allocation-conscious parser for flat `path = value` documents.
 ///
-/// Unquoted values are views into the retained source document. Quoted values
-/// use one temporary decoding string per entry and support \\, \", \n, \r and \t.
+/// The grammar is documented in docs/conf-format.md. In short: blank lines
+/// and lines starting with `#` are ignored; `#` outside quotes starts a
+/// comment; unquoted values are trimmed views into the source; quoted values
+/// support \\, \", \n, \r and \t and use one temporary decoding string per entry.
 class ConfParser {
 public:
+    /// Calls fn for each entry in order. source names the document in errors.
     template <typename Fn>
-    [[nodiscard]] static auto ForEachEntry(std::string_view document, Fn&& fn) -> Status
+    [[nodiscard]] static auto ForEachEntry(std::string_view document, std::string_view source, Fn&& fn) -> Status
     {
         std::size_t offset = 0;
         std::size_t line_number = 1;
+        std::string decoded;
 
         while (offset < document.size()) {
             const std::size_t newline = document.find('\n', offset);
             const std::size_t end = newline == std::string_view::npos ? document.size() : newline;
             const auto line = document.substr(offset, end - offset);
-            const auto trimmed = Trim(line);
+            const std::size_t first = line.find_first_not_of(kWhitespace);
 
-            if (!trimmed.empty() && trimmed.front() != '#') {
-                const std::size_t equals = trimmed.find('=');
+            if (first != std::string_view::npos && line[first] != '#') {
+                const std::size_t equals = line.find('=', first);
                 if (equals == std::string_view::npos) {
-                    return ParseError(line_number, 1, "missing '='");
+                    return LocatedError(source, line_number, first + 1, "missing '=' after the setting path");
                 }
 
-                const auto path = Trim(trimmed.substr(0, equals));
+                const auto path = TrimRight(line.substr(first, equals - first));
                 if (!IsPathWellFormed(path)) {
-                    return ParseError(line_number, 1, "ill-formed setting path");
+                    return LocatedError(source, line_number, first + 1, "ill-formed setting path '" + std::string(path) + "'");
                 }
 
-                const auto raw_value = Trim(trimmed.substr(equals + 1));
-                std::string decoded;
-                auto value = DecodeValue(raw_value, decoded, line_number);
+                std::size_t value_start = line.find_first_not_of(kWhitespace, equals + 1);
+                if (value_start == std::string_view::npos) {
+                    value_start = line.size();
+                }
+                const auto value = DecodeValue(line, value_start, decoded);
                 if (!value.ok()) {
-                    return value.status();
+                    return LocatedError(source, line_number, value.column, value.message);
                 }
 
-                const std::size_t column = static_cast<std::size_t>(path.data() - document.data()) - offset + 1;
-                auto status = fn(ConfEntry { path, *value, line_number, column });
+                auto status = fn(ConfEntry { path, value.text, line_number, first + 1, value_start + 1 });
                 if (!status.ok()) {
                     return status;
                 }
@@ -70,14 +86,12 @@ public:
     }
 
 private:
-    [[nodiscard]] static constexpr auto Trim(std::string_view text) -> std::string_view
+    static constexpr std::string_view kWhitespace = " \t\r";
+
+    [[nodiscard]] static constexpr auto TrimRight(std::string_view text) -> std::string_view
     {
-        const std::size_t first = text.find_first_not_of(" \t\r");
-        if (first == std::string_view::npos) {
-            return {};
-        }
-        const std::size_t last = text.find_last_not_of(" \t\r");
-        return text.substr(first, last - first + 1);
+        const std::size_t last = text.find_last_not_of(kWhitespace);
+        return last == std::string_view::npos ? std::string_view {} : text.substr(0, last + 1);
     }
 
     [[nodiscard]] static constexpr auto IsPathWellFormed(std::string_view path) -> bool
@@ -87,7 +101,7 @@ private:
         }
         for (std::size_t i = 0; i < path.size(); ++i) {
             const char c = path[i];
-            const unsigned char value = static_cast<unsigned char>(c);
+            const auto value = static_cast<unsigned char>(c);
             if (value <= 0x20U || value == 0x7fU || c == '#' || c == '"' || c == '\\') {
                 return false;
             }
@@ -98,40 +112,51 @@ private:
         return true;
     }
 
-    [[nodiscard]] static auto ParseError(std::size_t line, std::size_t column, std::string message) -> Status
+    /// A decoded value, or an error message with its 1-based column.
+    struct DecodedValue {
+        std::string_view text;
+        std::size_t column = 0;
+        std::string message;
+
+        [[nodiscard]] auto ok() const -> bool { return message.empty(); }
+    };
+
+    [[nodiscard]] static auto Error(std::size_t index, std::string message) -> DecodedValue
     {
-        return InvalidArgumentError("conf parse error on line " + std::to_string(line) + ", column " + std::to_string(column) +
-                                    ": " + std::move(message));
+        return DecodedValue { {}, index + 1, std::move(message) };
     }
 
-    [[nodiscard]] static auto DecodeValue(std::string_view raw, std::string& decoded, std::size_t line)
-        -> StatusOr<std::string_view>
+    /// Decodes the value starting at index start of line. A `#` outside quotes
+    /// ends the value and starts a comment.
+    [[nodiscard]] static auto DecodeValue(std::string_view line, std::size_t start, std::string& decoded) -> DecodedValue
     {
-        if (raw.empty() || raw.front() != '"') {
-            if (raw.find('"') != std::string_view::npos) {
-                return ParseError(line, 1, "unexpected quote in an unquoted value");
+        if (start == line.size() || line[start] != '"') {
+            const std::size_t comment = line.find('#', start);
+            const auto raw = TrimRight(line.substr(start, comment == std::string_view::npos ? std::string_view::npos : comment - start));
+            if (const std::size_t quote = raw.find('"'); quote != std::string_view::npos) {
+                return Error(start + quote, "unexpected quote in an unquoted value");
             }
-            return raw;
+            return DecodedValue { raw, 0, {} };
         }
 
         decoded.clear();
-        decoded.reserve(raw.size());
-        for (std::size_t i = 1; i < raw.size(); ++i) {
-            const char c = raw[i];
+        for (std::size_t i = start + 1; i < line.size(); ++i) {
+            const char c = line[i];
             if (c == '"') {
-                if (i + 1 != raw.size()) {
-                    return ParseError(line, i + 2, "characters after the closing quote");
+                const std::size_t next = line.find_first_not_of(kWhitespace, i + 1);
+                if (next != std::string_view::npos && line[next] != '#') {
+                    return Error(next, "characters after the closing quote");
                 }
-                return std::string_view(decoded);
+                return DecodedValue { decoded, 0, {} };
             }
             if (c != '\\') {
                 decoded.push_back(c);
                 continue;
             }
-            if (++i == raw.size()) {
-                return ParseError(line, i + 1, "unterminated escape sequence");
+            if (i + 1 == line.size()) {
+                return Error(i, "unterminated escape sequence");
             }
-            switch (raw[i]) {
+            switch (line[++i]) {
             case '\\':
                 decoded.push_back('\\');
                 break;
@@ -148,11 +173,11 @@ private:
                 decoded.push_back('\t');
                 break;
             default:
-                return ParseError(line, i + 1, "unknown escape sequence");
+                return Error(i - 1, "unknown escape sequence");
             }
         }
 
-        return ParseError(line, raw.size(), "unterminated quoted value");
+        return Error(start, "unterminated quoted value");
     }
 };
 
