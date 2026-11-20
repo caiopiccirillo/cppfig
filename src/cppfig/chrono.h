@@ -56,27 +56,43 @@ namespace detail {
     template <typename Period>
     concept NamedDurationUnit = requires { DurationUnit<Period>::name; };
 
-    /// Converts count units of FromPeriod to Duration, only when the result is
-    /// exact and representable.
+    /// Converts a count of FromPeriod units, given as a sign and a magnitude,
+    /// to Duration, only when the result is exact and representable. Taking
+    /// the magnitude unsigned covers every Rep up to 64 bits, including the
+    /// most negative signed value and unsigned values above LLONG_MAX.
     template <typename Duration, typename FromPeriod>
-    [[nodiscard]] auto ConvertDurationExactly(long long count) -> std::optional<Duration>
+    [[nodiscard]] auto ConvertDurationExactly(bool negative, unsigned long long magnitude) -> std::optional<Duration>
     {
+        using Rep = typename Duration::rep;
         using Scale = std::ratio_divide<FromPeriod, typename Duration::period>;
-        constexpr auto limit = std::numeric_limits<long long>::max();
-        constexpr auto numerator = static_cast<long long>(Scale::num);
-        constexpr auto denominator = static_cast<long long>(Scale::den);
-        if (count > limit / numerator || count < -(limit / numerator)) {
+        constexpr auto numerator = static_cast<unsigned long long>(Scale::num);
+        constexpr auto denominator = static_cast<unsigned long long>(Scale::den);
+        if (magnitude > std::numeric_limits<unsigned long long>::max() / numerator) {
             return std::nullopt;
         }
-        const long long scaled = count * numerator;
+        const unsigned long long scaled = magnitude * numerator;
         if (scaled % denominator != 0) {
             return std::nullopt;
         }
-        const long long converted = scaled / denominator;
-        if (!std::in_range<typename Duration::rep>(converted)) {
+        const unsigned long long count = scaled / denominator;
+
+        if (!negative || count == 0) {
+            if (!std::in_range<Rep>(count)) {
+                return std::nullopt;
+            }
+            return Duration(static_cast<Rep>(count));
+        }
+        if constexpr (std::is_unsigned_v<Rep>) {
             return std::nullopt;
         }
-        return Duration(static_cast<typename Duration::rep>(converted));
+        else {
+            // The most negative value's magnitude is one more than the
+            // largest positive value, so negate count - 1 and step down once.
+            if (!std::in_range<Rep>(count - 1)) {
+                return std::nullopt;
+            }
+            return -Duration(static_cast<Rep>(count - 1)) - Duration(1);
+        }
     }
 
 }  // namespace detail
@@ -92,36 +108,35 @@ struct ConfigTraits<std::chrono::duration<Rep, Period>> {
 
     static auto FromString(std::string_view text) -> std::optional<value_type>
     {
-        std::size_t unit_start = 0;
-        if (unit_start < text.size() && text[unit_start] == '-') {
-            ++unit_start;
-        }
+        const bool negative = !text.empty() && text.front() == '-';
+        const std::size_t digits_start = negative ? 1 : 0;
+        std::size_t unit_start = digits_start;
         while (unit_start < text.size() && text[unit_start] >= '0' && text[unit_start] <= '9') {
             ++unit_start;
         }
-        auto count = ConfigTraits<long long>::FromString(text.substr(0, unit_start));
-        if (!count) {
+        const auto magnitude = ConfigTraits<unsigned long long>::FromString(text.substr(digits_start, unit_start - digits_start));
+        if (!magnitude) {
             return std::nullopt;
         }
 
         const auto unit = text.substr(unit_start);
         if (unit == "ns") {
-            return detail::ConvertDurationExactly<value_type, std::nano>(*count);
+            return detail::ConvertDurationExactly<value_type, std::nano>(negative, *magnitude);
         }
         if (unit == "us") {
-            return detail::ConvertDurationExactly<value_type, std::micro>(*count);
+            return detail::ConvertDurationExactly<value_type, std::micro>(negative, *magnitude);
         }
         if (unit == "ms") {
-            return detail::ConvertDurationExactly<value_type, std::milli>(*count);
+            return detail::ConvertDurationExactly<value_type, std::milli>(negative, *magnitude);
         }
         if (unit == "s") {
-            return detail::ConvertDurationExactly<value_type, std::ratio<1>>(*count);
+            return detail::ConvertDurationExactly<value_type, std::ratio<1>>(negative, *magnitude);
         }
         if (unit == "min") {
-            return detail::ConvertDurationExactly<value_type, std::ratio<60>>(*count);
+            return detail::ConvertDurationExactly<value_type, std::ratio<60>>(negative, *magnitude);
         }
         if (unit == "h") {
-            return detail::ConvertDurationExactly<value_type, std::ratio<3600>>(*count);
+            return detail::ConvertDurationExactly<value_type, std::ratio<3600>>(negative, *magnitude);
         }
         return std::nullopt;
     }

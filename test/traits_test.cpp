@@ -93,6 +93,26 @@ namespace {
         EXPECT_EQ(ConfigTraits<std::chrono::microseconds>::ToString(std::chrono::microseconds { 7 }), "7us");
     }
 
+    TEST(TraitsTest, ReadsBackTheExtremeDurationsItWrites)
+    {
+        using Nanoseconds = std::chrono::nanoseconds;
+        using UnsignedMicroseconds = std::chrono::duration<std::uint64_t, std::micro>;
+        using TinyMilliseconds = std::chrono::duration<std::int8_t, std::milli>;
+
+        for (const auto value : { Nanoseconds::min(), Nanoseconds::max() }) {
+            EXPECT_EQ(ConfigTraits<Nanoseconds>::FromString(ConfigTraits<Nanoseconds>::ToString(value)), value);
+        }
+        const auto largest = UnsignedMicroseconds::max();
+        EXPECT_EQ(ConfigTraits<UnsignedMicroseconds>::FromString(ConfigTraits<UnsignedMicroseconds>::ToString(largest)), largest);
+        EXPECT_EQ(ConfigTraits<TinyMilliseconds>::FromString("-128ms"), TinyMilliseconds::min());
+
+        EXPECT_EQ(ConfigTraits<Nanoseconds>::FromString("-9223372036854775809ns"), std::nullopt) << "one below the minimum";
+        EXPECT_EQ(ConfigTraits<TinyMilliseconds>::FromString("-129ms"), std::nullopt);
+        EXPECT_EQ(ConfigTraits<UnsignedMicroseconds>::FromString("-1us"), std::nullopt);
+        EXPECT_EQ(ConfigTraits<UnsignedMicroseconds>::FromString("18446744073709551616us"), std::nullopt);
+        EXPECT_EQ(ConfigTraits<Nanoseconds>::FromString("-ns"), std::nullopt);
+    }
+
     TEST(TraitsTest, RoundTripsFilesystemPaths)
     {
         EXPECT_EQ(ConfigTraits<std::filesystem::path>::FromString("/var/lib/app data"), std::filesystem::path("/var/lib/app data"));
