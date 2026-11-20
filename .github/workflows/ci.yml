@@ -290,7 +290,9 @@ jobs:
             # Reported, not enforced. The tree carries pre-existing findings
             # (readability-identifier-naming, misc-no-recursion and friends);
             # add -warnings-as-errors once those are triaged.
-            run-clang-tidy -p build/debug/clang | tee clang-tidy.log
+            # benchmark_scale.cpp instantiates a 1024-setting registry, which
+            # takes clang-tidy over ten minutes; the other sources take seconds.
+            run-clang-tidy -p build/debug/clang -source-filter '^(?!.*benchmark_scale\.cpp$).*' | tee clang-tidy.log
             grep -c ' warning: ' clang-tidy.log || true
 
   consumer:
