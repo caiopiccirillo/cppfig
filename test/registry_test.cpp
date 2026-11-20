@@ -28,6 +28,7 @@ namespace {
     };
 
     static_assert(!TestRegistry::has_setting<Unregistered>);
+    static_assert(TestRegistry::FindPath(Unregistered::path) == TestRegistry::size);
 
     struct CountedDefault {
         static constexpr std::string_view path = "factory.value";
