@@ -4,11 +4,15 @@
 
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace cppfig::test {
 namespace {
@@ -59,6 +63,22 @@ namespace {
             EXPECT_EQ(ConfigTraits<long double>::FromString("0.5"), 0.5L);
         }
         EXPECT_EQ(ConfigTraits<float>::FromString("1e"), std::nullopt);
+    }
+
+    // libstdc++'s long double from_chars reads past the end of the range for
+    // "inf" and "nan". Values are views into larger text, so FromString must
+    // stay inside the view; AddressSanitizer catches the overread here.
+    TEST(TraitsTest, ParsesLongDoubleSpecialValuesWithinTheText)
+    {
+        if constexpr (Configurable<long double>) {
+            for (const std::string_view text : { "inf", "-inf", "nan" }) {
+                const auto buffer = std::make_unique<char[]>(text.size());
+                std::memcpy(buffer.get(), text.data(), text.size());
+                const auto value = ConfigTraits<long double>::FromString(std::string_view(buffer.get(), text.size()));
+                ASSERT_TRUE(value.has_value()) << text;
+                EXPECT_EQ(std::isnan(*value), text == "nan") << text;
+            }
+        }
     }
 
     TEST(TraitsTest, ParsesDurationsWithRequiredUnits)

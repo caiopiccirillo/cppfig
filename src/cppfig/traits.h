@@ -80,6 +80,29 @@ namespace detail {
             if (text.empty()) {
                 return std::nullopt;
             }
+            if constexpr (std::is_same_v<T, long double>) {
+                // libstdc++ parses long double with code that, for "inf" and
+                // "nan", reads past the end of the range. Values are views
+                // into larger text, so parse a terminated copy instead. float
+                // and double use a parser that stays within the range.
+                const std::string terminated(text);
+                return Parse(terminated);
+            }
+            else {
+                return Parse(text);
+            }
+        }
+
+        static auto ToString(T value) -> std::string
+        {
+            char buffer[160] {};
+            const auto result = std::to_chars(std::begin(buffer), std::end(buffer), value, std::chars_format::general);
+            return std::string(buffer, result.ptr);
+        }
+
+    private:
+        static auto Parse(std::string_view text) -> std::optional<T>
+        {
             T value {};
             const auto* first = text.data();
             const auto* last = first + text.size();
@@ -88,13 +111,6 @@ namespace detail {
                 return std::nullopt;
             }
             return value;
-        }
-
-        static auto ToString(T value) -> std::string
-        {
-            char buffer[160] {};
-            const auto result = std::to_chars(std::begin(buffer), std::end(buffer), value, std::chars_format::general);
-            return std::string(buffer, result.ptr);
         }
     };
 
