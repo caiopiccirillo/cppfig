@@ -15,6 +15,15 @@ option(CPPFIG_BUILD_BENCHMARKS "Build the cppfig benchmarks" ${PROJECT_IS_TOP_LE
 option(CPPFIG_BUILD_EXAMPLES "Build the cppfig examples" ${PROJECT_IS_TOP_LEVEL})
 option(CPPFIG_INSTALL "Generate the cppfig install and package rules" ${PROJECT_IS_TOP_LEVEL})
 
+# ThreadSanitizer supplies its own operator new and delete, which Clang links
+# statically, so targets that replace them to count allocations cannot link.
+# Those targets measure allocations, which ThreadSanitizer does not check.
+if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=[^ ]*thread")
+    set(CPPFIG_THREAD_SANITIZER ON)
+else()
+    set(CPPFIG_THREAD_SANITIZER OFF)
+endif()
+
 option(STRICT_BUILD "Enable warnings as errors" ON)
 
 # Warnings live on an INTERFACE target rather than in add_compile_options, so
@@ -114,7 +123,7 @@ if(CPPFIG_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
-if(CPPFIG_BUILD_BENCHMARKS)
+if(CPPFIG_BUILD_BENCHMARKS AND NOT CPPFIG_THREAD_SANITIZER)
     add_subdirectory(benchmark)
 endif()
 

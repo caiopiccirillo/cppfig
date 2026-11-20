@@ -1,6 +1,11 @@
 include(GoogleTest)
 
-foreach(test_name registry_test configuration_test concurrency_test allocation_test traits_test)
+set(unit_tests registry_test configuration_test concurrency_test traits_test)
+if(NOT CPPFIG_THREAD_SANITIZER)
+    list(APPEND unit_tests allocation_test)
+endif()
+
+foreach(test_name ${unit_tests})
     add_executable(${test_name} ${test_name}.cpp)
 
     target_link_libraries(${test_name}
@@ -17,7 +22,9 @@ endforeach()
 find_package(Threads REQUIRED)
 target_link_libraries(concurrency_test PRIVATE Threads::Threads)
 target_link_libraries(configuration_test PRIVATE Threads::Threads)
-target_include_directories(allocation_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/compile_scale)
+if(TARGET allocation_test)
+    target_include_directories(allocation_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/compile_scale)
+endif()
 
 # Each case must fail to compile with its own diagnostic. Matching the message
 # (rather than only expecting a non-zero exit) keeps an unrelated error, such as
