@@ -14,6 +14,7 @@ option(CPPFIG_BUILD_TESTS "Build the cppfig test suite" ${PROJECT_IS_TOP_LEVEL})
 option(CPPFIG_BUILD_BENCHMARKS "Build the cppfig benchmarks" ${PROJECT_IS_TOP_LEVEL})
 option(CPPFIG_BUILD_EXAMPLES "Build the cppfig examples" ${PROJECT_IS_TOP_LEVEL})
 option(CPPFIG_INSTALL "Generate the cppfig install and package rules" ${PROJECT_IS_TOP_LEVEL})
+option(CPPFIG_BUILD_FUZZERS "Build the libFuzzer targets (Clang only)" OFF)
 
 # ThreadSanitizer supplies its own operator new and delete, which Clang links
 # statically, so targets that replace them to count allocations cannot link.
@@ -22,6 +23,10 @@ if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=[^ ]*thread")
     set(CPPFIG_THREAD_SANITIZER ON)
 else()
     set(CPPFIG_THREAD_SANITIZER OFF)
+endif()
+
+if(CPPFIG_BUILD_FUZZERS AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR "CPPFIG_BUILD_FUZZERS needs Clang's libFuzzer. Current compiler: ${CMAKE_CXX_COMPILER_ID}")
 endif()
 
 option(STRICT_BUILD "Enable warnings as errors" ON)
@@ -114,9 +119,16 @@ if(PROJECT_IS_TOP_LEVEL)
     copy_compile_commands()
 endif()
 
-if(CPPFIG_BUILD_TESTS)
+if(CPPFIG_BUILD_TESTS OR CPPFIG_BUILD_FUZZERS)
     include(CTest)
+endif()
+
+if(CPPFIG_BUILD_TESTS)
     add_subdirectory(test)
+endif()
+
+if(CPPFIG_BUILD_TESTS OR CPPFIG_BUILD_FUZZERS)
+    add_subdirectory(fuzz)
 endif()
 
 if(CPPFIG_BUILD_EXAMPLES)

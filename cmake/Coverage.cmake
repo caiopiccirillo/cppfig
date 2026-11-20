@@ -52,7 +52,7 @@ function(add_coverage_target)
     endforeach()
 
     # Regex to exclude third-party / non-library source from reports
-    set(_ignore_regex "(third|test|benchmark|build|examples|vcpkg_installed)/.*")
+    set(_ignore_regex "(third|test|fuzz|benchmark|build|examples|vcpkg_installed)/.*")
 
     # Wrapper script that suppresses the harmless "N functions have mismatched
     # data" warning emitted by llvm-cov when merging profiles from multiple

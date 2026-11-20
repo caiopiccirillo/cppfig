@@ -127,9 +127,23 @@ ctest --test-dir build/debug/gcc -LE compile-scale   # skip the 1024-setting com
 cmake --workflow --preset=sanitize-clang    # ASan + UBSan, runs the tests
 cmake --workflow --preset=tsan-clang        # ThreadSanitizer, runs the tests
 cmake --workflow --preset=coverage          # then: ninja -C build/coverage coverage
+cmake --workflow --preset=fuzz-clang        # libFuzzer + ASan/UBSan, 30 s per fuzzer
 
 ./build/release/gcc/benchmark/cppfig_benchmark
 ```
+
+### Fuzzing
+
+`fuzz/` holds three libFuzzer targets: the `.conf` parser and writer, the value conversions, and `Load` end to end. Each checks properties rather than only looking for crashes, for example that every value the parser reads is written back and read again unchanged. Every test build also replays the checked-in corpus in `fuzz/corpus/` with any compiler, so inputs that once failed stay fixed.
+
+For a longer run than the preset's:
+
+```bash
+./build/fuzz/clang/fuzz/load_fuzz -max_total_time=600 -dict=fuzz/conf.dict \
+    build/fuzz/clang/fuzz/load_fuzz_corpus fuzz/corpus/load_fuzz
+```
+
+New inputs collect in the build tree. When a fuzzer finds a failure, fix it and copy the crashing input into `fuzz/corpus/<target>/`.
 
 ### Project structure
 
@@ -149,6 +163,7 @@ src/cppfig/
 ├── status.h          # Status and StatusOr
 └── testing/mock.h    # MockConfiguration for tests
 test/                 # Unit, compile-fail and compile-scale tests
+fuzz/                 # libFuzzer targets and their corpus
 benchmark/            # Google Benchmark suites
 examples/             # Example program
 docs/                 # Guides and measurements
