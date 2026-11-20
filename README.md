@@ -96,7 +96,8 @@ Edit it freely: comments, ordering and spacing are preserved. Values come from, 
 
 ### Requirements
 
-- A C++20 compiler; GCC and Clang on Linux x86-64 are the supported targets, and CI builds with both
+- A C++20 compiler and standard library with `constexpr std::string`: GCC 12 or newer, or Clang with libstdc++ 12 or newer. Validators are `constexpr` so that constant defaults are checked at compile time, and their results carry a `std::string`.
+- Linux x86-64 is the supported target. CI builds with GCC 15 and Clang 22; GCC 12 has also been checked.
 - No dependencies beyond the standard library
 
 ### CMake
