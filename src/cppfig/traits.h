@@ -61,7 +61,7 @@ namespace detail {
     /// Character types hold text, not numbers, so they get no integer traits.
     template <typename T>
     concept CharacterType = std::is_same_v<T, char> || std::is_same_v<T, wchar_t> || std::is_same_v<T, char8_t>
-                            || std::is_same_v<T, char16_t> || std::is_same_v<T, char32_t>;
+        || std::is_same_v<T, char16_t> || std::is_same_v<T, char32_t>;
 
     template <typename T>
     concept ConfigurableInteger = std::is_integral_v<T> && !std::is_same_v<T, bool> && !CharacterType<T>;

@@ -186,7 +186,8 @@ private:
             if constexpr (HasEnvOverride<Settings>) {
                 names[count++] = GetEnvOverride<Settings>();
             }
-        }(), ...);
+        }(),
+         ...);
         std::sort(names.begin(), names.end());
         return names;
     }

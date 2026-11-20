@@ -1,5 +1,4 @@
 #include <cppfig/cppfig.h>
-
 #include <gtest/gtest.h>
 
 #include <atomic>

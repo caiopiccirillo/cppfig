@@ -1,5 +1,4 @@
 #include <cppfig/cppfig.h>
-
 #include <gtest/gtest.h>
 
 #include <atomic>
@@ -95,9 +94,7 @@ namespace {
         auto migrated = TestConfiguration::Load(directory.file("app.conf").string());
         ASSERT_TRUE(migrated.ok()) << migrated.status().message();
         EXPECT_EQ(migrated->document.GetSourceText(), loaded->document.GetSourceText());
-        EXPECT_EQ(directory.read("app.conf"), original + "\n# Added by cppfig\n"
-                                                  + "server.host = localhost\nserver.port = 8080\nlogging.enabled = true\n"
-                                                  + "numeric.ratio = 1.5\ncustom.point = 1,2\naligned.value = 16\n");
+        EXPECT_EQ(directory.read("app.conf"), original + "\n# Added by cppfig\n" + "server.host = localhost\nserver.port = 8080\nlogging.enabled = true\n" + "numeric.ratio = 1.5\ncustom.point = 1,2\naligned.value = 16\n");
     }
 
     TEST(ConfigurationIOTest, RejectsUnknownAndDuplicateKeys)

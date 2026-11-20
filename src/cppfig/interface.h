@@ -27,6 +27,6 @@ namespace detail {
 /// RegistryType may be a Registry or a struct derived from one.
 template <typename Provider, typename RegistryType>
 concept ConfigurationProvider = requires { typename RegistryType::setting_list; }
-                                && detail::ProvidesEverySetting<Provider, typename RegistryType::setting_list>::value;
+    && detail::ProvidesEverySetting<Provider, typename RegistryType::setting_list>::value;
 
 }  // namespace cppfig

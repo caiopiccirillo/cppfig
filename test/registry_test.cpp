@@ -1,6 +1,5 @@
 #include <cppfig/cppfig.h>
 #include <cppfig/testing/mock.h>
-
 #include <gtest/gtest.h>
 
 #include <cstdint>

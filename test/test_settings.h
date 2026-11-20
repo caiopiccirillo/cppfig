@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cppfig/cppfig.h>
+#include <unistd.h>
 
 #include <atomic>
 #include <charconv>
@@ -12,7 +13,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unistd.h>
 
 namespace cppfig::test {
 
@@ -130,8 +130,7 @@ public:
     TempDirectory()
     {
         static std::atomic<unsigned long> counter = 0;
-        path_ = std::filesystem::temp_directory_path() /
-                ("cppfig_test_" + std::to_string(::getpid()) + "_" + std::to_string(counter.fetch_add(1)));
+        path_ = std::filesystem::temp_directory_path() / ("cppfig_test_" + std::to_string(::getpid()) + "_" + std::to_string(counter.fetch_add(1)));
         std::filesystem::remove_all(path_);
         std::filesystem::create_directories(path_);
     }

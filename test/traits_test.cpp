@@ -1,6 +1,5 @@
 #include <cppfig/chrono.h>
 #include <cppfig/cppfig.h>
-
 #include <gtest/gtest.h>
 
 #include <array>
@@ -14,7 +13,9 @@
 namespace cppfig::test {
 namespace {
 
-    enum class Level : std::uint8_t { kDebug, kInfo, kError };
+    enum class Level : std::uint8_t { kDebug,
+                                      kInfo,
+                                      kError };
 
     inline constexpr std::array<EnumName<Level>, 3> kLevelNames { {
         { Level::kDebug, "debug" },

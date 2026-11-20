@@ -186,7 +186,7 @@ private:
 inline void AppendConfValue(std::string& out, std::string_view value)
 {
     const bool needs_quotes = value.empty() || value.front() == ' ' || value.back() == ' ' || value.front() == '\t'
-                              || value.back() == '\t' || value.find_first_of("=#\"\\\n\r\t") != std::string_view::npos;
+        || value.back() == '\t' || value.find_first_of("=#\"\\\n\r\t") != std::string_view::npos;
     if (!needs_quotes) {
         out.append(value);
         return;
