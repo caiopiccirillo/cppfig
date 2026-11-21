@@ -138,8 +138,8 @@ namespace {
     template <std::size_t N>
     auto CreateCompleteFile(const std::string& path) -> bool
     {
-        auto created = ScaleConfiguration<N>::Load(path);
-        return created.has_value() && created->document.Save().ok();
+        auto created = cppfig::LoadFile<Scale<N>>(path);
+        return created.has_value() && cppfig::SaveFile(path, created->document).ok();
     }
 
     template <std::size_t N>
@@ -153,8 +153,8 @@ namespace {
         std::size_t document_bytes = 0;
         const AllocationCounter counter;
         for (auto _ : state) {
-            auto loaded = ScaleConfiguration<N>::Load(file.path());
-            document_bytes = loaded->document.GetSourceText().size();
+            auto loaded = cppfig::LoadFile<Scale<N>>(file.path());
+            document_bytes = loaded->document.GetText().size();
             benchmark::DoNotOptimize(loaded);
         }
         counter.Report(state);
@@ -169,7 +169,7 @@ namespace {
         const TemporaryFile file("missing_" + std::to_string(N));
         const AllocationCounter counter;
         for (auto _ : state) {
-            auto loaded = ScaleConfiguration<N>::Load(file.path());
+            auto loaded = cppfig::LoadFile<Scale<N>>(file.path());
             benchmark::DoNotOptimize(loaded);
         }
         counter.Report(state);
@@ -191,7 +191,7 @@ namespace {
         });
         const AllocationCounter counter;
         for (auto _ : state) {
-            auto loaded = ScaleConfiguration<N>::Load(file.path());
+            auto loaded = cppfig::LoadFile<Scale<N>>(file.path());
             benchmark::DoNotOptimize(loaded);
         }
         counter.Report(state);
@@ -217,14 +217,14 @@ namespace {
     void SaveCompleteDocument(benchmark::State& state)
     {
         const TemporaryFile file("save_" + std::to_string(N));
-        auto loaded = ScaleConfiguration<N>::Load(file.path());
+        auto loaded = cppfig::LoadFile<Scale<N>>(file.path());
         if (!loaded.has_value()) {
             state.SkipWithError("could not load the configuration");
             return;
         }
         const AllocationCounter counter;
         for (auto _ : state) {
-            auto status = loaded->document.Save();
+            auto status = cppfig::SaveFile(file.path(), loaded->document);
             benchmark::DoNotOptimize(status);
         }
         counter.Report(state);

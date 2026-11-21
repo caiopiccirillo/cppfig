@@ -44,26 +44,26 @@ namespace {
     {
         const TempDirectory directory;
         const auto path = directory.file("app.conf");
-        auto loaded = TestConfiguration::Load(path.string());
+        auto loaded = LoadFile<TestRegistry>(path.string());
         ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
         EXPECT_FALSE(std::filesystem::exists(path));
         EXPECT_EQ(loaded->config.Get<settings::ServerPort>(), 8080);
-        EXPECT_NE(loaded->document.GetSourceText().find("app.name = MyApplication\n"), std::string_view::npos);
+        EXPECT_NE(loaded->document.GetText().find("app.name = MyApplication\n"), std::string_view::npos);
 
-        ASSERT_TRUE(loaded->document.Save().ok());
+        ASSERT_TRUE(SaveFile(path.string(), loaded->document).ok());
         ASSERT_TRUE(std::filesystem::exists(path));
-        EXPECT_EQ(directory.read("app.conf"), loaded->document.GetSourceText());
+        EXPECT_EQ(directory.read("app.conf"), loaded->document.GetText());
 
-        auto reloaded = TestConfiguration::Load(path.string());
+        auto reloaded = LoadFile<TestRegistry>(path.string());
         ASSERT_TRUE(reloaded.has_value()) << reloaded.error().message();
-        EXPECT_EQ(reloaded->document.GetSourceText(), loaded->document.GetSourceText());
+        EXPECT_EQ(reloaded->document.GetText(), loaded->document.GetText());
     }
 
     TEST(ConfigurationIOTest, LoadsTypedFileValuesAndPreservesLayout)
     {
         const TempDirectory directory;
         directory.write("app.conf", CompleteDocument());
-        auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+        auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string());
         ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
 
         EXPECT_EQ(loaded->config.Get<settings::AppName>(), "TestApp");
@@ -74,7 +74,7 @@ namespace {
         EXPECT_EQ(loaded->config.Get<settings::Origin>(), (Point { 3, 4 }));
         EXPECT_EQ(loaded->config.Get<settings::Aligned>().value, 32);
 
-        ASSERT_TRUE(loaded->document.Save().ok());
+        ASSERT_TRUE(SaveFile(directory.file("app.conf").string(), loaded->document).ok());
         EXPECT_EQ(directory.read("app.conf"), CompleteDocument());
     }
 
@@ -83,17 +83,17 @@ namespace {
         const TempDirectory directory;
         const std::string original = "# keep first\napp.name = Existing\n# keep last\n";
         directory.write("app.conf", original);
-        auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+        auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string());
         ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
         EXPECT_EQ(loaded->config.Get<settings::AppName>(), "Existing");
         EXPECT_EQ(loaded->config.Get<settings::ServerPort>(), 8080);
-        EXPECT_TRUE(loaded->document.GetSourceText().starts_with(original));
-        EXPECT_NE(loaded->document.GetSourceText().find("# Added by cppfig\n"), std::string_view::npos);
+        EXPECT_TRUE(loaded->document.GetText().starts_with(original));
+        EXPECT_NE(loaded->document.GetText().find("# Added by cppfig\n"), std::string_view::npos);
 
-        ASSERT_TRUE(loaded->document.Save().ok());
-        auto migrated = TestConfiguration::Load(directory.file("app.conf").string());
+        ASSERT_TRUE(SaveFile(directory.file("app.conf").string(), loaded->document).ok());
+        auto migrated = LoadFile<TestRegistry>(directory.file("app.conf").string());
         ASSERT_TRUE(migrated.has_value()) << migrated.error().message();
-        EXPECT_EQ(migrated->document.GetSourceText(), loaded->document.GetSourceText());
+        EXPECT_EQ(migrated->document.GetText(), loaded->document.GetText());
         EXPECT_EQ(directory.read("app.conf"), original + "\n# Added by cppfig\n" + "server.host = localhost\nserver.port = 8080\nlogging.enabled = true\n" + "numeric.ratio = 1.5\ncustom.point = 1,2\naligned.value = 16\n");
     }
 
@@ -102,14 +102,14 @@ namespace {
         const TempDirectory directory;
         directory.write("unknown.conf", "server.unknown = 1\n");
         const auto unknown_path = directory.file("unknown.conf").string();
-        auto unknown = TestConfiguration::Load(unknown_path);
+        auto unknown = LoadFile<TestRegistry>(unknown_path);
         ASSERT_FALSE(unknown.has_value());
         EXPECT_TRUE(unknown.error().message().starts_with(unknown_path + ":1:1: ")) << unknown.error().message();
         EXPECT_NE(unknown.error().message().find("Unknown configuration setting 'server.unknown'"), std::string_view::npos);
 
         directory.write("duplicate.conf", "server.port = 1\n  server.port = 2\n");
         const auto duplicate_path = directory.file("duplicate.conf").string();
-        auto duplicate = TestConfiguration::Load(duplicate_path);
+        auto duplicate = LoadFile<TestRegistry>(duplicate_path);
         ASSERT_FALSE(duplicate.has_value());
         EXPECT_TRUE(duplicate.error().message().starts_with(duplicate_path + ":2:3: ")) << duplicate.error().message();
         EXPECT_NE(duplicate.error().message().find("Duplicate configuration setting 'server.port' (first set on line 1)"),
@@ -122,7 +122,7 @@ namespace {
         const std::string document = CompleteDocument() + "legacy.removed = 1\n# about the next key\nfuture.added = \"x\"\n";
         directory.write("app.conf", document);
 
-        auto loaded = TestConfiguration::Load(directory.file("app.conf").string(), { .unknown_keys = UnknownKeyPolicy::kPreserve });
+        auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string(), { .unknown_keys = UnknownKeyPolicy::kPreserve });
         ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
         EXPECT_EQ(loaded->config.Get<settings::ServerPort>(), 9000);
         EXPECT_FALSE(loaded->document.NeedsSave());
@@ -134,7 +134,7 @@ namespace {
         EXPECT_EQ(unknown[1].path, "future.added");
         EXPECT_EQ(unknown[1].line, 12U);
 
-        ASSERT_TRUE(loaded->document.Save().ok());
+        ASSERT_TRUE(SaveFile(directory.file("app.conf").string(), loaded->document).ok());
         EXPECT_EQ(directory.read("app.conf"), document);
     }
 
@@ -142,7 +142,7 @@ namespace {
     {
         const TempDirectory directory;
         directory.write("app.conf", "server.port = 1\nserver.port = 2\n");
-        auto loaded = TestConfiguration::Load(directory.file("app.conf").string(), { .unknown_keys = UnknownKeyPolicy::kPreserve });
+        auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string(), { .unknown_keys = UnknownKeyPolicy::kPreserve });
         ASSERT_FALSE(loaded.has_value());
         EXPECT_NE(loaded.error().message().find("Duplicate configuration setting"), std::string_view::npos);
     }
@@ -151,7 +151,7 @@ namespace {
     {
         const TempDirectory directory;
         directory.write("app.conf", "legacy.removed = 1\n");
-        auto loaded = TestConfiguration::Load(directory.file("app.conf").string(), { .unknown_keys = UnknownKeyPolicy::kReject });
+        auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string(), { .unknown_keys = UnknownKeyPolicy::kReject });
         ASSERT_FALSE(loaded.has_value());
         EXPECT_EQ(LoadOptions {}.unknown_keys, UnknownKeyPolicy::kReject);
     }
@@ -161,7 +161,7 @@ namespace {
         const TempDirectory directory;
         directory.write("app.conf", "# comment\nserver.port 9000\n");
         const auto path = directory.file("app.conf").string();
-        auto loaded = TestConfiguration::Load(path);
+        auto loaded = LoadFile<TestRegistry>(path);
         ASSERT_FALSE(loaded.has_value());
         EXPECT_TRUE(loaded.error().message().starts_with(path + ":2:1: ")) << loaded.error().message();
         EXPECT_NE(loaded.error().message().find("missing '='"), std::string_view::npos);
@@ -172,7 +172,7 @@ namespace {
         const TempDirectory directory;
         directory.write("app.conf", "server.port =   abc\n");
         const auto path = directory.file("app.conf").string();
-        auto loaded = TestConfiguration::Load(path);
+        auto loaded = LoadFile<TestRegistry>(path);
         ASSERT_FALSE(loaded.has_value());
         EXPECT_TRUE(loaded.error().message().starts_with(path + ":1:17: ")) << loaded.error().message();
         EXPECT_NE(loaded.error().message().find("'server.port'"), std::string_view::npos);
@@ -183,7 +183,7 @@ namespace {
         const TempDirectory directory;
         directory.write("app.conf", "# ports\n\nserver.port = 0\n");
         const auto path = directory.file("app.conf").string();
-        auto loaded = TestConfiguration::Load(path);
+        auto loaded = LoadFile<TestRegistry>(path);
         ASSERT_FALSE(loaded.has_value());
         EXPECT_TRUE(loaded.error().message().starts_with(path + ":3:15: ")) << loaded.error().message();
         EXPECT_NE(loaded.error().message().find("file value is invalid"), std::string_view::npos);
@@ -194,7 +194,7 @@ namespace {
         const TempDirectory directory;
         directory.write("app.conf", "app.name = \"abc\n");
         const auto path = directory.file("app.conf").string();
-        auto loaded = TestConfiguration::Load(path);
+        auto loaded = LoadFile<TestRegistry>(path);
         ASSERT_FALSE(loaded.has_value());
         EXPECT_TRUE(loaded.error().message().starts_with(path + ":1:12: ")) << loaded.error().message();
         EXPECT_NE(loaded.error().message().find("unterminated quoted value"), std::string_view::npos);
@@ -207,12 +207,12 @@ namespace {
                                      "app.name = \"a # b\"  # quoted hash is data\n"
                                      "server.host = example#comment\n";
         directory.write("app.conf", document);
-        auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+        auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string());
         ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
         EXPECT_EQ(loaded->config.Get<settings::ServerPort>(), 9000);
         EXPECT_EQ(loaded->config.Get<settings::AppName>(), "a # b");
         EXPECT_EQ(loaded->config.Get<settings::ServerHost>(), "example");
-        EXPECT_TRUE(loaded->document.GetSourceText().starts_with(document));
+        EXPECT_TRUE(loaded->document.GetText().starts_with(document));
     }
 
     TEST(ConfigurationIOTest, ParsesQuotedStringsAndEscapes)
@@ -224,10 +224,10 @@ namespace {
         document.replace(document.find(original), original.size(), replacement);
         directory.write("app.conf", document);
 
-        auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+        auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string());
         ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
         EXPECT_EQ(loaded->config.Get<settings::AppName>(), "line 1\n\t\"name\"\\end");
-        ASSERT_TRUE(loaded->document.Save().ok());
+        ASSERT_TRUE(SaveFile(directory.file("app.conf").string(), loaded->document).ok());
         EXPECT_EQ(directory.read("app.conf"), document);
     }
 
@@ -236,12 +236,12 @@ namespace {
 
         const TempDirectory directory;
         const auto path = directory.file("escaped.conf");
-        auto loaded = Configuration<Registry<EscapedSetting>>::Load(path.string());
+        auto loaded = LoadFile<Registry<EscapedSetting>>(path.string());
         ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
-        EXPECT_EQ(loaded->document.GetSourceText(), "text.value = \"a#b\\n\"\n");
-        ASSERT_TRUE(loaded->document.Save().ok());
+        EXPECT_EQ(loaded->document.GetText(), "text.value = \"a#b\\n\"\n");
+        ASSERT_TRUE(SaveFile(path.string(), loaded->document).ok());
 
-        auto reloaded = Configuration<Registry<EscapedSetting>>::Load(path.string());
+        auto reloaded = LoadFile<Registry<EscapedSetting>>(path.string());
         ASSERT_TRUE(reloaded.has_value()) << reloaded.error().message();
         EXPECT_EQ(reloaded->config.Get<EscapedSetting>(), "a#b\n");
     }
@@ -253,7 +253,7 @@ namespace {
         const ScopedEnvironment host("CPPFIG_TEST_SERVER_HOST", "environment-host");
         const ScopedEnvironment port("CPPFIG_TEST_SERVER_PORT", "10000");
 
-        auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+        auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string());
         ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
         EXPECT_EQ(loaded->config.Get<settings::ServerHost>(), "environment-host");
         EXPECT_EQ(loaded->config.Get<settings::ServerPort>(), 10000);
@@ -263,7 +263,7 @@ namespace {
         EXPECT_EQ(loaded->config.Get<settings::ServerHost>(), "environment-host");
         EXPECT_EQ(loaded->config.Get<settings::ServerPort>(), 10000);
 
-        ASSERT_TRUE(loaded->document.Save().ok());
+        ASSERT_TRUE(SaveFile(directory.file("app.conf").string(), loaded->document).ok());
         EXPECT_EQ(directory.read("app.conf"), CompleteDocument());
     }
 
@@ -281,13 +281,13 @@ namespace {
         directory.write("app.conf", CompleteDocument());
         {
             const ScopedEnvironment port("CPPFIG_TEST_SERVER_PORT", "not-a-number");
-            auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+            auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string());
             ASSERT_FALSE(loaded.has_value());
             EXPECT_NE(loaded.error().message().find("environment override"), std::string_view::npos);
         }
         {
             const ScopedEnvironment port("CPPFIG_TEST_SERVER_PORT", "0");
-            auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+            auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string());
             ASSERT_FALSE(loaded.has_value());
             EXPECT_NE(loaded.error().message().find("environment override"), std::string_view::npos);
         }
@@ -297,7 +297,7 @@ namespace {
         invalid_file.replace(invalid_file.find(value), value.size(), "server.port = 0");
         directory.write("invalid.conf", invalid_file);
         const ScopedEnvironment valid_override("CPPFIG_TEST_SERVER_PORT", "10000");
-        auto loaded = TestConfiguration::Load(directory.file("invalid.conf").string());
+        auto loaded = LoadFile<TestRegistry>(directory.file("invalid.conf").string());
         ASSERT_FALSE(loaded.has_value());
         EXPECT_NE(loaded.error().message().find("file value"), std::string_view::npos);
     }
@@ -309,7 +309,7 @@ namespace {
         const std::string value = "custom.point = 3,4";
         document.replace(document.find(value), value.size(), "custom.point = invalid");
         directory.write("app.conf", document);
-        auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+        auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string());
         ASSERT_FALSE(loaded.has_value());
         EXPECT_NE(loaded.error().message().find("custom.point"), std::string_view::npos);
     }
@@ -317,17 +317,17 @@ namespace {
     TEST(ConfigurationIOTest, NeedsSaveOnlyWhenTheFileIsMissingOrIncomplete)
     {
         const TempDirectory directory;
-        auto missing = TestConfiguration::Load(directory.file("app.conf").string());
+        auto missing = LoadFile<TestRegistry>(directory.file("app.conf").string());
         ASSERT_TRUE(missing.has_value()) << missing.error().message();
         EXPECT_TRUE(missing->document.NeedsSave());
-        ASSERT_TRUE(missing->document.Save().ok());
+        ASSERT_TRUE(SaveFile(directory.file("app.conf").string(), missing->document).ok());
 
-        auto complete = TestConfiguration::Load(directory.file("app.conf").string());
+        auto complete = LoadFile<TestRegistry>(directory.file("app.conf").string());
         ASSERT_TRUE(complete.has_value()) << complete.error().message();
         EXPECT_FALSE(complete->document.NeedsSave());
 
         directory.write("partial.conf", "app.name = Partial\n");
-        auto partial = TestConfiguration::Load(directory.file("partial.conf").string());
+        auto partial = LoadFile<TestRegistry>(directory.file("partial.conf").string());
         ASSERT_TRUE(partial.has_value()) << partial.error().message();
         EXPECT_TRUE(partial->document.NeedsSave());
     }
@@ -338,9 +338,8 @@ namespace {
 
         const TempDirectory directory;
         directory.write("app.conf", CompleteDocument());
-        auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+        auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string());
         ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
-        EXPECT_EQ(loaded->document.GetFilePath(), directory.file("app.conf").string());
 
         // The configuration outlives the document it was loaded with.
         TestConfiguration config = std::move(loaded->config);
@@ -355,10 +354,10 @@ namespace {
         directory.write("app.conf", "app.name = Secret\n");
         fs::permissions(directory.file("app.conf"), fs::perms::owner_read | fs::perms::owner_write);
 
-        auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+        auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string());
         ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
         ASSERT_TRUE(loaded->document.NeedsSave());
-        ASSERT_TRUE(loaded->document.Save().ok());
+        ASSERT_TRUE(SaveFile(directory.file("app.conf").string(), loaded->document).ok());
 
         EXPECT_EQ(fs::status(directory.file("app.conf")).permissions(), fs::perms::owner_read | fs::perms::owner_write);
     }
@@ -371,22 +370,22 @@ namespace {
         directory.write("real/app.conf", "app.name = Linked\n");
         fs::create_symlink(directory.file("real/app.conf"), directory.file("app.conf"));
 
-        auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+        auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string());
         ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
-        ASSERT_TRUE(loaded->document.Save().ok());
+        ASSERT_TRUE(SaveFile(directory.file("app.conf").string(), loaded->document).ok());
 
         EXPECT_TRUE(fs::is_symlink(fs::symlink_status(directory.file("app.conf"))));
-        EXPECT_EQ(directory.read("real/app.conf"), loaded->document.GetSourceText());
+        EXPECT_EQ(directory.read("real/app.conf"), loaded->document.GetText());
     }
 
     TEST(ConfigurationIOTest, SaveLeavesNoTemporaryFiles)
     {
         namespace fs = std::filesystem;
         const TempDirectory directory;
-        auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+        auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string());
         ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
-        ASSERT_TRUE(loaded->document.Save().ok());
-        ASSERT_TRUE(loaded->document.Save().ok());
+        ASSERT_TRUE(SaveFile(directory.file("app.conf").string(), loaded->document).ok());
+        ASSERT_TRUE(SaveFile(directory.file("app.conf").string(), loaded->document).ok());
 
         std::size_t entries = 0;
         for (const auto& entry : fs::directory_iterator(directory.path())) {
@@ -402,17 +401,17 @@ namespace {
         const auto path = directory.file("app.conf").string();
         // Two documents bound to the same destination with different contents.
         directory.write("app.conf", "app.name = First\n");
-        auto first = TestConfiguration::Load(path);
+        auto first = LoadFile<TestRegistry>(path);
         directory.write("app.conf", "app.name = Second\n");
-        auto second = TestConfiguration::Load(path);
+        auto second = LoadFile<TestRegistry>(path);
         ASSERT_TRUE(first.has_value() && second.has_value());
-        const std::string first_text(first->document.GetSourceText());
-        const std::string second_text(second->document.GetSourceText());
+        const std::string first_text(first->document.GetText());
+        const std::string second_text(second->document.GetText());
 
         std::atomic<bool> failed = false;
-        auto save_repeatedly = [&failed](const ConfDocument& document) {
+        auto save_repeatedly = [&failed, &path](const ConfDocument& document) {
             for (int i = 0; i < 200; ++i) {
-                if (!document.Save().ok()) {
+                if (!SaveFile(path, document).ok()) {
                     failed = true;
                 }
             }
@@ -438,10 +437,10 @@ namespace {
         const std::string original = "app.name = Original\n";
         directory.write("locked/app.conf", original);
 
-        auto loaded = TestConfiguration::Load(directory.file("locked/app.conf").string());
+        auto loaded = LoadFile<TestRegistry>(directory.file("locked/app.conf").string());
         ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
         fs::permissions(directory.file("locked"), fs::perms::owner_read | fs::perms::owner_exec);
-        const auto status = loaded->document.Save();
+        const auto status = SaveFile(directory.file("locked/app.conf").string(), loaded->document);
         fs::permissions(directory.file("locked"), fs::perms::owner_all);
 
         EXPECT_FALSE(status.ok());
@@ -452,10 +451,44 @@ namespace {
     {
         const TempDirectory directory;
         const auto path = directory.file("one/two/app.conf");
-        auto loaded = TestConfiguration::Load(path.string());
+        auto loaded = LoadFile<TestRegistry>(path.string());
         ASSERT_TRUE(loaded.has_value());
-        ASSERT_TRUE(loaded->document.Save().ok());
+        ASSERT_TRUE(SaveFile(path.string(), loaded->document).ok());
         EXPECT_TRUE(std::filesystem::exists(path));
+    }
+
+    TEST(ConfigurationIOTest, LoadsFromTextWithoutAFile)
+    {
+        auto loaded = TestConfiguration::FromText(CompleteDocument(), "inline");
+        ASSERT_TRUE(loaded) << loaded.error().message();
+        EXPECT_EQ(loaded->config.Get<settings::ServerPort>(), 9000);
+        EXPECT_EQ(loaded->document.GetText(), CompleteDocument());
+        EXPECT_FALSE(loaded->document.NeedsSave());
+
+        auto invalid = TestConfiguration::FromText("server.port = 0\n", "inline");
+        ASSERT_FALSE(invalid);
+        EXPECT_TRUE(invalid.error().message().starts_with("inline:1:15: ")) << invalid.error().message();
+    }
+
+    TEST(ConfigurationIOTest, ReadsAFileIntoOneExactlySizedBuffer)
+    {
+        const TempDirectory directory;
+        std::string contents;
+        for (int i = 0; i < 4096; ++i) {
+            contents += "# line " + std::to_string(i) + "\n";
+        }
+        directory.write("big.conf", contents);
+
+        auto text = ReadConfFile(directory.file("big.conf"));
+        ASSERT_TRUE(text) << text.error().message();
+        EXPECT_EQ(*text, contents);
+        EXPECT_EQ(text->capacity(), text->size());
+
+        auto missing = ReadConfFile(directory.file("missing.conf"));
+        ASSERT_TRUE(missing) << missing.error().message();
+        EXPECT_TRUE(missing->empty());
+
+        EXPECT_FALSE(ReadConfFile(directory.path()));
     }
 
     TEST(ConfigurationIOTest, RuntimeOnlyInvalidDefaultReturnsStatus)

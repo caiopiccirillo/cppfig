@@ -194,14 +194,14 @@ static void LoadExisting(benchmark::State& state)
 {
     const TemporaryFile file("load");
     {
-        auto created = Configuration<RegistryType>::Load(file.path());
-        if (!created.has_value() || !created->document.Save().ok()) {
+        auto created = cppfig::LoadFile<RegistryType>(file.path());
+        if (!created.has_value() || !cppfig::SaveFile(file.path(), created->document).ok()) {
             state.SkipWithError("could not create the configuration file");
             return;
         }
     }
     for (auto _ : state) {
-        auto loaded = Configuration<RegistryType>::Load(file.path());
+        auto loaded = cppfig::LoadFile<RegistryType>(file.path());
         benchmark::DoNotOptimize(loaded);
     }
 }
@@ -216,13 +216,13 @@ template <typename RegistryType>
 static void SaveDocument(benchmark::State& state)
 {
     const TemporaryFile file("save");
-    auto loaded = Configuration<RegistryType>::Load(file.path());
+    auto loaded = cppfig::LoadFile<RegistryType>(file.path());
     if (!loaded.has_value()) {
         state.SkipWithError("could not load the configuration");
         return;
     }
     for (auto _ : state) {
-        auto status = loaded->document.Save();
+        auto status = cppfig::SaveFile(file.path(), loaded->document);
         benchmark::DoNotOptimize(status);
     }
 }

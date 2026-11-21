@@ -23,8 +23,8 @@ static_assert(LargeRegistry::size == CPPFIG_SCALE_SETTINGS);
 
 auto LoadLarge(const std::string& path) -> int
 {
-    auto loaded = cppfig::Configuration<scale::LargeRegistry>::Load(path);
-    if (!loaded.has_value() || !loaded->document.Save().ok()) {
+    auto loaded = cppfig::LoadFile<scale::LargeRegistry>(path);
+    if (!loaded.has_value() || !cppfig::SaveFile(path, loaded->document).ok()) {
         return -1;
     }
     auto defaults = cppfig::Configuration<scale::LargeRegistry>::FromDefaults();

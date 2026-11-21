@@ -37,7 +37,7 @@ using AppRegistry = cppfig::Registry<settings::AppName, settings::ServerHost, se
 
 int main()
 {
-    auto loaded = cppfig::Configuration<AppRegistry>::Load("/tmp/cppfig_example.conf");
+    auto loaded = cppfig::LoadFile<AppRegistry>("/tmp/cppfig_example.conf");
     if (!loaded.has_value()) {
         std::cerr << "Failed to load configuration: " << loaded.error().message() << '\n';
         return 1;
@@ -50,7 +50,7 @@ int main()
 
     // Creates the file, or appends settings missing from it, only when needed.
     if (loaded->document.NeedsSave()) {
-        const auto status = loaded->document.Save();
+        const auto status = cppfig::SaveFile("/tmp/cppfig_example.conf", loaded->document);
         if (!status.ok()) {
             std::cerr << "Failed to save configuration: " << status.message() << '\n';
             return 1;

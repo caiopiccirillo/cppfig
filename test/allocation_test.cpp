@@ -123,10 +123,10 @@ namespace {
         const TempDirectory directory;
         const auto path = directory.file("app.conf").string();
         allocation_count = 0;
-        auto loaded = Configuration<ScaleRegistry>::Load(path);
+        auto loaded = LoadFile<ScaleRegistry>(path);
         const auto allocations = allocation_count.load();
         ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
-        EXPECT_NE(loaded->document.GetSourceText().find("scale.s127 = 0.5\n"), std::string_view::npos);
+        EXPECT_NE(loaded->document.GetText().find("scale.s127 = 0.5\n"), std::string_view::npos);
         EXPECT_LT(allocations, 40U);
     }
 

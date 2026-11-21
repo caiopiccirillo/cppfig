@@ -1,15 +1,14 @@
-// Fuzzes Configuration::Load end to end with a registry of every built-in kind
+// Fuzzes Configuration::FromText end to end with a registry of every built-in kind
 // of value.
 //
 // Properties, for any file content:
-// - Load never crashes, under either unknown-key policy;
+// - loading never crashes, under either unknown-key policy;
 // - rejecting unknown keys never accepts a file that preserving them rejects;
 // - a loaded document, once its migrations are appended, loads again to the
 //   same values and the same text, and no longer needs saving.
 
 #include <cppfig/chrono.h>
 #include <cppfig/cppfig.h>
-#include <unistd.h>
 
 #include <array>
 #include <chrono>
@@ -17,7 +16,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -142,18 +140,11 @@ auto SameValues(const fuzz::FuzzConfiguration& left, const fuzz::FuzzConfigurati
     return (Same(left.Get<Settings>(), right.Get<Settings>()) && ...);
 }
 
-auto FilePath() -> const std::string&
-{
-    static const std::string path
-        = (std::filesystem::temp_directory_path() / ("cppfig_load_fuzz_" + std::to_string(::getpid()) + ".conf")).string();
-    return path;
-}
+constexpr std::string_view kSource = "fuzz.conf";
 
-void WriteFile(std::string_view text)
+auto Load(std::string_view text, cppfig::UnknownKeyPolicy policy) -> cppfig::StatusOr<cppfig::LoadResult<fuzz::FuzzRegistry>>
 {
-    std::ofstream output(FilePath(), std::ios::binary | std::ios::trunc);
-    output.write(text.data(), static_cast<std::streamsize>(text.size()));
-    CPPFIG_FUZZ_CHECK(output.good());
+    return fuzz::FuzzConfiguration::FromText(std::string(text), kSource, { .unknown_keys = policy });
 }
 
 }  // namespace
@@ -162,10 +153,8 @@ extern "C" auto LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t siz
 {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): libFuzzer's interface takes bytes.
     const std::string_view text(reinterpret_cast<const char*>(data), size);
-    WriteFile(text);
-
-    const auto strict = fuzz::FuzzConfiguration::Load(FilePath());
-    auto lenient = fuzz::FuzzConfiguration::Load(FilePath(), { .unknown_keys = cppfig::UnknownKeyPolicy::kPreserve });
+    const auto strict = Load(text, cppfig::UnknownKeyPolicy::kReject);
+    const auto lenient = Load(text, cppfig::UnknownKeyPolicy::kPreserve);
     if (strict.has_value()) {
         CPPFIG_FUZZ_CHECK(lenient.has_value());
     }
@@ -174,17 +163,16 @@ extern "C" auto LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t siz
     }
 
     const auto& first = lenient.value();
-    CPPFIG_FUZZ_CHECK(first.document.GetSourceText().starts_with(text));
+    CPPFIG_FUZZ_CHECK(first.document.GetText().starts_with(text));
     if (strict.has_value()) {
         CPPFIG_FUZZ_CHECK(first.document.GetUnknownKeys().empty());
         CPPFIG_FUZZ_CHECK(SameValues(strict.value().config, first.config, fuzz::FuzzRegistry {}));
     }
 
-    WriteFile(first.document.GetSourceText());
-    const auto second = fuzz::FuzzConfiguration::Load(FilePath(), { .unknown_keys = cppfig::UnknownKeyPolicy::kPreserve });
+    const auto second = Load(first.document.GetText(), cppfig::UnknownKeyPolicy::kPreserve);
     CPPFIG_FUZZ_CHECK(second.has_value());
     CPPFIG_FUZZ_CHECK(SameValues(first.config, second.value().config, fuzz::FuzzRegistry {}));
-    CPPFIG_FUZZ_CHECK(second.value().document.GetSourceText() == first.document.GetSourceText());
+    CPPFIG_FUZZ_CHECK(second.value().document.GetText() == first.document.GetText());
     CPPFIG_FUZZ_CHECK(!second.value().document.NeedsSave());
     CPPFIG_FUZZ_CHECK(second.value().document.GetUnknownKeys().size() == first.document.GetUnknownKeys().size());
     return 0;

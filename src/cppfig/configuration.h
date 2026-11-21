@@ -3,6 +3,7 @@
 #include <array>
 #include <bitset>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <optional>
@@ -17,6 +18,21 @@
 #include "cppfig/status.h"
 
 namespace cppfig {
+
+/// @brief How loading treats entries whose path is not in the registry.
+enum class UnknownKeyPolicy : std::uint8_t {
+    /// Fail initialization. Catches typos, but an older binary then rejects a
+    /// file written by a newer one, and removing a setting breaks existing files.
+    kReject,
+    /// Leave the entry in the document untouched and report it through
+    /// ConfDocument::GetUnknownKeys. Duplicate known keys are still rejected.
+    kPreserve,
+};
+
+/// @brief Options for Configuration::FromText and LoadFile.
+struct LoadOptions {
+    UnknownKeyPolicy unknown_keys = UnknownKeyPolicy::kReject;
+};
 
 namespace detail {
 
@@ -248,10 +264,13 @@ public:
     auto operator=(Configuration&&) -> Configuration& = default;
     ~Configuration() = default;
 
-    /// Loads a flat .conf file and captures environment overrides once.
-    /// A missing file yields defaults and a document holding them; save the
-    /// document to create the file.
-    [[nodiscard]] static auto Load(std::string file_path, LoadOptions options = {}) -> StatusOr<LoadResult<RegistryType>>;
+    /// Loads a configuration from flat .conf text and captures environment
+    /// overrides once. source names the text in error messages, usually the
+    /// file it was read from. Settings missing from the text are appended to
+    /// the returned document as migrations. To read a file, see LoadFile in
+    /// cppfig/file.h.
+    [[nodiscard]] static auto FromText(std::string text, std::string_view source, LoadOptions options = {})
+        -> StatusOr<LoadResult<RegistryType>>;
 
     /// Creates a configuration from defaults without file or environment input.
     [[nodiscard]] static auto FromDefaults() -> StatusOr<Configuration>
@@ -365,21 +384,18 @@ struct LoadResult {
 };
 
 template <typename RegistryType>
-auto Configuration<RegistryType>::Load(std::string file_path, LoadOptions options) -> StatusOr<LoadResult<RegistryType>>
+auto Configuration<RegistryType>::FromText(std::string text, std::string_view source, LoadOptions options)
+    -> StatusOr<LoadResult<RegistryType>>
 {
     auto state_owner = std::make_unique<InitializationState>();
     auto& state = *state_owner;
-    state.context.source = file_path;
+    state.context.source = source;
     state.context.apply_environment = true;
     state.context.record_migrations = true;
     state.unknown_key_policy = options.unknown_keys;
+    state.document = std::move(text);
 
-    bool exists = false;
-    auto status = ConfDocument::ReadFile(file_path, state.document, exists);
-    if (!status.ok()) {
-        return status;
-    }
-    status = ParseDocument(state);
+    auto status = ParseDocument(state);
     if (!status.ok()) {
         return status;
     }
@@ -388,9 +404,10 @@ auto Configuration<RegistryType>::Load(std::string file_path, LoadOptions option
         return status;
     }
 
-    const bool needs_save = !exists || !state.context.migrations.empty();
-    ConfDocument::AppendMigrations(state.document, state.context.migrations);
-    return LoadResult<RegistryType> { Configuration(state), ConfDocument(std::move(file_path), std::move(state.document), std::move(state.unknown_keys), needs_save) };
+    const bool needs_save = !state.context.migrations.empty();
+    auto document = ConfDocument::AppendMigrations(std::move(state.document), state.context.migrations);
+    return LoadResult<RegistryType> { Configuration(state),
+                                      ConfDocument(std::move(document), std::move(state.unknown_keys), needs_save) };
 }
 
 }  // namespace cppfig

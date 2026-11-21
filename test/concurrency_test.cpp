@@ -41,7 +41,7 @@ namespace {
     TEST(ConcurrencyTest, SavingDoesNotChangeTypedValuesOrReferences)
     {
         const TempDirectory directory;
-        auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
+        auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string());
         ASSERT_TRUE(loaded.has_value());
         const auto& config = loaded->config;
         const auto& document = loaded->document;
@@ -57,7 +57,7 @@ namespace {
             }
         });
         for (int i = 0; i < 20; ++i) {
-            if (!document.Save().ok()) {
+            if (!SaveFile(directory.file("app.conf"), document).ok()) {
                 valid = false;
             }
         }
