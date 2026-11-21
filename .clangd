@@ -1,3 +1,10 @@
 Diagnostics:
   UnusedIncludes: Strict
   MissingIncludes: Strict
+---
+# Each file here must fail to compile; the compile-fail tests check that it
+# does, with the intended message.
+If:
+  PathMatch: test/compile_fail/.*
+Diagnostics:
+  Suppress: '*'
