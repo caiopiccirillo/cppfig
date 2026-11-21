@@ -5,7 +5,6 @@
 #include <string_view>
 #include <utility>
 
-
 namespace cppfig {
 
 /// @brief One `path = value` entry. Columns are 1-based byte offsets in the line.
