@@ -73,11 +73,14 @@ public:
     [[nodiscard]] auto Build() -> StatusOr<MockConfiguration<RegistryType>>
     {
         const auto slots = slot_table::Addresses(values_);
+        detail::ErrorList errors;
         for (std::size_t i = 0; i < RegistryType::size; ++i) {
-            auto status = slot_table::check[i](slots[i]);
-            if (!status.ok()) {
-                return status;
+            if (auto status = slot_table::check[i](slots[i]); !status.ok()) {
+                errors.Add(status.message());
             }
+        }
+        if (!errors.empty()) {
+            return std::move(errors).ToStatus();
         }
         return MockConfiguration<RegistryType>(values_type(detail::from_engaged, values_));
     }

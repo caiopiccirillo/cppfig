@@ -5,7 +5,6 @@
 #include <string_view>
 #include <utility>
 
-#include "cppfig/status.h"
 
 namespace cppfig {
 
@@ -18,14 +17,12 @@ struct ConfEntry {
     std::size_t value_column;
 };
 
-/// @brief Formats an error as `source:line:column: message`, the layout
-/// compilers use, so editors and terminals can jump to the location.
-[[nodiscard]] inline auto LocatedError(std::string_view source, std::size_t line, std::size_t column, std::string_view message)
-    -> Status
-{
-    return InvalidArgumentError(std::string(source) + ":" + std::to_string(line) + ":" + std::to_string(column) + ": "
-                                + std::string(message));
-}
+/// @brief A syntax error on one line. The column is a 1-based byte offset.
+struct ConfError {
+    std::size_t line;
+    std::size_t column;
+    std::string_view message;
+};
 
 /// @brief Allocation-conscious parser for flat `path = value` documents.
 ///
@@ -35,9 +32,11 @@ struct ConfEntry {
 /// support \\, \", \n, \r and \t and use one temporary decoding string per entry.
 class ConfParser {
 public:
-    /// Calls fn for each entry in order. source names the document in errors.
-    template <typename Fn>
-    [[nodiscard]] static auto ForEachEntry(std::string_view document, std::string_view source, Fn&& fn) -> Status
+    /// Calls on_entry for each entry and on_error for each malformed line, in
+    /// line order. A malformed line is skipped and parsing continues with the
+    /// next one, so every error in a document is found in one pass.
+    template <typename EntryFn, typename ErrorFn>
+    static void ForEachEntry(std::string_view document, EntryFn&& on_entry, ErrorFn&& on_error)
     {
         std::size_t offset = 0;
         std::size_t line_number = 1;
@@ -47,33 +46,7 @@ public:
             const std::size_t newline = document.find('\n', offset);
             const std::size_t end = newline == std::string_view::npos ? document.size() : newline;
             const auto line = document.substr(offset, end - offset);
-            const std::size_t first = line.find_first_not_of(kWhitespace);
-
-            if (first != std::string_view::npos && line[first] != '#') {
-                const std::size_t equals = line.find('=', first);
-                if (equals == std::string_view::npos) {
-                    return LocatedError(source, line_number, first + 1, "missing '=' after the setting path");
-                }
-
-                const auto path = TrimRight(line.substr(first, equals - first));
-                if (!IsPathWellFormed(path)) {
-                    return LocatedError(source, line_number, first + 1, "ill-formed setting path '" + std::string(path) + "'");
-                }
-
-                std::size_t value_start = line.find_first_not_of(kWhitespace, equals + 1);
-                if (value_start == std::string_view::npos) {
-                    value_start = line.size();
-                }
-                const auto value = DecodeValue(line, value_start, decoded);
-                if (!value.ok()) {
-                    return LocatedError(source, line_number, value.column, value.message);
-                }
-
-                auto status = fn(ConfEntry { path, value.text, line_number, first + 1, value_start + 1 });
-                if (!status.ok()) {
-                    return status;
-                }
-            }
+            ParseLine(line, line_number, decoded, on_entry, on_error);
 
             if (newline == std::string_view::npos) {
                 break;
@@ -81,12 +54,43 @@ public:
             offset = newline + 1;
             ++line_number;
         }
-
-        return OkStatus();
     }
 
 private:
     static constexpr std::string_view kWhitespace = " \t\r";
+
+    template <typename EntryFn, typename ErrorFn>
+    static void ParseLine(std::string_view line, std::size_t line_number, std::string& decoded, EntryFn& on_entry, ErrorFn& on_error)
+    {
+        const std::size_t first = line.find_first_not_of(kWhitespace);
+        if (first == std::string_view::npos || line[first] == '#') {
+            return;
+        }
+
+        const std::size_t equals = line.find('=', first);
+        if (equals == std::string_view::npos) {
+            on_error(ConfError { line_number, first + 1, "missing '=' after the setting path" });
+            return;
+        }
+
+        const auto path = TrimRight(line.substr(first, equals - first));
+        if (!IsPathWellFormed(path)) {
+            const std::string message = "ill-formed setting path '" + std::string(path) + "'";
+            on_error(ConfError { line_number, first + 1, message });
+            return;
+        }
+
+        std::size_t value_start = line.find_first_not_of(kWhitespace, equals + 1);
+        if (value_start == std::string_view::npos) {
+            value_start = line.size();
+        }
+        const auto value = DecodeValue(line, value_start, decoded);
+        if (!value.ok()) {
+            on_error(ConfError { line_number, value.column, value.message });
+            return;
+        }
+        on_entry(ConfEntry { path, value.text, line_number, first + 1, value_start + 1 });
+    }
 
     [[nodiscard]] static constexpr auto TrimRight(std::string_view text) -> std::string_view
     {

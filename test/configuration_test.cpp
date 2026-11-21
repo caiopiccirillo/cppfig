@@ -1,6 +1,7 @@
 #include <cppfig/cppfig.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdlib>
@@ -510,6 +511,36 @@ namespace {
         EXPECT_TRUE(missing->empty());
 
         EXPECT_FALSE(ReadConfFile(directory.path()));
+    }
+
+    TEST(ConfigurationIOTest, ReportsEveryErrorInOnePass)
+    {
+        const std::string text = "server.port = 0\n"
+                                 "missing equals\n"
+                                 "unknown.key = 1\n"
+                                 "custom.point = nonsense\n"
+                                 "server.port = 9000\n";
+        const std::array<EnvironmentVariable, 1> variables { { { "CPPFIG_TEST_SERVER_HOST", "" } } };
+        auto loaded = TestConfiguration::FromText(text, "app.conf", { .environment = Environment::From(variables) });
+        ASSERT_FALSE(loaded);
+        EXPECT_EQ(loaded.error().message(), "app.conf:1:15: invalid value for 'server.port': Value 0 is outside [1, 65535]\n"
+                                            "app.conf:2:1: missing '=' after the setting path\n"
+                                            "app.conf:3:1: unknown setting 'unknown.key'\n"
+                                            "app.conf:4:16: cannot parse 'nonsense' as a value of 'custom.point'\n"
+                                            "app.conf:5:1: duplicate setting 'server.port' (first set on line 1)");
+    }
+
+    TEST(ConfigurationIOTest, StopsListingErrorsAfterTwenty)
+    {
+        std::string text;
+        for (int i = 0; i < 25; ++i) {
+            text += "unknown.key" + std::to_string(i) + " = 1\n";
+        }
+        auto loaded = TestConfiguration::FromText(text, "app.conf", { .environment = Environment::None() });
+        ASSERT_FALSE(loaded);
+        const auto message = loaded.error().message();
+        EXPECT_EQ(std::count(message.begin(), message.end(), '\n'), 20);
+        EXPECT_TRUE(message.ends_with("\n(5 more errors not shown)")) << message;
     }
 
     TEST(ConfigurationIOTest, RuntimeOnlyInvalidDefaultReturnsStatus)

@@ -2,6 +2,8 @@
 
 #include <array>
 #include <bitset>
+#include <charconv>
+#include <iterator>
 #include <limits>
 #include <cstddef>
 #include <cstdint>
@@ -39,6 +41,74 @@ struct LoadOptions {
 };
 
 namespace detail {
+
+    /// Collects the errors found while building a configuration, so that one
+    /// attempt reports every problem rather than only the first. Errors are
+    /// kept one per line in a single string; past kMaxReported only a count is
+    /// kept, so a file of garbage cannot produce an unbounded message.
+    class ErrorList {
+    public:
+        static constexpr std::size_t kMaxReported = 20;
+
+        [[nodiscard]] auto empty() const noexcept -> bool { return count_ == 0; }
+
+        /// Adds an error whose message is the concatenation of parts.
+        template <typename... Parts>
+        void Add(const Parts&... parts)
+        {
+            if (Begin()) {
+                (text_.append(std::string_view(parts)), ...);
+            }
+        }
+
+        /// Adds an error at a 1-based line and column of source, formatted as
+        /// `source:line:column: message` so editors and terminals can jump to it.
+        void AddAt(std::string_view source, std::size_t line, std::size_t column, std::string_view message)
+        {
+            if (Begin()) {
+                text_.append(source).push_back(':');
+                AppendNumber(line);
+                text_.push_back(':');
+                AppendNumber(column);
+                text_.append(": ").append(message);
+            }
+        }
+
+        /// Returns the errors as one InvalidArgument status. Requires !empty().
+        [[nodiscard]] auto ToStatus() && -> Status
+        {
+            if (count_ > kMaxReported) {
+                text_.append("\n(");
+                AppendNumber(count_ - kMaxReported);
+                text_.append(" more errors not shown)");
+            }
+            return InvalidArgumentError(std::move(text_));
+        }
+
+    private:
+        /// Counts an error and starts its line; false when it is past the limit.
+        auto Begin() -> bool
+        {
+            ++count_;
+            if (count_ > kMaxReported) {
+                return false;
+            }
+            if (count_ > 1) {
+                text_.push_back('\n');
+            }
+            return true;
+        }
+
+        void AppendNumber(std::size_t value)
+        {
+            char buffer[24] {};
+            const auto result = std::to_chars(std::begin(buffer), std::end(buffer), value);
+            text_.append(buffer, result.ptr);
+        }
+
+        std::string text_;
+        std::size_t count_ = 0;
+    };
 
     template <typename T>
     using ValidatorFunction = auto (*)(const T&) -> ValidationResult;
@@ -261,12 +331,10 @@ public:
     {
         // Candidate storage scales with the registry; keep it off the caller's stack.
         auto candidates = std::make_unique<candidate_storage>();
-        const auto slots = slot_table::Addresses(*candidates);
-        for (std::size_t i = 0; i < RegistryType::size; ++i) {
-            auto status = slot_table::check[i](slots[i]);
-            if (!status.ok()) {
-                return status;
-            }
+        detail::ErrorList errors;
+        CheckCandidates(*candidates, errors);
+        if (!errors.empty()) {
+            return std::move(errors).ToStatus();
         }
         return Configuration(*candidates);
     }
@@ -302,6 +370,7 @@ private:
         std::string migrations;
         std::vector<UnknownKey> unknown_keys;
         UnknownKeyPolicy unknown_key_policy = UnknownKeyPolicy::kReject;
+        detail::ErrorList errors;
 
         // The slot addresses point into this object.
         LoadState() = default;
@@ -315,55 +384,66 @@ private:
     {
     }
 
-    [[nodiscard]] static auto ParseText(LoadState& state, std::string_view text) -> Status
+    /// Validates the values already in candidates and fills the empty ones
+    /// from their defaults. Candidates are complete when errors stays empty.
+    static void CheckCandidates(candidate_storage& candidates, detail::ErrorList& errors)
     {
-        const auto source = state.source;
-        return ConfParser::ForEachEntry(text, source, [&state, source](const ConfEntry& entry) -> Status {
+        const auto slots = slot_table::Addresses(candidates);
+        for (std::size_t i = 0; i < RegistryType::size; ++i) {
+            if (auto status = slot_table::check[i](slots[i]); !status.ok()) {
+                errors.Add(status.message());
+            }
+        }
+    }
+
+    static void ParseText(LoadState& state, std::string_view text)
+    {
+        const auto on_entry = [&state](const ConfEntry& entry) {
             const std::size_t index = RegistryType::FindPath(entry.path);
             if (index == RegistryType::size) {
                 if (state.unknown_key_policy == UnknownKeyPolicy::kPreserve) {
                     state.unknown_keys.push_back(UnknownKey { std::string(entry.path), entry.line });
-                    return OkStatus();
                 }
-                return LocatedError(source, entry.line, entry.column, "unknown setting '" + std::string(entry.path) + "'");
+                else {
+                    const std::string message = "unknown setting '" + std::string(entry.path) + "'";
+                    state.errors.AddAt(state.source, entry.line, entry.column, message);
+                }
+                return;
             }
             if (state.file_lines[index] != 0) {
-                return LocatedError(source, entry.line, entry.column,
-                                    "duplicate setting '" + std::string(entry.path) + "' (first set on line "
-                                        + std::to_string(state.file_lines[index]) + ")");
+                const std::string message = "duplicate setting '" + std::string(entry.path) + "' (first set on line "
+                    + std::to_string(state.file_lines[index]) + ")";
+                state.errors.AddAt(state.source, entry.line, entry.column, message);
+                return;
             }
             state.file_lines[index] = detail::CompactLine(entry.line);
 
-            auto status = slot_table::assign[index](entry.text, state.slots[index]);
-            if (!status.ok()) {
-                return LocatedError(source, entry.line, entry.value_column, status.message());
+            if (auto status = slot_table::assign[index](entry.text, state.slots[index]); !status.ok()) {
+                state.errors.AddAt(state.source, entry.line, entry.value_column, status.message());
             }
-            return OkStatus();
-        });
+        };
+        const auto on_error = [&state](const ConfError& error) {
+            state.errors.AddAt(state.source, error.line, error.column, error.message);
+        };
+        ConfParser::ForEachEntry(text, on_entry, on_error);
     }
 
     /// Applies the environment overrides found in environment, reading it in
     /// one pass and looking each variable up among the override names.
-    [[nodiscard]] static auto ApplyEnvironment(LoadState& state, const Environment& environment) -> Status
+    static void ApplyEnvironment(LoadState& state, const Environment& environment)
     {
-        if constexpr (RegistryType::env_override_count == 0) {
-            return OkStatus();
-        }
-        else {
+        if constexpr (RegistryType::env_override_count > 0) {
             std::bitset<RegistryType::size> applied;
-            Status status;
-            environment.ForEach([&](std::string_view name, std::string_view value) {
+            environment.ForEach([&state, &applied](std::string_view name, std::string_view value) {
                 const std::size_t index = RegistryType::FindEnvOverride(name);
-                if (!status.ok() || index == RegistryType::size || applied.test(index)) {
+                if (index == RegistryType::size || applied.test(index)) {
                     return;
                 }
                 applied.set(index);
-                auto assigned = slot_table::assign[index](value, state.slots[index]);
-                if (!assigned.ok()) {
-                    status = InvalidArgumentError("environment variable " + std::string(name) + ": " + std::string(assigned.message()));
+                if (auto status = slot_table::assign[index](value, state.slots[index]); !status.ok()) {
+                    state.errors.Add("environment variable ", name, ": ", status.message());
                 }
             });
-            return status;
         }
     }
 
@@ -371,17 +451,15 @@ private:
     /// migration. Goes through a table of per-setting functions: a single fold
     /// expression over all settings produced one enormous function whose
     /// optimization dominated compile time for large registries.
-    [[nodiscard]] static auto CompleteFromDefaults(LoadState& state) -> Status
+    static void CompleteFromDefaults(LoadState& state)
     {
         for (std::size_t i = 0; i < RegistryType::size; ++i) {
             if (state.file_lines[i] == 0) {
-                auto status = slot_table::complete[i](state.slots[i], &state.migrations);
-                if (!status.ok()) {
-                    return status;
+                if (auto status = slot_table::complete[i](state.slots[i], &state.migrations); !status.ok()) {
+                    state.errors.Add(status.message());
                 }
             }
         }
-        return OkStatus();
     }
 
     values_type values_;
@@ -406,17 +484,11 @@ auto Configuration<RegistryType>::FromText(std::string text, std::string_view so
     state.source = source;
     state.unknown_key_policy = options.unknown_keys;
 
-    auto status = ParseText(state, text);
-    if (!status.ok()) {
-        return status;
-    }
-    status = ApplyEnvironment(state, options.environment);
-    if (!status.ok()) {
-        return status;
-    }
-    status = CompleteFromDefaults(state);
-    if (!status.ok()) {
-        return status;
+    ParseText(state, text);
+    ApplyEnvironment(state, options.environment);
+    CompleteFromDefaults(state);
+    if (!state.errors.empty()) {
+        return std::move(state.errors).ToStatus();
     }
 
     const bool needs_save = !state.migrations.empty();

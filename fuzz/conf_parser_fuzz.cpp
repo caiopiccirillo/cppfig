@@ -1,27 +1,23 @@
 // Fuzzes the .conf parser and its writer.
 //
 // Properties:
-// - parsing any input either succeeds or fails with a `source:line:column:`
-//   error whose location lies inside the document;
+// - every line yields at most one entry or one error, reported in line order;
+// - every error's line and column lie inside the document;
 // - every entry's line and columns point at its path and value in the input;
 // - every value the parser reads, and the whole input taken as one value,
 //   survives writing with AppendConfValue and reading back unchanged.
 
 #include <cppfig/conf.h>
 
-#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <vector>
 
 #include "fuzz_check.h"
 
 namespace {
-
-constexpr std::string_view kSource = "fuzz.conf";
 
 auto LineAt(std::string_view document, std::size_t line_number) -> std::string_view
 {
@@ -33,33 +29,6 @@ auto LineAt(std::string_view document, std::size_t line_number) -> std::string_v
     }
     const std::size_t end = document.find('\n', offset);
     return document.substr(offset, end == std::string_view::npos ? std::string_view::npos : end - offset);
-}
-
-auto ReadNumber(std::string_view& text) -> std::size_t
-{
-    std::size_t value = 0;
-    const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
-    CPPFIG_FUZZ_CHECK(result.ec == std::errc {});
-    text.remove_prefix(static_cast<std::size_t>(result.ptr - text.data()));
-    return value;
-}
-
-/// An error must name the source, then a line and column inside the document.
-void CheckErrorLocation(std::string_view document, std::string_view message)
-{
-    CPPFIG_FUZZ_CHECK(message.starts_with(kSource));
-    message.remove_prefix(kSource.size());
-    CPPFIG_FUZZ_CHECK(message.starts_with(':'));
-    message.remove_prefix(1);
-    const std::size_t line = ReadNumber(message);
-    CPPFIG_FUZZ_CHECK(message.starts_with(':'));
-    message.remove_prefix(1);
-    const std::size_t column = ReadNumber(message);
-    CPPFIG_FUZZ_CHECK(message.starts_with(": "));
-
-    CPPFIG_FUZZ_CHECK(line >= 1);
-    CPPFIG_FUZZ_CHECK(column >= 1);
-    CPPFIG_FUZZ_CHECK(column <= LineAt(document, line).size() + 1);
 }
 
 struct Entry {
@@ -76,11 +45,11 @@ void CheckRoundTrip(std::string_view path, std::string_view value)
     document += '\n';
 
     std::vector<Entry> entries;
-    const auto status = cppfig::ConfParser::ForEachEntry(document, kSource, [&entries](const cppfig::ConfEntry& entry) {
-        entries.push_back(Entry { std::string(entry.path), std::string(entry.text) });
-        return cppfig::OkStatus();
-    });
-    CPPFIG_FUZZ_CHECK(status.ok());
+    bool failed = false;
+    cppfig::ConfParser::ForEachEntry(
+        document, [&entries](const cppfig::ConfEntry& entry) { entries.push_back(Entry { std::string(entry.path), std::string(entry.text) }); },
+        [&failed](const cppfig::ConfError&) { failed = true; });
+    CPPFIG_FUZZ_CHECK(!failed);
     CPPFIG_FUZZ_CHECK(entries.size() == 1);
     CPPFIG_FUZZ_CHECK(entries[0].path == path);
     CPPFIG_FUZZ_CHECK(entries[0].text == value);
@@ -95,7 +64,7 @@ extern "C" auto LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t siz
 
     std::vector<Entry> entries;
     std::size_t previous_line = 0;
-    const auto status = cppfig::ConfParser::ForEachEntry(document, kSource, [&](const cppfig::ConfEntry& entry) {
+    const auto on_entry = [&](const cppfig::ConfEntry& entry) {
         CPPFIG_FUZZ_CHECK(entry.line > previous_line);
         previous_line = entry.line;
 
@@ -106,11 +75,15 @@ extern "C" auto LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t siz
         CPPFIG_FUZZ_CHECK(entry.value_column <= line.size() + 1);
 
         entries.push_back(Entry { std::string(entry.path), std::string(entry.text) });
-        return cppfig::OkStatus();
-    });
-    if (!status.ok()) {
-        CheckErrorLocation(document, status.message());
-    }
+    };
+    const auto on_error = [&](const cppfig::ConfError& error) {
+        CPPFIG_FUZZ_CHECK(error.line > previous_line);
+        previous_line = error.line;
+        CPPFIG_FUZZ_CHECK(!error.message.empty());
+        CPPFIG_FUZZ_CHECK(error.column >= 1);
+        CPPFIG_FUZZ_CHECK(error.column <= LineAt(document, error.line).size() + 1);
+    };
+    cppfig::ConfParser::ForEachEntry(document, on_entry, on_error);
 
     for (const auto& entry : entries) {
         CheckRoundTrip(entry.path, entry.text);
