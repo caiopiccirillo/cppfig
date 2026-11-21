@@ -1,11 +1,12 @@
 #pragma once
 
+#include <array>
 #include <concepts>
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace cppfig {
 
@@ -161,9 +162,12 @@ struct NotEmptyValidator : ValidatorOps<NotEmptyValidator> {
 struct MinLengthValidator : ValidatorOps<MinLengthValidator> {
     std::size_t minimum;
 
-    [[nodiscard]] auto operator()(const std::string& value) const -> ValidationResult
+    [[nodiscard]] constexpr auto operator()(const std::string& value) const -> ValidationResult
     {
         if (value.size() < minimum) {
+            if (std::is_constant_evaluated()) {
+                return ValidationResult::Error("String is shorter than the minimum length");
+            }
             return ValidationResult::Error("String length " + std::to_string(value.size()) + " is less than minimum "
                                            + std::to_string(minimum));
         }
@@ -174,9 +178,12 @@ struct MinLengthValidator : ValidatorOps<MinLengthValidator> {
 struct MaxLengthValidator : ValidatorOps<MaxLengthValidator> {
     std::size_t maximum;
 
-    [[nodiscard]] auto operator()(const std::string& value) const -> ValidationResult
+    [[nodiscard]] constexpr auto operator()(const std::string& value) const -> ValidationResult
     {
         if (value.size() > maximum) {
+            if (std::is_constant_evaluated()) {
+                return ValidationResult::Error("String is longer than the maximum length");
+            }
             return ValidationResult::Error("String length " + std::to_string(value.size()) + " exceeds maximum "
                                            + std::to_string(maximum));
         }
@@ -184,11 +191,17 @@ struct MaxLengthValidator : ValidatorOps<MaxLengthValidator> {
     }
 };
 
-template <typename T>
-struct OneOfValidator : ValidatorOps<OneOfValidator<T>> {
-    std::vector<T> allowed_values;
+/// Accepts values equal to one of N allowed values, held in place: building
+/// and running it never allocates, and it can run at compile time.
+template <typename Element, std::size_t N>
+struct OneOfValidator : ValidatorOps<OneOfValidator<Element, N>> {
+    std::array<Element, N> allowed_values;
 
-    [[nodiscard]] auto operator()(const T& value) const -> ValidationResult
+    template <typename T>
+        requires requires(const T& value, const Element& allowed) {
+            { value == allowed } -> std::convertible_to<bool>;
+        }
+    [[nodiscard]] constexpr auto operator()(const T& value) const -> ValidationResult
     {
         for (const auto& allowed : allowed_values) {
             if (value == allowed) {
@@ -199,14 +212,16 @@ struct OneOfValidator : ValidatorOps<OneOfValidator<T>> {
     }
 };
 
+/// Accepts values for which predicate returns true. The message is not copied,
+/// so it must outlive the validator; a string literal always does.
 template <typename T, typename PredicateType>
 struct PredicateValidator : ValidatorOps<PredicateValidator<T, PredicateType>> {
     PredicateType predicate;
-    std::string message;
+    std::string_view message;
 
     [[nodiscard]] constexpr auto operator()(const T& value) const -> ValidationResult
     {
-        return predicate(value) ? ValidationResult::Ok() : ValidationResult::Error(message);
+        return predicate(value) ? ValidationResult::Ok() : ValidationResult::Error(std::string(message));
     }
 };
 
@@ -254,17 +269,53 @@ template <typename T>
 [[nodiscard]] constexpr auto MinLength(std::size_t minimum) -> MinLengthValidator { return { {}, minimum }; }
 [[nodiscard]] constexpr auto MaxLength(std::size_t maximum) -> MaxLengthValidator { return { {}, maximum }; }
 
-template <typename T>
-[[nodiscard]] auto OneOf(std::vector<T> allowed_values) -> OneOfValidator<T>
+namespace detail {
+
+    /// Text is compared as std::string_view, so the allowed values of a string
+    /// setting are not copied into std::string objects.
+    template <typename T>
+    struct OneOfElementOf {
+        using type = T;
+    };
+
+    template <>
+    struct OneOfElementOf<const char*> {
+        using type = std::string_view;
+    };
+
+    template <>
+    struct OneOfElementOf<char*> {
+        using type = std::string_view;
+    };
+
+    template <>
+    struct OneOfElementOf<std::string> {
+        using type = std::string_view;
+    };
+
+    template <typename Element, typename... Values>
+    using OneOfElement = typename OneOfElementOf<
+        std::conditional_t<std::is_void_v<Element>, std::common_type_t<std::decay_t<Values>...>, Element>>::type;
+
+}  // namespace detail
+
+/// @brief Accepts one of the listed values. The element type is deduced, or
+/// given explicitly as in OneOf<unsigned>(80, 443); text is held as std::string_view.
+template <typename Element = void, typename... Values>
+[[nodiscard]] constexpr auto OneOf(const Values&... values)
+    -> OneOfValidator<detail::OneOfElement<Element, Values...>, sizeof...(Values)>
 {
-    return { {}, std::move(allowed_values) };
+    static_assert(sizeof...(Values) > 0, "OneOf needs at least one allowed value");
+    using ElementType = detail::OneOfElement<Element, Values...>;
+    return { {}, { static_cast<ElementType>(values)... } };
 }
 
 template <typename T, typename PredicateType>
     requires std::predicate<PredicateType, const T&>
-[[nodiscard]] constexpr auto Predicate(PredicateType predicate, std::string message) -> PredicateValidator<T, PredicateType>
+[[nodiscard]] constexpr auto Predicate(PredicateType predicate, std::string_view message)
+    -> PredicateValidator<T, PredicateType>
 {
-    return { {}, std::move(predicate), std::move(message) };
+    return { {}, std::move(predicate), message };
 }
 
 template <typename T>

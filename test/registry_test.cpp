@@ -266,10 +266,29 @@ namespace {
         EXPECT_FALSE(NotEmpty()(""));
         EXPECT_TRUE(MinLength(1)("x"));
         EXPECT_FALSE(MaxLength(1)("xy"));
-        EXPECT_TRUE(OneOf<int>({ 1, 2 })(2));
+        EXPECT_TRUE(OneOf(1, 2)(2));
         EXPECT_TRUE(Predicate<int>([](int value) { return value % 2 == 0; }, "must be even")(4));
         EXPECT_TRUE(AlwaysValid<std::string>()("anything"));
     }
+
+    // Every built-in validator runs at compile time, so constant defaults of
+    // string settings can be checked as well as numeric ones.
+    static_assert(static_cast<bool>(OneOf("debug", "info")(std::string("info"))));
+    static_assert(!static_cast<bool>(OneOf("debug", "info")(std::string("trace"))));
+    static_assert(static_cast<bool>(OneOf<unsigned>(80, 443)(443U)));
+    static_assert(!static_cast<bool>(MinLength(2)(std::string("x"))));
+    static_assert(!static_cast<bool>(MaxLength(1)(std::string("xy"))));
+    static_assert(!static_cast<bool>(Predicate<int>([](int value) { return value > 0; }, "must be positive")(0)));
+
+    struct ConstantLevel {
+        static constexpr std::string_view path = "log.level";
+        using value_type = std::string;
+        static constexpr auto default_value() -> std::string { return "info"; }
+        static constexpr auto validator() { return OneOf("debug", "info", "warn"); }
+    };
+
+    static_assert(detail::ConstantDefaultCheck<ConstantLevel>);
+    static_assert(Registry<ConstantLevel>::size == 1);
 
     TEST(MockTest, BuilderFreezesValuesAndSatisfiesProviderConcept)
     {

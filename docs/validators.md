@@ -26,7 +26,7 @@ A configuration therefore never contains an invalid value.
 
 ## Built-in validators
 
-Built-in validators are small value types composed without allocation or type erasure. Most are `constexpr`.
+Built-in validators are small value types composed without allocation or type erasure. All of them are `constexpr` and none allocates unless a value fails.
 
 ### Numeric
 
@@ -52,8 +52,8 @@ The numeric validators take their type from the arguments, so match the setting'
 
 | Validator | Accepts |
 | --- | --- |
-| `OneOf<T>({ a, b, c })` | One of the listed values |
-| `Predicate<T>(function, message)` | Values for which `function(value)` is true; otherwise fails with `message` |
+| `OneOf(a, b, c)` | One of the listed values; text is compared as `std::string_view`, and `OneOf<T>(...)` fixes the element type |
+| `Predicate<T>(function, message)` | Values for which `function(value)` is true; otherwise fails with `message`, which is not copied (pass a string literal) |
 | `AlwaysValid<T>()` | Everything |
 
 ## Combining validators
@@ -100,7 +100,7 @@ static auto validator()
 }
 ```
 
-Make the validator and the default `constexpr` to have the default checked at compile time. The built-in numeric validators and `NotEmpty` are `constexpr`.
+Make the validator and the default `constexpr` to have the default checked at compile time. Every built-in validator is `constexpr`, so this works with any of them, including `OneOf` and the string validators.
 
 To build with `-fno-exceptions`, validators must not throw.
 

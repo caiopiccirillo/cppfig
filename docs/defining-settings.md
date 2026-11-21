@@ -135,8 +135,8 @@ struct PoolSize {
 struct LogLevel {
     static constexpr std::string_view path = "logging.level";
     using value_type = std::string;
-    static auto default_value() -> std::string { return "info"; }
-    static auto validator() { return cppfig::OneOf<std::string>({ "debug", "info", "warn", "error" }); }
+    static constexpr auto default_value() -> std::string { return "info"; }
+    static constexpr auto validator() { return cppfig::OneOf("debug", "info", "warn", "error"); }
 };
 
 }  // namespace settings

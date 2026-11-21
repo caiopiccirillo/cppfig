@@ -130,6 +130,24 @@ namespace {
         EXPECT_LT(allocations, 40U);
     }
 
+    TEST(AllocationTest, BuiltInValidatorsDoNotAllocateForValidValues)
+    {
+        // Longer than the small-string buffer, so a copy into std::string would allocate.
+        const std::string value = "an-allowed-value-longer-than-sixteen";
+        allocation_count = 0;
+        for (int i = 0; i < 100; ++i) {
+            const auto one_of = OneOf("another-allowed-value-of-some-length", "an-allowed-value-longer-than-sixteen");
+            const auto predicate = Predicate<std::string>([](const std::string& text) { return !text.empty(); },
+                                                          "a failure message longer than the small-string buffer");
+            DoNotOptimize(one_of);
+            DoNotOptimize(predicate);
+            EXPECT_TRUE(one_of(value));
+            EXPECT_TRUE(predicate(value));
+            EXPECT_TRUE(MinLength(1).And(MaxLength(64))(value));
+        }
+        EXPECT_EQ(allocation_count.load(), 0U);
+    }
+
     TEST(AllocationTest, TypedReadsNeverAllocate)
     {
         auto loaded = TestConfiguration::FromDefaults();
