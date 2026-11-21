@@ -66,29 +66,55 @@ Saving is a cold operation, and with `ConfDocument::NeedsSave()` callers only sa
 
 Generated registries with equal numbers of validated `int` settings (with environment overrides), `std::string`, `bool` and validated `double` settings.
 
+The figures in this section were re-measured after the memory and architecture review, on the same machine inside the Ubuntu 26.04 development container (GCC 15.2, `-O3`, temporary files on tmpfs), mean of 3 repetitions. The comparison with the code before that review was measured the same way, side by side.
+
+### Before and after the review
+
+| Operation | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| Load, complete file, 1024 settings | 175 µs, 17 allocations (137 KB) | 122–129 µs, 7 allocations (56 KB) | 26–30% faster, 59% fewer bytes |
+| Load, complete file, 128 settings | 14.3 µs, 14 allocations (24.6 KB) | 11.8 µs, 7 allocations (14.4 KB) | 18% faster |
+| Load with every override set, 1024 settings | 256 µs | 152 µs | 41% faster |
+| Load, missing file, 1024 settings | 61.8 µs (147 KB) | 50.9 µs (109 KB) | 18% faster |
+| `FromDefaults`, 1024 settings | 19.6 µs (66.8 KB) | 11.4 µs (16.9 KB) | 42% faster, 75% fewer bytes |
+| Heap retained by a loaded result, 1024 settings | 30,784 bytes | 18,072 bytes | 41% less |
+| Heap retained by a loaded result, 128 settings | 3,888 bytes | 2,136 bytes | 45% less |
+| Linked 1024-setting load path (`-O2`, PIE) | 1,174 KB, 5,900 relocations | 929 KB, 3,852 relocations | 21% smaller |
+| Compile, 1024 settings, `-O2` | 24.0 s | 22.6 s | 6% faster |
+| Reads | 0.20 ns, 0 allocations | 0.20 ns, 0 allocations | unchanged |
+| Save (tmpfs) | 11 allocations | 14 allocations | same time within noise |
+
+Where the gains come from:
+
+- The file is read into one allocation of its size, and migrations are appended into one new exactly sized string. Before, the text grew geometrically while it was read and the document kept the slack: the retained heap was 1.7 times the text.
+- Loading parses values straight into a single set of candidate slots instead of separate file and effective copies, records lines in 4 bytes, and builds a default only when the file lacks the setting.
+- The environment is read in one pass and looked up among the sorted override names, instead of one `getenv` scan of the whole environment per override.
+- Every per-setting operation goes through one function and one table, instead of three: fewer load-time relocations, unwind entries and functions to compile.
+- Save builds a `std::filesystem::path` from the caller's path, which accounts for its extra allocations.
+
 ### Initialization
 
 | Operation | 16 | 128 | 1024 |
 | --- | ---: | ---: | ---: |
-| Load, complete file | 3.37 µs | 14.7 µs | 168 µs |
-| Load, missing file (all defaults migrated) | 1.80 µs | 8.10 µs | 67.5 µs |
-| Load, complete file, every environment override set | 3.62 µs | 17.2 µs | 275 µs |
-| `FromDefaults` | 0.17 µs | 1.48 µs | 20.0 µs |
-| Save, complete document (tmpfs) | 9.00 µs | 9.05 µs | 11.9 µs |
+| Load, complete file | 3.51 µs | 11.8 µs | 129 µs |
+| Load, missing file (all defaults migrated) | 1.69 µs | 6.46 µs | 50.9 µs |
+| Load, complete file, every environment override set | 3.67 µs | 13.1 µs | 152 µs |
+| `FromDefaults` | 0.13 µs | 1.26 µs | 11.4 µs |
+| Save, complete document (tmpfs) | 9.30 µs | 9.42 µs | 11.9 µs |
 
-With every override set, the 1024-setting load also performs 256 `getenv` lookups in an environment holding 256 extra variables; `getenv` scans the environment linearly.
+With every override set, the 1024-setting load reads an environment holding 256 extra variables, in one pass.
 
 ### Allocations per operation
 
 | Operation | 16 | 128 | 1024 |
 | --- | ---: | ---: | ---: |
-| Load, complete file | 11 (10.5 KB) | 14 (24.6 KB) | 17 (137 KB) |
-| Load, missing file | 11 (2.6 KB) | 14 (18.5 KB) | 17 (147 KB) |
-| `FromDefaults` | 1 (1.2 KB) | 1 (8.5 KB) | 1 (66.8 KB) |
-| Save | 11 | 11 | 11 |
+| Load, complete file | 7 (9.3 KB) | 7 (14.4 KB) | 7 (55.9 KB) |
+| Load, missing file | 11 (2.1 KB) | 14 (13.9 KB) | 17 (109 KB) |
+| `FromDefaults` | 1 (0.3 KB) | 1 (2.1 KB) | 1 (16.9 KB) |
+| Save | 14 | 14 | 14 |
 | Reading every setting | 0 | 0 | 0 |
 
-Initialization allocates a number of times that grows with the logarithm of the document size, not with the number of settings. The single `FromDefaults` allocation is the temporary candidate storage, kept on the heap so that large registries do not need a large stack.
+Loading a complete file allocates a fixed number of times, whatever the number of settings or the size of the file. With a missing file, the migrations string grows with the number of settings, so the count grows with its logarithm. The single `FromDefaults` allocation is the temporary candidate storage, kept on the heap so that large registries do not need a large stack.
 
 ### Memory
 
@@ -96,9 +122,10 @@ Initialization allocates a number of times that grows with the logarithm of the 
 | --- | ---: | ---: | ---: |
 | `sizeof(Configuration)` | 184 bytes | 1,440 bytes | 11,520 bytes |
 | Bytes per setting | 11.5 | 11.25 | 11.25 |
-| Retained document (`ConfDocument`) | 251 bytes | 2,134 bytes | 18,068 bytes |
+| Document text (`ConfDocument`) | 251 bytes | 2,134 bytes | 18,068 bytes |
+| Heap retained by a loaded result | 264 bytes | 2,136 bytes | 18,072 bytes |
 
-The average value size in this mix is (4 + 32 + 1 + 8) / 4 = 11.25 bytes, so the configuration holds the values and nothing else: storage is ordered by alignment, leaving no padding between values. The 16-setting figure includes 4 bytes of tail padding to the 8-byte alignment of the whole object. The document is separate and can be discarded once saved.
+The average value size in this mix is (4 + 32 + 1 + 8) / 4 = 11.25 bytes, so the configuration holds the values and nothing else: storage is ordered by alignment, leaving no padding between values. The 16-setting figure includes 4 bytes of tail padding to the 8-byte alignment of the whole object. The document is separate and can be discarded once saved. The heap a loaded result keeps is the document's text and nothing more: it is read and stored at its exact size, and these strings fit the small-string buffer.
 
 ### Reads
 
@@ -109,7 +136,7 @@ The average value size in this mix is (4 + 32 + 1 + 8) / 4 = 11.25 bytes, so the
 
 ### Compile time
 
-Full load, save, test-fake and read path for a generated registry, GCC 15.2:
+Full load, save, builder and read path for a generated registry, GCC 15.2, as first measured; after the review the 1024-setting case compiles in 22.6 s against 24.0 s before it, measured side by side:
 
 | Settings | `-O2` | Peak compiler memory |
 | --- | ---: | ---: |
