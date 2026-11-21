@@ -4,6 +4,10 @@ project(cppfig VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+# cppfig uses no C++20 modules. Scanning for them adds a build step per source
+# and puts @<file>.modmap arguments in compile_commands.json that only exist
+# after a build, which breaks clang-tidy run on a configure-only tree.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -14,25 +18,20 @@ option(CPPFIG_BUILD_TESTS "Build the cppfig test suite" ${PROJECT_IS_TOP_LEVEL})
 option(CPPFIG_BUILD_BENCHMARKS "Build the cppfig benchmarks" ${PROJECT_IS_TOP_LEVEL})
 option(CPPFIG_BUILD_EXAMPLES "Build the cppfig examples" ${PROJECT_IS_TOP_LEVEL})
 option(CPPFIG_INSTALL "Generate the cppfig install and package rules" ${PROJECT_IS_TOP_LEVEL})
+option(CPPFIG_BUILD_FUZZERS "Build the libFuzzer targets (Clang only)" OFF)
 
-# Optional serializer back-ends
-option(CPPFIG_ENABLE_JSON "Enable JSON serializer (requires nlohmann-json)" OFF)
-
-# When building in-tree we always need JSON for the tests & benchmarks, so
-# enable it automatically if nlohmann-json is available. A consumer asking for
-# it explicitly gets a hard failure instead of a silent downgrade.
-if(PROJECT_IS_TOP_LEVEL)
-    find_package(nlohmann_json CONFIG QUIET)
-    if(nlohmann_json_FOUND)
-        set(CPPFIG_ENABLE_JSON ON CACHE BOOL "" FORCE)
-        message(STATUS "nlohmann-json found — CPPFIG_ENABLE_JSON=ON")
-    else()
-        message(STATUS "nlohmann-json not found — JSON serializer disabled")
-    endif()
-elseif(CPPFIG_ENABLE_JSON)
-    find_package(nlohmann_json CONFIG REQUIRED)
+# ThreadSanitizer supplies its own operator new and delete, which Clang links
+# statically, so targets that replace them to count allocations cannot link.
+# Those targets measure allocations, which ThreadSanitizer does not check.
+if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=[^ ]*thread")
+    set(CPPFIG_THREAD_SANITIZER ON)
+else()
+    set(CPPFIG_THREAD_SANITIZER OFF)
 endif()
-# Future: option(CPPFIG_ENABLE_TOML "Enable TOML serializer" OFF)
+
+if(CPPFIG_BUILD_FUZZERS AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR "CPPFIG_BUILD_FUZZERS needs Clang's libFuzzer. Current compiler: ${CMAKE_CXX_COMPILER_ID}")
+endif()
 
 option(STRICT_BUILD "Enable warnings as errors" ON)
 
@@ -105,8 +104,8 @@ endif()
 # Uncomment to enable clang-tidy during compilation
 # set(CMAKE_CXX_CLANG_TIDY clang-tidy;-fix;-fix-errors)
 
-# Both are needed by src/: GTest for the cppfig::testing target, and the
-# header self-containment check that is built alongside it.
+# GTest for the test suite, and the header self-containment check that src/
+# builds alongside the tests.
 if(CPPFIG_BUILD_TESTS)
     find_package(GTest CONFIG REQUIRED)
     include(HeaderSelfContainment)
@@ -124,16 +123,23 @@ if(PROJECT_IS_TOP_LEVEL)
     copy_compile_commands()
 endif()
 
-if(CPPFIG_BUILD_TESTS)
+if(CPPFIG_BUILD_TESTS OR CPPFIG_BUILD_FUZZERS)
     include(CTest)
+endif()
+
+if(CPPFIG_BUILD_TESTS)
     add_subdirectory(test)
+endif()
+
+if(CPPFIG_BUILD_TESTS OR CPPFIG_BUILD_FUZZERS)
+    add_subdirectory(fuzz)
 endif()
 
 if(CPPFIG_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
-if(CPPFIG_BUILD_BENCHMARKS)
+if(CPPFIG_BUILD_BENCHMARKS AND NOT CPPFIG_THREAD_SANITIZER)
     add_subdirectory(benchmark)
 endif()
 

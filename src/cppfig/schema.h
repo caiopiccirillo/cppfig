@@ -1,143 +1,243 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 #include "cppfig/setting.h"
+#include "cppfig/storage.h"
 
 namespace cppfig {
 
 namespace detail {
 
-    /// @brief Helper to check if a type is in a parameter pack.
-    template <typename T, typename... Types>
-    struct IsOneOf : std::disjunction<std::is_same<T, Types>...> { };
-
-    /// @brief Returns true if @p prefix names an ancestor of @p path.
-    ///
-    /// "server" is an ancestor of "server.port"; "serve" is not, and neither
-    /// is "server" of "serverport".
-    consteval auto IsPathPrefix(std::string_view prefix, std::string_view path) -> bool
+    // Duplicate setting types are rejected by the sorted path check below:
+    // repeating a type necessarily repeats its static path as well.
+    [[nodiscard]] consteval auto IsPathPrefix(std::string_view prefix, std::string_view path) -> bool
     {
         return path.size() > prefix.size() && path.starts_with(prefix) && path[prefix.size()] == '.';
     }
 
-    /// @brief Returns true if @p path is a non-empty dot-separated path with
-    ///        no empty segments.
-    ///
-    /// Mirrors Value::SplitPath, which rejects the same shapes at runtime.
-    consteval auto IsPathWellFormed(std::string_view path) -> bool
+    [[nodiscard]] consteval auto IsPathWellFormed(std::string_view path) -> bool
     {
         if (path.empty() || path.front() == '.' || path.back() == '.') {
             return false;
         }
-        for (std::size_t i = 1; i < path.size(); ++i) {
-            if (path[i] == '.' && path[i - 1] == '.') {
+        for (std::size_t i = 0; i < path.size(); ++i) {
+            const char c = path[i];
+            const unsigned char value = static_cast<unsigned char>(c);
+            if (value <= 0x20U || value == 0x7fU || c == '=' || c == '#' || c == '"' || c == '\\') {
+                return false;
+            }
+            if (c == '.' && i > 0 && path[i - 1] == '.') {
                 return false;
             }
         }
         return true;
     }
 
-    /// @brief Helper to check that every path is well-formed at compile time.
-    template <typename... Settings>
-    consteval auto AllPathsWellFormed() -> bool
+    /// Portable POSIX environment variable name: [A-Za-z_][A-Za-z0-9_]*.
+    [[nodiscard]] consteval auto IsEnvNameWellFormed(std::string_view name) -> bool
     {
-        constexpr std::array<std::string_view, sizeof...(Settings)> paths = { Settings::path... };
-        for (auto path : paths) {
-            if (!IsPathWellFormed(path)) {
+        if (name.empty() || (name.front() >= '0' && name.front() <= '9')) {
+            return false;
+        }
+        for (const char c : name) {
+            const bool alpha = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+            const bool digit = c >= '0' && c <= '9';
+            if (!alpha && !digit && c != '_') {
                 return false;
             }
         }
         return true;
     }
 
-    /// @brief Helper to check if all paths are unique at compile time.
-    ///
-    /// Two paths collide not only when they are equal but also when one is an
-    /// ancestor of the other: writing "server" and then "server.port" turns
-    /// the first into an object, and writing them the other way round turns
-    /// the second into a leaf. Which value survives depends on write order,
-    /// so both shapes are rejected.
+    /// A plain list of setting types, for matching a registry's settings
+    /// without naming Registry itself (a registry may be a derived struct).
     template <typename... Settings>
-    consteval auto AllPathsUnique() -> bool
+    struct SettingList { };
+
+    /// A path or environment override name and the index of its setting.
+    struct KeyEntry {
+        std::string_view key;
+        std::size_t index;
+    };
+
+    /// Binary search of a table sorted by key. Returns not_found when absent.
+    template <std::size_t N>
+    [[nodiscard]] constexpr auto FindKey(const std::array<KeyEntry, N>& table, std::string_view key, std::size_t not_found)
+        -> std::size_t
     {
-        constexpr std::array<std::string_view, sizeof...(Settings)> paths = { Settings::path... };
-        for (std::size_t i = 0; i < paths.size(); ++i) {
-            for (std::size_t j = i + 1; j < paths.size(); ++j) {
-                if (paths[i] == paths[j] || IsPathPrefix(paths[i], paths[j]) || IsPathPrefix(paths[j], paths[i])) {
-                    return false;
-                }
+        std::size_t first = 0;
+        std::size_t last = N;
+        while (first < last) {
+            const std::size_t middle = first + (last - first) / 2;
+            const auto& entry = table[middle];
+            if (entry.key < key) {
+                first = middle + 1;
+            }
+            else if (key < entry.key) {
+                last = middle;
+            }
+            else {
+                return entry.index;
             }
         }
-        return true;
+        return not_found;
     }
 
 }  // namespace detail
 
-/// @brief Configuration schema holding all setting types.
+/// @brief Compile-time list of unique setting types and their static metadata.
 ///
-/// This class acts as a compile-time registry for all configuration settings.
-/// It ensures path uniqueness at compile time and provides type-safe access
-/// to setting information.
-///
-/// Usage:
+/// Use it through an alias or, for shorter names in diagnostics, clangd
+/// hovers and symbols, as the base of a struct of your own:
 /// @code
-/// struct AppName {
-///     static constexpr std::string_view path = "app.name";
-///     using value_type = std::string;
-///     static auto default_value() -> std::string { return "MyApp"; }
-/// };
-///
-/// struct AppPort {
-///     static constexpr std::string_view path = "app.port";
-///     using value_type = int;
-///     static auto default_value() -> int { return 8080; }
-/// };
-///
-/// using MySchema = ConfigSchema<AppName, AppPort>;
+/// struct AppRegistry : cppfig::Registry<settings::Port, settings::Host> { };
 /// @endcode
-///
-/// @tparam Settings The setting types to include in the schema.
 template <IsSetting... Settings>
-class ConfigSchema {
+class Registry {
 public:
     static constexpr std::size_t size = sizeof...(Settings);
 
-    static_assert(detail::AllPathsWellFormed<Settings...>(),
-                  "Every path in ConfigSchema must be non-empty and free of empty dot-separated segments");
+    using setting_list = detail::SettingList<Settings...>;
 
-    static_assert(detail::AllPathsUnique<Settings...>(),
-                  "All paths in ConfigSchema must be unique, and none may be a prefix of another");
-
-    /// @brief Checks if a setting type is in this schema.
     template <typename S>
-    static constexpr bool has_setting = detail::IsOneOf<S, Settings...>::value;
+    static constexpr bool has_setting = (std::is_same_v<S, Settings> || ...);
 
-    /// @brief Returns all paths as a compile-time array.
+    template <std::size_t I>
+    using SettingAt = detail::TypeAt<I, Settings...>;
+
+    template <template <typename> typename Holder>
+    using held_values_type = detail::MakeHeldStorage<Holder, Settings...>;
+
+    using values_type = detail::MakeHeldStorage<std::type_identity_t, Settings...>;
+
+    static_assert((detail::CheckDefaultWhenPossible<Settings>() && ...),
+                  "A constexpr-evaluable default value failed its setting validator");
+    // Repeating a setting type also repeats its path, so the sorted path
+    // validation enforces unique setting types without quadratic templates.
+
+    template <typename S>
+    static constexpr std::size_t index = [] {
+        static_assert(has_setting<S>, "The requested setting is not present in this Registry");
+        constexpr std::array<bool, size> matches { std::is_same_v<S, Settings>... };
+        for (std::size_t i = 0; i < size; ++i) {
+            if (matches[i]) {
+                return i;
+            }
+        }
+        return size;
+    }();
+
     [[nodiscard]] static constexpr auto GetPaths() -> std::array<std::string_view, size>
     {
         return { Settings::path... };
     }
 
-    /// @brief Returns the number of settings in the schema.
-    [[nodiscard]] static constexpr auto Size() -> std::size_t { return size; }
+    /// Returns the declaration-order setting index, or size when not found.
+    [[nodiscard]] static constexpr auto FindPath(std::string_view path) -> std::size_t
+    {
+        return detail::FindKey(sorted_paths, path, size);
+    }
 
-    /// @brief Iterates over all setting types with a callable.
-    ///
-    /// The callable receives a type wrapper that can be used to access
-    /// the setting type information.
+    /// Number of settings that declare an environment override.
+    static constexpr std::size_t env_override_count = (std::size_t { HasEnvOverride<Settings> } + ... + 0);
+
+    /// Returns the index of the setting whose environment override is name,
+    /// or size when no setting declares it.
+    [[nodiscard]] static constexpr auto FindEnvOverride(std::string_view name) -> std::size_t
+    {
+        return detail::FindKey(sorted_env_overrides, name, size);
+    }
+
     template <typename Fn>
-    static void ForEachSetting(Fn&& fn)
+    static constexpr void ForEachSetting(Fn&& fn)
     {
         (fn.template operator()<Settings>(), ...);
     }
-};
 
-/// @brief Helper alias to get the value type for a setting.
-template <IsSetting S>
-using setting_value_type = typename S::value_type;
+private:
+    [[nodiscard]] static consteval auto AllPathsWellFormed() -> bool
+    {
+        constexpr std::array<std::string_view, size> paths { Settings::path... };
+        for (const auto path : paths) {
+            if (!detail::IsPathWellFormed(path)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    [[nodiscard]] static consteval auto MakeSortedPaths() -> std::array<detail::KeyEntry, size>
+    {
+        std::array<detail::KeyEntry, size> entries {};
+        std::size_t index = 0;
+        ((entries[index] = detail::KeyEntry { Settings::path, index }, ++index), ...);
+        std::sort(entries.begin(), entries.end(), [](const auto& left, const auto& right) { return left.key < right.key; });
+        return entries;
+    }
+
+    inline static constexpr std::array<detail::KeyEntry, size> sorted_paths = MakeSortedPaths();
+
+    [[nodiscard]] static consteval auto SortedPathsAreUnique() -> bool
+    {
+        for (std::size_t i = 1; i < sorted_paths.size(); ++i) {
+            const auto& previous = sorted_paths[i - 1].key;
+            const auto& current = sorted_paths[i].key;
+            if (previous == current || detail::IsPathPrefix(previous, current)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    [[nodiscard]] static consteval auto MakeSortedEnvOverrides() -> std::array<detail::KeyEntry, env_override_count>
+    {
+        std::array<detail::KeyEntry, env_override_count> entries {};
+        std::size_t count = 0;
+        std::size_t index = 0;
+        ([&] {
+            if constexpr (HasEnvOverride<Settings>) {
+                entries[count++] = detail::KeyEntry { GetEnvOverride<Settings>(), index };
+            }
+            ++index;
+        }(),
+         ...);
+        std::sort(entries.begin(), entries.end(), [](const auto& left, const auto& right) { return left.key < right.key; });
+        return entries;
+    }
+
+    inline static constexpr std::array<detail::KeyEntry, env_override_count> sorted_env_overrides = MakeSortedEnvOverrides();
+
+    [[nodiscard]] static consteval auto AllEnvNamesWellFormed() -> bool
+    {
+        for (const auto& entry : sorted_env_overrides) {
+            if (!detail::IsEnvNameWellFormed(entry.key)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    [[nodiscard]] static consteval auto SortedEnvNamesAreUnique() -> bool
+    {
+        for (std::size_t i = 1; i < sorted_env_overrides.size(); ++i) {
+            if (sorted_env_overrides[i - 1].key == sorted_env_overrides[i].key) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static_assert(AllPathsWellFormed(), "Registry paths must be non-empty and contain only valid non-empty segments");
+    static_assert(AllEnvNamesWellFormed(),
+                  "Environment override names must be non-empty and match [A-Za-z_][A-Za-z0-9_]*");
+    static_assert(SortedEnvNamesAreUnique(), "Environment override names must be unique within a Registry");
+    static_assert(SortedPathsAreUnique(), "Registry paths must be unique and neither path may be a prefix of another");
+};
 
 }  // namespace cppfig

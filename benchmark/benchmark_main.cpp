@@ -1,13 +1,17 @@
+// Workloads equivalent to the pre-redesign suite recorded in
+// docs/BASELINE_RESULTS.md: the same settings, registry sizes (1, 5 and 14
+// settings) and flat .conf files, so results can be compared directly.
 #include <benchmark/benchmark.h>
 #include <cppfig/cppfig.h>
-#include <cppfig/json.h>
 
-#include <cstdlib>
+#include <cstdint>
 #include <filesystem>
 #include <numbers>
+#include <string>
+
+#include "barrier.h"
 
 namespace cppfig::bench {
-
 namespace settings {
 
     struct StringSetting {
@@ -38,7 +42,7 @@ namespace settings {
         static constexpr std::string_view path = "benchmark.validated";
         using value_type = int;
         static auto default_value() -> int { return 50; }
-        static auto validator() -> Validator<int> { return Range(0, 100); }
+        static constexpr auto validator() { return Range(0, 100); }
     };
 
     struct EnvOverrideSetting {
@@ -48,7 +52,6 @@ namespace settings {
         static auto default_value() -> std::string { return "default"; }
     };
 
-    // Hierarchical settings
     struct DatabaseHost {
         static constexpr std::string_view path = "database.connection.host";
         using value_type = std::string;
@@ -99,461 +102,132 @@ namespace settings {
 
 }  // namespace settings
 
-using SmallSchema = ConfigSchema<settings::StringSetting>;
+struct SmallRegistry : Registry<settings::StringSetting> { };
 
-using MediumSchema = ConfigSchema<settings::StringSetting, settings::IntSetting, settings::DoubleSetting,
-                                  settings::BoolSetting, settings::ValidatedSetting>;
+struct MediumRegistry : Registry<settings::StringSetting, settings::IntSetting, settings::DoubleSetting, settings::BoolSetting,
+                                 settings::ValidatedSetting> { };
 
-using LargeSchema = ConfigSchema<settings::StringSetting, settings::IntSetting, settings::DoubleSetting,
-                                 settings::BoolSetting, settings::ValidatedSetting, settings::EnvOverrideSetting,
-                                 settings::DatabaseHost, settings::DatabasePort, settings::DatabaseUser,
-                                 settings::DatabasePass, settings::CacheEnabled, settings::CacheSize,
-                                 settings::LogLevel, settings::LogPath>;
+struct LargeRegistry : Registry<settings::StringSetting, settings::IntSetting, settings::DoubleSetting, settings::BoolSetting,
+                                settings::ValidatedSetting, settings::EnvOverrideSetting, settings::DatabaseHost,
+                                settings::DatabasePort, settings::DatabaseUser, settings::DatabasePass, settings::CacheEnabled,
+                                settings::CacheSize, settings::LogLevel, settings::LogPath> { };
 
-class BenchmarkFixture : public ::benchmark::Fixture {
-protected:
-    std::string CreateTempFile()
+namespace {
+
+    /// A file path unique to one benchmark, removed when the benchmark ends.
+    class TemporaryFile {
+    public:
+        explicit TemporaryFile(std::string_view name)
+            : path_((std::filesystem::temp_directory_path() / ("cppfig_benchmark_" + std::string(name) + ".conf")).string())
+        {
+            std::filesystem::remove(path_);
+        }
+
+        ~TemporaryFile()
+        {
+            std::error_code error;
+            std::filesystem::remove(path_, error);
+        }
+
+        TemporaryFile(const TemporaryFile&) = delete;
+        auto operator=(const TemporaryFile&) -> TemporaryFile& = delete;
+
+        [[nodiscard]] auto path() const -> const std::string& { return path_; }
+
+    private:
+        std::string path_;
+    };
+
+    /// Reads a setting the way callers of the pre-redesign API did: as a copy.
+    /// The configuration's address escapes before the loop and KeepValue
+    /// clobbers memory, so every iteration loads the value again.
+    template <typename S>
+    void ReadCopy(benchmark::State& state)
     {
-        std::filesystem::path temp_path = std::filesystem::temp_directory_path() / "cppfig_benchmark";
-        temp_path += std::to_string(reinterpret_cast<uintptr_t>(this));
-        temp_path += ".conf";
-        return temp_path.string();
-    }
-
-    static void RemoveFile(const std::string& path)
-    {
-        if (std::filesystem::exists(path)) {
-            std::filesystem::remove(path);
+        auto loaded = Configuration<MediumRegistry>::FromDefaults();
+        const auto& config = loaded.value();
+        const auto* escaped = &config;
+        KeepValue(escaped);
+        for (auto _ : state) {
+            auto value = config.Get<S>();
+            KeepValue(value);
         }
     }
-};
 
-BENCHMARK_DEFINE_F(BenchmarkFixture, GetString)(benchmark::State& state)
+}  // namespace
+
+static void GetString(benchmark::State& state) { ReadCopy<settings::StringSetting>(state); }
+BENCHMARK(GetString);
+
+static void GetInt(benchmark::State& state) { ReadCopy<settings::IntSetting>(state); }
+BENCHMARK(GetInt);
+
+static void GetDouble(benchmark::State& state) { ReadCopy<settings::DoubleSetting>(state); }
+BENCHMARK(GetDouble);
+
+static void GetBool(benchmark::State& state) { ReadCopy<settings::BoolSetting>(state); }
+BENCHMARK(GetBool);
+
+static void GetValidated(benchmark::State& state) { ReadCopy<settings::ValidatedSetting>(state); }
+BENCHMARK(GetValidated);
+
+/// Reading through the returned reference, without copying the string.
+static void GetStringReference(benchmark::State& state)
 {
-    const std::string path = CreateTempFile();
-    Configuration<SmallSchema> config(path);
-    (void)config.Load();
-
+    auto loaded = Configuration<MediumRegistry>::FromDefaults();
+    const auto& config = loaded.value();
+    const auto* escaped = &config;
+    KeepValue(escaped);
     for (auto _ : state) {
-        auto value = config.Get<settings::StringSetting>();
-        benchmark::DoNotOptimize(value);
+        const auto& value = config.Get<settings::StringSetting>();
+        const auto* data = value.data();
+        auto size = value.size();
+        KeepValue(data);
+        KeepValue(size);
     }
-
-    RemoveFile(path);
 }
-BENCHMARK_REGISTER_F(BenchmarkFixture, GetString);
+BENCHMARK(GetStringReference);
 
-BENCHMARK_DEFINE_F(BenchmarkFixture, GetInt)(benchmark::State& state)
+/// Loads a complete, existing file, as the pre-redesign Load benchmarks did.
+template <typename RegistryType>
+static void LoadExisting(benchmark::State& state)
 {
-    const std::string path = CreateTempFile();
-    Configuration<MediumSchema> config(path);
-    (void)config.Load();
-
-    for (auto _ : state) {
-        auto value = config.Get<settings::IntSetting>();
-        benchmark::DoNotOptimize(value);
-    }
-
-    RemoveFile(path);
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, GetInt);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, GetDouble)(benchmark::State& state)
-{
-    const std::string path = CreateTempFile();
-    Configuration<MediumSchema> config(path);
-    (void)config.Load();
-
-    for (auto _ : state) {
-        auto value = config.Get<settings::DoubleSetting>();
-        benchmark::DoNotOptimize(value);
-    }
-
-    RemoveFile(path);
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, GetDouble);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, GetBool)(benchmark::State& state)
-{
-    const std::string path = CreateTempFile();
-    Configuration<MediumSchema> config(path);
-    (void)config.Load();
-
-    for (auto _ : state) {
-        auto value = config.Get<settings::BoolSetting>();
-        benchmark::DoNotOptimize(value);
-    }
-
-    RemoveFile(path);
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, GetBool);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, GetValidated)(benchmark::State& state)
-{
-    const std::string path = CreateTempFile();
-    Configuration<MediumSchema> config(path);
-    (void)config.Load();
-
-    for (auto _ : state) {
-        auto value = config.Get<settings::ValidatedSetting>();
-        benchmark::DoNotOptimize(value);
-    }
-
-    RemoveFile(path);
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, GetValidated);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, SetString)(benchmark::State& state)
-{
-    const std::string path = CreateTempFile();
-    Configuration<SmallSchema> config(path);
-    (void)config.Load();
-
-    int counter = 0;
-    for (auto _ : state) {
-        const std::string value = "value_" + std::to_string(counter++);
-        auto status = config.Set<settings::StringSetting>(value);
-        benchmark::DoNotOptimize(status);
-    }
-
-    RemoveFile(path);
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, SetString);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, SetInt)(benchmark::State& state)
-{
-    const std::string path = CreateTempFile();
-    Configuration<MediumSchema> config(path);
-    (void)config.Load();
-
-    int counter = 0;
-    for (auto _ : state) {
-        auto status = config.Set<settings::IntSetting>(counter++);
-        benchmark::DoNotOptimize(status);
-    }
-
-    RemoveFile(path);
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, SetInt);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, SetValidated)(benchmark::State& state)
-{
-    const std::string path = CreateTempFile();
-    Configuration<MediumSchema> config(path);
-    (void)config.Load();
-
-    for (auto _ : state) {
-        auto status = config.Set<settings::ValidatedSetting>(50);
-        benchmark::DoNotOptimize(status);
-    }
-
-    RemoveFile(path);
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, SetValidated);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, LoadSmallSchema)(benchmark::State& state)
-{
-    const std::string path = CreateTempFile();
-
-    // Create initial file
+    const TemporaryFile file("load");
     {
-        Configuration<SmallSchema> config(path);
-        (void)config.Load();
-        (void)config.Save();
-    }
-
-    for (auto _ : state) {
-        Configuration<SmallSchema> config(path);
-        auto status = config.Load();
-        benchmark::DoNotOptimize(status);
-    }
-
-    RemoveFile(path);
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, LoadSmallSchema);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, LoadMediumSchema)(benchmark::State& state)
-{
-    const std::string path = CreateTempFile();
-
-    // Create initial file
-    {
-        Configuration<MediumSchema> config(path);
-        (void)config.Load();
-        (void)config.Save();
-    }
-
-    for (auto _ : state) {
-        Configuration<MediumSchema> config(path);
-        auto status = config.Load();
-        benchmark::DoNotOptimize(status);
-    }
-
-    RemoveFile(path);
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, LoadMediumSchema);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, LoadLargeSchema)(benchmark::State& state)
-{
-    const std::string path = CreateTempFile();
-
-    // Create initial file
-    {
-        Configuration<LargeSchema> config(path);
-        (void)config.Load();
-        (void)config.Save();
-    }
-
-    for (auto _ : state) {
-        Configuration<LargeSchema> config(path);
-        auto status = config.Load();
-        benchmark::DoNotOptimize(status);
-    }
-
-    RemoveFile(path);
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, LoadLargeSchema);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, SaveSmallSchema)(benchmark::State& state)
-{
-    const std::string path = CreateTempFile();
-    Configuration<SmallSchema> config(path);
-    (void)config.Load();
-
-    for (auto _ : state) {
-        auto status = config.Save();
-        benchmark::DoNotOptimize(status);
-    }
-
-    RemoveFile(path);
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, SaveSmallSchema);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, SaveMediumSchema)(benchmark::State& state)
-{
-    const std::string path = CreateTempFile();
-    Configuration<MediumSchema> config(path);
-    (void)config.Load();
-
-    for (auto _ : state) {
-        auto status = config.Save();
-        benchmark::DoNotOptimize(status);
-    }
-
-    RemoveFile(path);
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, SaveMediumSchema);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, SaveLargeSchema)(benchmark::State& state)
-{
-    const std::string path = CreateTempFile();
-    Configuration<LargeSchema> config(path);
-    (void)config.Load();
-
-    for (auto _ : state) {
-        auto status = config.Save();
-        benchmark::DoNotOptimize(status);
-    }
-
-    RemoveFile(path);
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, SaveLargeSchema);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, ValidatorRange)(benchmark::State& state)
-{
-    auto range_validator = cppfig::Range(0, 100);
-
-    for (auto _ : state) {
-        auto result = range_validator(50);
-        benchmark::DoNotOptimize(result);
-    }
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, ValidatorRange);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, ValidatorNotEmpty)(benchmark::State& state)
-{
-    auto not_empty_validator = cppfig::NotEmpty();
-    const std::string test_value = "test";
-
-    for (auto _ : state) {
-        auto result = not_empty_validator(test_value);
-        benchmark::DoNotOptimize(result);
-    }
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, ValidatorNotEmpty);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, ValidatorOneOf)(benchmark::State& state)
-{
-    auto one_of_validator = cppfig::OneOf<std::string>({ "debug", "info", "warn", "error" });
-
-    for (auto _ : state) {
-        auto result = one_of_validator("info");
-        benchmark::DoNotOptimize(result);
-    }
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, ValidatorOneOf);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, ValidatorCombined)(benchmark::State& state)
-{
-    auto combined_validator = cppfig::Min(0).And(cppfig::Max(100)).And(cppfig::Predicate<int>([](int v) { return v % 2 == 0; }, "must be even"));
-
-    for (auto _ : state) {
-        auto result = combined_validator(50);
-        benchmark::DoNotOptimize(result);
-    }
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, ValidatorCombined);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, DiffNoChanges)(benchmark::State& state)
-{
-    const std::string path = CreateTempFile();
-    Configuration<MediumSchema> config(path);
-    (void)config.Load();
-
-    for (auto _ : state) {
-        auto diff = config.Diff();
-        benchmark::DoNotOptimize(diff);
-    }
-
-    RemoveFile(path);
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, DiffNoChanges);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, DiffWithChanges)(benchmark::State& state)
-{
-    const std::string path = CreateTempFile();
-    Configuration<MediumSchema> config(path);
-    (void)config.Load();
-
-    // Make some changes
-    (void)config.Set<settings::IntSetting>(999);
-    (void)config.Set<settings::StringSetting>("modified");
-
-    for (auto _ : state) {
-        auto diff = config.Diff();
-        benchmark::DoNotOptimize(diff);
-    }
-
-    RemoveFile(path);
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, DiffWithChanges);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, JsonSerializerParse)(benchmark::State& state)
-{
-    const std::string json_str = R"({
-        "benchmark": {
-            "string": "test",
-            "int": 42,
-            "double": 3.14159,
-            "bool": true,
-            "validated": 50
+        auto created = cppfig::LoadFile<RegistryType>(file.path());
+        if (!created.has_value() || !cppfig::SaveFile(file.path(), created->document).ok()) {
+            state.SkipWithError("could not create the configuration file");
+            return;
         }
-    })";
-
+    }
     for (auto _ : state) {
-        auto result = JsonSerializer::ParseString(json_str);
-        benchmark::DoNotOptimize(result);
+        auto loaded = cppfig::LoadFile<RegistryType>(file.path());
+        benchmark::DoNotOptimize(loaded);
     }
 }
-BENCHMARK_REGISTER_F(BenchmarkFixture, JsonSerializerParse);
+BENCHMARK(LoadExisting<SmallRegistry>)->Name("LoadSmallRegistry");
+BENCHMARK(LoadExisting<MediumRegistry>)->Name("LoadMediumRegistry");
+BENCHMARK(LoadExisting<LargeRegistry>)->Name("LoadLargeRegistry");
 
-BENCHMARK_DEFINE_F(BenchmarkFixture, JsonSerializerStringify)(benchmark::State& state)
+/// Saves a loaded document. Each save writes a temporary file, fsyncs it,
+/// renames it over the destination and fsyncs the directory; the pre-redesign
+/// save did not flush to disk, so most of the difference is durability.
+template <typename RegistryType>
+static void SaveDocument(benchmark::State& state)
 {
-    auto value = Value::Object();
-    auto benchmark_obj = Value::Object();
-    benchmark_obj["string"] = Value("test");
-    benchmark_obj["int"] = Value(42);
-    benchmark_obj["double"] = Value(std::numbers::pi);
-    benchmark_obj["bool"] = Value(true);
-    benchmark_obj["validated"] = Value(50);
-    value["benchmark"] = benchmark_obj;
-
+    const TemporaryFile file("save");
+    auto loaded = cppfig::LoadFile<RegistryType>(file.path());
+    if (!loaded.has_value()) {
+        state.SkipWithError("could not load the configuration");
+        return;
+    }
     for (auto _ : state) {
-        auto result = JsonSerializer::Stringify(value);
-        benchmark::DoNotOptimize(result);
+        auto status = cppfig::SaveFile(file.path(), loaded->document);
+        benchmark::DoNotOptimize(status);
     }
 }
-BENCHMARK_REGISTER_F(BenchmarkFixture, JsonSerializerStringify);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, ValueGetAtPath)(benchmark::State& state)
-{
-    auto value = Value::Object();
-    auto database = Value::Object();
-    auto connection = Value::Object();
-    connection["host"] = Value("localhost");
-    connection["port"] = Value(5432);
-    database["connection"] = connection;
-    value["database"] = database;
-    const std::string path = "database.connection.host";
-
-    for (auto _ : state) {
-        auto result = value.GetAtPath(path);
-        benchmark::DoNotOptimize(result);
-    }
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, ValueGetAtPath);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, ValueSetAtPath)(benchmark::State& state)
-{
-    auto value = Value::Object();
-    auto database = Value::Object();
-    auto connection = Value::Object();
-    connection["host"] = Value("localhost");
-    connection["port"] = Value(5432);
-    database["connection"] = connection;
-    value["database"] = database;
-    const std::string path = "database.connection.host";
-
-    for (auto _ : state) {
-        Value value_copy = value;
-        value_copy.SetAtPath(path, Value("example.com"));
-        benchmark::DoNotOptimize(value_copy);
-    }
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, ValueSetAtPath);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, TraitsSerializeInt)(benchmark::State& state)
-{
-    for (auto _ : state) {
-        auto val = ConfigTraits<int>::Serialize(42);
-        benchmark::DoNotOptimize(val);
-    }
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, TraitsSerializeInt);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, TraitsDeserializeInt)(benchmark::State& state)
-{
-    const Value val(42);
-
-    for (auto _ : state) {
-        auto result = ConfigTraits<int>::Deserialize(val);
-        benchmark::DoNotOptimize(result);
-    }
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, TraitsDeserializeInt);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, TraitsSerializeString)(benchmark::State& state)
-{
-    const std::string value = "benchmark_test_string";
-
-    for (auto _ : state) {
-        auto val = ConfigTraits<std::string>::Serialize(value);
-        benchmark::DoNotOptimize(val);
-    }
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, TraitsSerializeString);
-
-BENCHMARK_DEFINE_F(BenchmarkFixture, TraitsDeserializeString)(benchmark::State& state)
-{
-    const Value val("benchmark_test_string");
-
-    for (auto _ : state) {
-        auto result = ConfigTraits<std::string>::Deserialize(val);
-        benchmark::DoNotOptimize(result);
-    }
-}
-BENCHMARK_REGISTER_F(BenchmarkFixture, TraitsDeserializeString);
+BENCHMARK(SaveDocument<SmallRegistry>)->Name("SaveSmallRegistry")->UseRealTime();
+BENCHMARK(SaveDocument<MediumRegistry>)->Name("SaveMediumRegistry")->UseRealTime();
+BENCHMARK(SaveDocument<LargeRegistry>)->Name("SaveLargeRegistry")->UseRealTime();
 
 }  // namespace cppfig::bench
-
-BENCHMARK_MAIN();

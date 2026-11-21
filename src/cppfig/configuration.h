@@ -1,489 +1,571 @@
 #pragma once
 
-#include <cstdlib>
-#include <filesystem>
+#include <array>
+#include <bitset>
+#include <charconv>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include "cppfig/conf.h"
-#include "cppfig/diff.h"
-#include "cppfig/interface.h"
-#include "cppfig/logging.h"
-#include "cppfig/serializer.h"
-#include "cppfig/setting.h"
-#include "cppfig/thread_policy.h"
-#include "cppfig/traits.h"
-#include "cppfig/value.h"
+#include "cppfig/document.h"
+#include "cppfig/environment.h"
+#include "cppfig/schema.h"
+#include "cppfig/status.h"
 
 namespace cppfig {
 
-/// @brief Main configuration manager.
-///
-/// This class manages configuration values with:
-/// - Compile-time type-safe access via setting types
-/// - Environment variable overrides
-/// - Validation
-/// - Automatic file creation with defaults
-/// - Schema migration (adding new settings)
-/// - Optional thread safety via a pluggable ThreadPolicy
-///
-/// Thread Safety:
-/// By default, the class uses @c SingleThreadedPolicy (zero overhead).
-/// For concurrent access from multiple threads, specify @c MultiThreadedPolicy:
-///
-/// @code
-/// // Single-threaded (default, zero overhead):
-/// cppfig::Configuration<MySchema> config("config.json");
-///
-/// // Thread-safe (reader-writer locking):
-/// cppfig::Configuration<MySchema, cppfig::JsonSerializer, cppfig::MultiThreadedPolicy>
-///     config("config.json");
-/// @endcode
-///
-/// With @c MultiThreadedPolicy:
-/// - Multiple threads may call @c Get concurrently (shared/reader lock).
-/// - Calls to @c Set, @c Load mutate internal state under an exclusive/writer lock.
-/// - @c Save also takes the exclusive lock: it rewrites the file, so
-///   concurrent savers would race over the same path.
-/// - @c Diff and @c ValidateAll acquire a shared/reader lock.
-/// - Validation in @c Set is performed *before* acquiring the exclusive lock.
-///
-/// Usage:
-/// @code
-/// // Define settings
-/// struct AppName {
-///     static constexpr std::string_view path = "app.name";
-///     using value_type = std::string;
-///     static auto default_value() -> std::string { return "MyApp"; }
-/// };
-///
-/// struct ServerPort {
-///     static constexpr std::string_view path = "server.port";
-///     static constexpr std::string_view env_override = "SERVER_PORT";
-///     using value_type = int;
-///     static auto default_value() -> int { return 8080; }
-///     static auto validator() -> Validator<int> { return Range(1, 65535); }
-/// };
-///
-/// // Create schema and configuration
-/// using MySchema = ConfigSchema<AppName, ServerPort>;
-/// Configuration<MySchema> config("config.json");
-///
-/// // Load and use
-/// config.Load();
-/// std::string name = config.Get<AppName>();
-/// int port = config.Get<ServerPort>();
-/// config.Set<ServerPort>(9000);
-/// config.Save();
-/// @endcode
-///
-/// @tparam Schema The ConfigSchema type defining all settings.
-/// @tparam SerializerT The serializer to use (defaults to ConfSerializer).
-/// @tparam ThreadPolicy The threading policy (defaults to SingleThreadedPolicy).
-/// For type-erased access, wrap an instance in @c VirtualConfigAdapter rather
-/// than deriving from @c IConfigurationProviderVirtual here: a virtual base
-/// would put a vptr on every configuration, including the single-threaded,
-/// non-polymorphic default.
-template <typename Schema, Serializer SerializerT = ConfSerializer, typename ThreadPolicy = SingleThreadedPolicy>
-class Configuration : public IConfigurationProvider<Configuration<Schema, SerializerT, ThreadPolicy>, Schema> {
-public:
-    using serializer_type = SerializerT;
-    using data_type = Value;
+/// @brief How loading treats entries whose path is not in the registry.
+enum class UnknownKeyPolicy : std::uint8_t {
+    /// Fail initialization. Catches typos, but an older binary then rejects a
+    /// file written by a newer one, and removing a setting breaks existing files.
+    kReject,
+    /// Leave the entry in the document untouched and report it through
+    /// ConfDocument::GetUnknownKeys. Duplicate known keys are still rejected.
+    kPreserve,
+};
 
-    /// @brief Creates a configuration manager with a file path.
-    ///
-    /// @param file_path Path to the configuration file.
-    explicit Configuration(std::string file_path)
-        : file_path_(std::move(file_path))
-        , file_values_(Value::Object())
-    {
-        BuildDefaults();
-    }
+/// @brief Options for Configuration::FromText and LoadFile.
+struct LoadOptions {
+    UnknownKeyPolicy unknown_keys = UnknownKeyPolicy::kReject;
+    /// Where environment overrides are read from.
+    Environment environment = Environment::Process();
+};
 
-    /// @brief Gets the value for a setting type.
-    ///
-    /// Resolution order:
-    /// 1. Environment variable (if configured)
-    /// 2. File value (if present)
-    /// 3. Default value
-    ///
-    /// Thread safety: acquires a shared (reader) lock when reading file values.
-    template <IsSetting S>
-        requires(Schema::template has_setting<S>)
-    [[nodiscard]] auto GetImpl() const -> typename S::value_type
-    {
-        using value_type = typename S::value_type;
+namespace detail {
 
-        // 1. Check environment variable (no lock needed — no mutable state accessed)
-        constexpr auto env_override = GetEnvOverride<S>();
-        if constexpr (!env_override.empty()) {
-            if (const char* env_value = std::getenv(std::string(env_override).c_str())) {
-                auto parsed = ConfigTraits<value_type>::FromString(env_value);
-                if (!parsed.has_value()) {
-                    Logger::WarnF("Failed to parse environment variable %.*s='%s', using fallback",
-                                  static_cast<int>(env_override.size()), env_override.data(), env_value);
-                }
-                else {
-                    // An override that fails the setting's own validator must
-                    // not slip through unchecked; fall back and say so.
-                    auto validation = GetSettingValidator<S>()(*parsed);
-                    if (validation) {
-                        return *parsed;
-                    }
-                    Logger::WarnF("Environment variable %.*s='%s' is invalid (%s), using fallback",
-                                  static_cast<int>(env_override.size()), env_override.data(), env_value,
-                                  validation.error_message.c_str());
-                }
-            }
-        }
+    /// Collects the errors found while building a configuration, so that one
+    /// attempt reports every problem rather than only the first. Errors are
+    /// kept one per line in a single string; past kMaxReported only a count is
+    /// kept, so a file of garbage cannot produce an unbounded message.
+    class ErrorList {
+    public:
+        static constexpr std::size_t kMaxReported = 20;
 
-        // 2. Check file value (shared lock — concurrent readers allowed)
+        [[nodiscard]] auto empty() const noexcept -> bool { return count_ == 0; }
+
+        /// Adds an error whose message is the concatenation of parts.
+        template <typename... Parts>
+        void Add(const Parts&... parts)
         {
-            typename ThreadPolicy::shared_lock lock(mutex_);
-            auto file_result = file_values_.GetAtPath(S::path);
-            if (file_result.ok()) {
-                auto parsed = ConfigTraits<value_type>::Deserialize(*file_result);
-                if (parsed.has_value()) {
-                    return *parsed;
-                }
-                Logger::WarnF("Failed to parse file value for '%.*s', using default",
-                              static_cast<int>(S::path.size()), S::path.data());
+            if (Begin()) {
+                (text_.append(std::string_view(parts)), ...);
             }
         }
 
-        // 3. Return default value (immutable after construction — no lock needed)
-        return S::default_value();
-    }
+        /// Adds an error at a 1-based line and column of source, formatted as
+        /// `source:line:column: message` so editors and terminals can jump to it.
+        void AddAt(std::string_view source, std::size_t line, std::size_t column, std::string_view message)
+        {
+            if (Begin()) {
+                text_.append(source).push_back(':');
+                AppendNumber(line);
+                text_.push_back(':');
+                AppendNumber(column);
+                text_.append(": ").append(message);
+            }
+        }
 
-    /// @brief Reports whether an environment variable is overriding a setting.
-    ///
-    /// An override wins over the file value, so @c Set on such a setting is
-    /// recorded and saved but will not be what @c Get returns. Callers that
-    /// need to know can ask before writing.
-    template <IsSetting S>
-        requires(Schema::template has_setting<S>)
-    [[nodiscard]] auto IsOverriddenImpl() const -> bool
+        /// Returns the errors as one InvalidArgument status. Requires !empty().
+        [[nodiscard]] auto ToStatus() && -> Status
+        {
+            if (count_ > kMaxReported) {
+                text_.append("\n(");
+                AppendNumber(count_ - kMaxReported);
+                text_.append(" more errors not shown)");
+            }
+            return InvalidArgumentError(std::move(text_));
+        }
+
+    private:
+        /// Counts an error and starts its line; false when it is past the limit.
+        auto Begin() -> bool
+        {
+            ++count_;
+            if (count_ > kMaxReported) {
+                return false;
+            }
+            if (count_ > 1) {
+                text_.push_back('\n');
+            }
+            return true;
+        }
+
+        void AppendNumber(std::size_t value)
+        {
+            std::array<char, std::numeric_limits<std::size_t>::digits10 + 1> buffer {};
+            const auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
+            text_.append(buffer.data(), result.ptr);
+        }
+
+        std::string text_;
+        std::size_t count_ = 0;
+    };
+
+    template <typename T>
+    using ValidatorFunction = auto (*)(const T&) -> ValidationResult;
+
+    /// The setting's validator, or null when it has none.
+    template <typename S>
+    [[nodiscard]] constexpr auto SettingValidatorOf() -> ValidatorFunction<typename S::value_type>
     {
-        constexpr auto env_override = GetEnvOverride<S>();
-        if constexpr (env_override.empty()) {
-            return false;
+        if constexpr (HasValidator<S>) {
+            return &ValidateSetting<S>;
         }
         else {
-            return std::getenv(std::string(env_override).c_str()) != nullptr;
+            return nullptr;
         }
     }
 
-    /// @brief Sets the value for a setting type.
-    ///
-    /// The value is stored and will be written by @c Save. If an environment
-    /// override is shadowing the setting, @c Get will keep returning the
-    /// override; that is logged, and @c IsOverridden reports it up front.
-    ///
-    /// Thread safety: validation runs without holding any lock; the actual
-    /// mutation of internal state acquires an exclusive (writer) lock.
-    template <IsSetting S>
-        requires(Schema::template has_setting<S>)
-    auto SetImpl(typename S::value_type value) -> Status
+    /// Static description of one setting, passed to code shared by all
+    /// settings with the same value type.
+    template <typename T>
+    struct SettingInfo {
+        std::string_view path;
+        ValidatorFunction<T> validate;
+        /// False when the default is a constant the registry already checked
+        /// at compile time, so checking it again at run time cannot fail.
+        bool check_default;
+    };
+
+    template <typename S>
+    inline constexpr SettingInfo<typename S::value_type> setting_info {
+        S::path, SettingValidatorOf<S>(), SettingValidatorOf<S>() != nullptr && !ConstantDefaultCheck<S>
+    };
+
+    // Everything below is instantiated once per value type rather than once
+    // per setting, which keeps large-registry compile time and code size down.
+
+    /// Runs the setting's validator. what names the value in the error, as in
+    /// "invalid value" or "invalid default".
+    template <typename T>
+    [[nodiscard]] auto CheckSettingValue(const SettingInfo<T>& info, const T& value, std::string_view what) -> Status
     {
-        using value_type = typename S::value_type;
-
-        // Validate the value *before* acquiring the exclusive lock
-        auto validator = GetSettingValidator<S>();
-        auto validation = validator(value);
-        if (!validation) {
-            return InvalidArgumentError(validation.error_message);
+        if (info.validate == nullptr) {
+            return OkStatus();
         }
-
-        // Returning OK from a write the next read will ignore is a trap.
-        constexpr auto env_override = GetEnvOverride<S>();
-        if constexpr (!env_override.empty()) {
-            if (IsOverriddenImpl<S>()) {
-                Logger::WarnF("Set('%.*s') stored, but %.*s is overriding it and Get will return the override",
-                              static_cast<int>(S::path.size()), S::path.data(),
-                              static_cast<int>(env_override.size()), env_override.data());
-            }
+        auto result = info.validate(value);
+        if (!result) {
+            return InvalidArgumentError(std::string(what) + " for '" + std::string(info.path) + "': " + result.error_message);
         }
-
-        // Set the value under exclusive lock
-        typename ThreadPolicy::unique_lock lock(mutex_);
-        auto serialized = ConfigTraits<value_type>::Serialize(value);
-        file_values_.SetAtPath(S::path, serialized);
-
         return OkStatus();
     }
 
-    /// @brief Loads configuration from the file.
-    ///
-    /// Thread safety: acquires an exclusive (writer) lock for the entire
-    /// operation because it mutates @c file_values_.
-    [[nodiscard]] auto LoadImpl() -> Status
+    /// Where a value being assigned comes from. Environment variables often
+    /// carry secrets, so their text is never quoted in an error.
+    enum class TextOrigin : std::uint8_t {
+        kFile,
+        kEnvironment,
+    };
+
+    /// Parses and validates text, then stores it in slot, replacing any value
+    /// already there. On failure slot is left unchanged.
+    template <typename T>
+    [[nodiscard]] auto AssignSettingText(const SettingInfo<T>& info, std::string_view text, TextOrigin origin, std::optional<T>& slot)
+        -> Status
     {
-        typename ThreadPolicy::unique_lock lock(mutex_);
-        return LoadUnlocked();
-    }
-
-    /// @brief Saves the current configuration to the file.
-    ///
-    /// Thread safety: acquires an exclusive (writer) lock. Although only
-    /// @c file_values_ is read, the call also rewrites the file, and two
-    /// threads holding a shared lock would race over the same path.
-    /// Serializing saves costs nothing next to the file I/O they perform.
-    [[nodiscard]] auto SaveImpl() const -> Status
-    {
-        typename ThreadPolicy::unique_lock lock(mutex_);
-        return SaveUnlocked();
-    }
-
-    /// @brief Returns the diff between file values and defaults.
-    ///
-    /// Thread safety: acquires a shared (reader) lock.
-    [[nodiscard]] auto DiffImpl() const -> ConfigDiff
-    {
-        typename ThreadPolicy::shared_lock lock(mutex_);
-        return DiffFileFromDefaults(defaults_, file_values_);
-    }
-
-    /// @brief Validates all current values against their validators.
-    ///
-    /// Thread safety: acquires a shared (reader) lock.
-    [[nodiscard]] auto ValidateAllImpl() const -> Status
-    {
-        typename ThreadPolicy::shared_lock lock(mutex_);
-        return ValidateAllUnlocked();
-    }
-
-    /// @brief Returns the file path.
-    ///
-    /// Thread safety: @c file_path_ is immutable after construction — no lock needed.
-    [[nodiscard]] auto GetFilePathImpl() const -> std::string_view { return file_path_; }
-
-    /// @brief Returns a snapshot of the current file values.
-    ///
-    /// Returned by value: handing out a reference to @c file_values_ let it
-    /// escape the lock that guards it, so a reader could observe a tree being
-    /// mutated by @c Set or @c Load.
-    ///
-    /// Thread safety: acquires a shared (reader) lock.
-    [[nodiscard]] auto GetFileValues() const -> Value
-    {
-        typename ThreadPolicy::shared_lock lock(mutex_);
-        return file_values_;
-    }
-
-    /// @brief Returns a snapshot of the default values.
-    ///
-    /// Thread safety: @c defaults_ is immutable after construction — safe to call
-    /// concurrently without synchronization.
-    [[nodiscard]] auto GetDefaults() const -> Value { return defaults_; }
-
-private:
-    /// @brief Loads configuration from the file (caller must hold exclusive lock).
-    [[nodiscard]] auto LoadUnlocked() -> Status
-    {
-        namespace fs = std::filesystem;
-
-        if (!fs::exists(file_path_)) {
-            // File doesn't exist - create with defaults
-            Logger::InfoF("Configuration file '%s' not found, creating with defaults", file_path_.c_str());
-            file_values_ = defaults_;
-            auto save_status = SaveUnlocked();
-            if (!save_status.ok()) {
-                return save_status;
+        auto parsed = ConfigTraits<T>::FromString(text);
+        if (!parsed) {
+            if (origin == TextOrigin::kEnvironment) {
+                return InvalidArgumentError("cannot parse the value for '" + std::string(info.path) + "'");
             }
-            return ValidateFileValuesUnlocked();
+            return InvalidArgumentError("cannot parse '" + std::string(text) + "' as a value of '" + std::string(info.path) + "'");
         }
-
-        // Load existing file
-        auto result = ReadFile<SerializerT>(file_path_);
-        if (!result.ok()) {
-            return result.status();
-        }
-
-        file_values_ = *result;
-        CoerceToSchemaTypes();
-
-        // Check for schema migration (new settings in defaults not in file)
-        auto diff = DiffDefaultsFromFile(defaults_, file_values_);
-        auto added = diff.Added();
-
-        if (!added.empty()) {
-            Logger::Warn("New settings detected in schema, adding to configuration file:");
-            for (const auto& entry : added) {
-                Logger::WarnF("  - %s = %s", entry.path.c_str(), entry.new_value.c_str());
-                // Copy the default value directly from the defaults tree
-                auto default_val = defaults_.GetAtPath(entry.path);
-                if (default_val.ok()) {
-                    file_values_.SetAtPath(entry.path, *default_val);
-                }
-            }
-
-            // Save the updated configuration
-            auto save_status = SaveUnlocked();
-            if (!save_status.ok()) {
-                Logger::ErrorF("Failed to save migrated configuration: %s",
-                               std::string(save_status.message()).c_str());
-                return save_status;
-            }
-        }
-
-        // A successful Load must leave the configuration holding only values
-        // the schema accepts; otherwise every caller of Get inherits an
-        // invalid value that nothing ever objected to.
-        return ValidateFileValuesUnlocked();
-    }
-
-    /// @brief Saves the current configuration to the file (caller must hold the exclusive lock).
-    [[nodiscard]] auto SaveUnlocked() const -> Status
-    {
-        namespace fs = std::filesystem;
-
-        // Create parent directories if needed
-        fs::path path(file_path_);
-        if (path.has_parent_path()) {
-            std::error_code error_code;
-            fs::create_directories(path.parent_path(), error_code);
-            if (error_code) {
-                return InternalError("Failed to create directory: " + error_code.message());
-            }
-        }
-
-        return WriteFile<SerializerT>(file_path_, file_values_);
-    }
-
-    /// @brief Validates the loaded file values (caller must hold at least a shared lock).
-    ///
-    /// Covers only what @c Load read, so a successful @c Load does not depend
-    /// on the ambient environment.
-    [[nodiscard]] auto ValidateFileValuesUnlocked() const -> Status
-    {
-        Status status = OkStatus();
-
-        Schema::ForEachSetting([this, &status]<typename S>() {
-            if (!status.ok()) {
-                return;  // Stop on first error
-            }
-
-            using value_type = typename S::value_type;
-            auto file_result = file_values_.GetAtPath(S::path);
-            if (!file_result.ok()) {
-                return;
-            }
-
-            auto parsed = ConfigTraits<value_type>::Deserialize(*file_result);
-            if (!parsed.has_value()) {
-                return;
-            }
-
-            auto validation = GetSettingValidator<S>()(*parsed);
-            if (!validation) {
-                status = InvalidArgumentError(std::string(S::path) + ": " + validation.error_message);
-            }
-        });
-
-        return status;
-    }
-
-    /// @brief Validates all values (caller must hold at least a shared lock).
-    ///
-    /// Checks every source that can supply a value: the environment override,
-    /// if one is set, and the file value. @c Get falls back past an invalid
-    /// override so the process keeps running, but the operator still has to
-    /// be able to find out that the override is wrong.
-    [[nodiscard]] auto ValidateAllUnlocked() const -> Status
-    {
-        Status status = ValidateEnvOverridesUnlocked();
+        auto status = CheckSettingValue(info, *parsed, "invalid value");
         if (!status.ok()) {
             return status;
         }
-        return ValidateFileValuesUnlocked();
+        slot.emplace(std::move(*parsed));
+        return OkStatus();
     }
 
-    /// @brief Validates the environment overrides that are currently set.
-    [[nodiscard]] auto ValidateEnvOverridesUnlocked() const -> Status
+    /// Validates a setting's default, appends it to migrations when given, and
+    /// stores it in slot when slot holds no value yet.
+    template <typename T>
+    [[nodiscard]] auto CompleteWithDefault(const SettingInfo<T>& info, T default_value, std::optional<T>& slot,
+                                           std::string* migrations) -> Status
     {
-        Status status = OkStatus();
-
-        Schema::ForEachSetting([&status]<typename S>() {
+        if (info.check_default) {
+            auto status = CheckSettingValue(info, default_value, "invalid default");
             if (!status.ok()) {
-                return;  // Stop on first error
+                return status;
             }
+        }
+        if (migrations != nullptr) {
+            // Appended in place: building the line from temporaries cost one
+            // allocation per setting whenever it outgrew the small-string buffer.
+            migrations->append(info.path).append(" = ");
+            AppendConfValue(*migrations, ConfigTraits<T>::ToString(default_value));
+            migrations->push_back('\n');
+        }
+        if (!slot) {
+            slot.emplace(std::move(default_value));
+        }
+        return OkStatus();
+    }
 
-            constexpr auto env_override = GetEnvOverride<S>();
-            if constexpr (!env_override.empty()) {
-                const char* env_value = std::getenv(std::string(env_override).c_str());
-                if (env_value == nullptr) {
+    // Per-setting entry points. They are free functions keyed on the setting
+    // alone and reach their slots through type-erased pointers, so their mangled
+    // names do not spell out the whole registry (which, at 1024 settings, made
+    // each name ~20 KB and dominated compile time and object size).
+
+    template <typename S>
+    using OptionalSlot = std::optional<typename S::value_type>;
+
+    /// What a per-setting slot function is asked to do.
+    enum class SlotOperation : std::uint8_t {
+        /// Parse text read from the file into the slot.
+        kAssignFileText,
+        /// Parse an environment variable's text into the slot.
+        kAssignEnvironmentText,
+        /// Append the default as a migration and fill the slot if it is empty.
+        kAddDefault,
+        /// Validate a value set in code, or fill an empty slot with the default.
+        kCheck,
+    };
+
+    struct SlotRequest {
+        SlotOperation operation;
+        std::string_view text;
+        std::string* migrations = nullptr;
+    };
+
+    using SlotFunction = auto (*)(void* slot, const SlotRequest& request) -> Status;
+
+    /// The one entry point per setting. A single function serving every
+    /// operation, rather than one function per operation, keeps the per-setting
+    /// cost to one table entry: in a position-independent binary each function
+    /// pointer in a table is a relocation the loader applies at startup, and
+    /// each function has its own unwind entry.
+    ///
+    /// The default is built only for kAddDefault and an empty kCheck, so a
+    /// setting whose value comes from the file never runs its default factory.
+    template <typename S>
+    [[nodiscard]] auto RunSlot(void* slot, const SlotRequest& request) -> Status
+    {
+        const auto& info = setting_info<S>;
+        auto& candidate = *static_cast<OptionalSlot<S>*>(slot);
+        switch (request.operation) {
+        case SlotOperation::kAssignFileText:
+            return AssignSettingText(info, request.text, TextOrigin::kFile, candidate);
+        case SlotOperation::kAssignEnvironmentText:
+            return AssignSettingText(info, request.text, TextOrigin::kEnvironment, candidate);
+        case SlotOperation::kAddDefault:
+            return CompleteWithDefault(info, S::default_value(), candidate, request.migrations);
+        case SlotOperation::kCheck:
+            if (candidate) {
+                return CheckSettingValue(info, *candidate, "invalid value");
+            }
+            return CompleteWithDefault(info, S::default_value(), candidate, nullptr);
+        }
+        return OkStatus();
+    }
+
+    /// Per-registry tables of slot addresses and per-setting entry points.
+    /// Each helper is a single function over all indices; nothing here is
+    /// instantiated per setting on a registry-named type.
+    template <typename RegistryType>
+    struct SlotTable {
+        static constexpr std::size_t size = RegistryType::size;
+        using optional_storage = typename RegistryType::template held_values_type<std::optional>;
+
+        template <std::size_t I>
+        using Setting = typename RegistryType::template SettingAt<I>;
+
+        template <std::size_t... I>
+        static auto Addresses(optional_storage& storage, std::index_sequence<I...>) -> std::array<void*, size>
+        {
+            return { static_cast<void*>(&static_cast<StorageSlot<I, OptionalSlot<Setting<I>>>&>(storage).value)... };
+        }
+
+        static auto Addresses(optional_storage& storage) -> std::array<void*, size>
+        {
+            return Addresses(storage, std::make_index_sequence<size>());
+        }
+
+        template <std::size_t... I>
+        static constexpr auto MakeFunctions(std::index_sequence<I...>) -> std::array<SlotFunction, size>
+        {
+            return { &RunSlot<Setting<I>>... };
+        }
+
+        static constexpr std::array<SlotFunction, size> functions = MakeFunctions(std::make_index_sequence<size>());
+
+        [[nodiscard]] static auto Run(std::size_t index, void* slot, const SlotRequest& request) -> Status
+        {
+            return functions[index](slot, request);
+        }
+    };
+
+    /// A line number in four bytes. Lines past the range saturate, which only
+    /// affects the line quoted in a duplicate-setting error.
+    [[nodiscard]] constexpr auto CompactLine(std::size_t line) -> std::uint32_t
+    {
+        constexpr std::size_t largest = std::numeric_limits<std::uint32_t>::max();
+        return static_cast<std::uint32_t>(line < largest ? line : largest);
+    }
+
+}  // namespace detail
+
+template <typename RegistryType>
+struct LoadResult;
+
+template <typename RegistryType>
+class ConfigurationBuilder;
+
+/// @brief An initialized, immutable configuration with direct typed storage.
+///
+/// Construction succeeds only after every default, file value and environment
+/// override has been parsed and validated. The object holds nothing but the
+/// typed values: Get is a compile-time slot access returning a reference tied
+/// to this object's lifetime.
+template <typename RegistryType>
+class Configuration {
+public:
+    using registry_type = RegistryType;
+    using values_type = typename RegistryType::values_type;
+
+    Configuration(const Configuration&) = delete;
+    auto operator=(const Configuration&) -> Configuration& = delete;
+    Configuration(Configuration&&) = default;
+    auto operator=(Configuration&&) -> Configuration& = default;
+    ~Configuration() = default;
+
+    /// Loads a configuration from flat .conf text and captures environment
+    /// overrides once. source names the text in error messages, usually the
+    /// file it was read from. Settings missing from the text are appended to
+    /// the returned document as migrations. To read a file, see LoadFile in
+    /// cppfig/file.h.
+    ///
+    /// Precedence is environment > text > default. A setting's default is
+    /// built only when the text lacks the setting, since only then is it used
+    /// or written as a migration.
+    [[nodiscard]] static auto FromText(std::string text, std::string_view source, LoadOptions options = {})
+        -> StatusOr<LoadResult<RegistryType>>;
+
+    /// Creates a configuration from defaults without text or environment
+    /// input. To set some values in code, use ConfigurationBuilder.
+    [[nodiscard]] static auto FromDefaults() -> StatusOr<Configuration>
+    {
+        // Candidate storage scales with the registry; keep it off the caller's stack.
+        auto candidates = std::make_unique<candidate_storage>();
+        return FromCandidates(*candidates);
+    }
+
+    template <typename S>
+        requires(RegistryType::template has_setting<S>)
+    [[nodiscard]] auto Get() const& noexcept -> const typename S::value_type&
+    {
+        using Slot = detail::StorageSlot<RegistryType::template index<S>, typename S::value_type>;
+        return static_cast<const Slot&>(values_).value;
+    }
+
+    /// Reading from a temporary would return a reference that dangles at the
+    /// end of the full expression; keep the configuration in a variable instead.
+    template <typename S>
+        requires(RegistryType::template has_setting<S>)
+    auto Get() const&& -> const typename S::value_type& = delete;
+
+private:
+    friend class ConfigurationBuilder<RegistryType>;
+
+    using candidate_storage = typename RegistryType::template held_values_type<std::optional>;
+    using slot_table = detail::SlotTable<RegistryType>;
+
+    /// Everything loading needs besides the text, kept together on the heap.
+    /// Values are parsed straight into the one candidate slot of their setting:
+    /// a file value, then an environment override replacing it, then the
+    /// default for settings that are still empty.
+    struct LoadState {
+        candidate_storage values;
+        std::array<void*, RegistryType::size> slots = slot_table::Addresses(values);
+        /// Line of each setting's file entry; 0 when the file lacks the setting.
+        std::array<std::uint32_t, RegistryType::size> file_lines {};
+        std::string_view source;
+        std::string migrations;
+        std::vector<detail::KeyPosition> unknown_keys;
+        UnknownKeyPolicy unknown_key_policy = UnknownKeyPolicy::kReject;
+        detail::ErrorList errors;
+
+        // The slot addresses point into this object.
+        LoadState() = default;
+        LoadState(const LoadState&) = delete;
+        auto operator=(const LoadState&) -> LoadState& = delete;
+    };
+
+    /// Moves every value out of candidates, all of which must be engaged.
+    explicit Configuration(candidate_storage& candidates)
+        : values_(detail::from_engaged, candidates)
+    {
+    }
+
+    /// Validates the values already in candidates, fills the empty ones from
+    /// their defaults and moves them all into a configuration.
+    [[nodiscard]] static auto FromCandidates(candidate_storage& candidates) -> StatusOr<Configuration>
+    {
+        const auto slots = slot_table::Addresses(candidates);
+        detail::ErrorList errors;
+        for (std::size_t i = 0; i < RegistryType::size; ++i) {
+            if (auto status = slot_table::Run(i, slots[i], { detail::SlotOperation::kCheck, {} }); !status.ok()) {
+                errors.Add(status.message());
+            }
+        }
+        if (!errors.empty()) {
+            return std::move(errors).ToStatus();
+        }
+        return Configuration(candidates);
+    }
+
+    static void ParseText(LoadState& state, std::string_view text)
+    {
+        const auto on_entry = [&state, text](const ConfEntry& entry) {
+            const std::size_t index = RegistryType::FindPath(entry.path);
+            if (index == RegistryType::size) {
+                if (state.unknown_key_policy == UnknownKeyPolicy::kPreserve) {
+                    const auto offset = static_cast<std::size_t>(entry.path.data() - text.data());
+                    state.unknown_keys.push_back(detail::KeyPosition { offset, entry.path.size(), entry.line });
+                }
+                else {
+                    const std::string message = "unknown setting '" + std::string(entry.path) + "'";
+                    state.errors.AddAt(state.source, entry.line, entry.column, message);
+                }
+                return;
+            }
+            if (state.file_lines[index] != 0) {
+                const std::string message = "duplicate setting '" + std::string(entry.path) + "' (first set on line "
+                    + std::to_string(state.file_lines[index]) + ")";
+                state.errors.AddAt(state.source, entry.line, entry.column, message);
+                return;
+            }
+            state.file_lines[index] = detail::CompactLine(entry.line);
+
+            if (auto status = slot_table::Run(index, state.slots[index], { detail::SlotOperation::kAssignFileText, entry.text }); !status.ok()) {
+                state.errors.AddAt(state.source, entry.line, entry.value_column, status.message());
+            }
+        };
+        const auto on_error = [&state](const ConfError& error) {
+            state.errors.AddAt(state.source, error.line, error.column, error.message);
+        };
+        ConfParser::ForEachEntry(text, on_entry, on_error);
+    }
+
+    /// Applies the environment overrides found in environment, reading it in
+    /// one pass and looking each variable up among the override names.
+    static void ApplyEnvironment(LoadState& state, const Environment& environment)
+    {
+        if constexpr (RegistryType::env_override_count > 0) {
+            std::bitset<RegistryType::size> applied;
+            environment.ForEach([&state, &applied](std::string_view name, std::string_view value) {
+                const std::size_t index = RegistryType::FindEnvOverride(name);
+                if (index == RegistryType::size || applied.test(index)) {
                     return;
                 }
-
-                using value_type = typename S::value_type;
-                auto parsed = ConfigTraits<value_type>::FromString(env_value);
-                if (!parsed.has_value()) {
-                    status = InvalidArgumentError(std::string(env_override) + ": cannot parse '" + env_value + "' as a value for '" + std::string(S::path) + "'");
-                    return;
+                applied.set(index);
+                if (auto status = slot_table::Run(index, state.slots[index], { detail::SlotOperation::kAssignEnvironmentText, value }); !status.ok()) {
+                    state.errors.Add("environment variable ", name, ": ", status.message());
                 }
+            });
+        }
+    }
 
-                auto validation = GetSettingValidator<S>()(*parsed);
-                if (!validation) {
-                    status = InvalidArgumentError(std::string(env_override) + ": " + validation.error_message);
+    /// Fills settings the text lacks from their defaults, recording each as a
+    /// migration. Goes through a table of per-setting functions: a single fold
+    /// expression over all settings produced one enormous function whose
+    /// optimization dominated compile time for large registries.
+    static void CompleteFromDefaults(LoadState& state)
+    {
+        for (std::size_t i = 0; i < RegistryType::size; ++i) {
+            if (state.file_lines[i] == 0) {
+                if (auto status = slot_table::Run(i, state.slots[i], { detail::SlotOperation::kAddDefault, {}, &state.migrations }); !status.ok()) {
+                    state.errors.Add(status.message());
                 }
             }
-        });
-
-        return status;
+        }
     }
 
-    /// @brief Reinterprets parsed leaves as the types the schema declares.
-    ///
-    /// A flat format has to infer a leaf's type from its text, and the
-    /// inference cannot know that `2.5` was written for a std::string setting
-    /// or that `"8080"` was written for an int one. Where the parsed value
-    /// does not deserialize as its declared type, re-read it from its textual
-    /// form, so a hand-edited file keeps the value the user wrote instead of
-    /// silently reverting to the default.
-    ///
-    /// A value that cannot be reinterpreted either — an out-of-range int, say
-    /// — is left as parsed, so it still fails validation rather than being
-    /// coerced into something plausible.
-    void CoerceToSchemaTypes()
-    {
-        Schema::ForEachSetting([this]<typename S>() {
-            using value_type = typename S::value_type;
-
-            auto file_result = file_values_.GetAtPath(S::path);
-            if (!file_result.ok()) {
-                return;
-            }
-            if (ConfigTraits<value_type>::Deserialize(*file_result).has_value()) {
-                return;
-            }
-
-            auto text = file_result->TryToText();
-            if (!text.has_value()) {
-                return;
-            }
-
-            auto parsed = ConfigTraits<value_type>::FromString(*text);
-            if (parsed.has_value()) {
-                file_values_.SetAtPath(S::path, ConfigTraits<value_type>::Serialize(*parsed));
-            }
-        });
-    }
-
-    void BuildDefaults()
-    {
-        defaults_ = Value::Object();
-
-        Schema::ForEachSetting([this]<typename S>() {
-            using value_type = typename S::value_type;
-            auto serialized = ConfigTraits<value_type>::Serialize(S::default_value());
-            defaults_.SetAtPath(S::path, serialized);
-        });
-    }
-
-    std::string file_path_;
-    Value file_values_;
-    Value defaults_;
-    mutable typename ThreadPolicy::mutex_type mutex_;
+    values_type values_;
 };
+
+/// @brief A loaded configuration together with the document it was loaded from.
+///
+/// Save the document if it has migrations to persist, then keep the
+/// configuration; the document may be discarded independently.
+template <typename RegistryType>
+struct LoadResult {
+    Configuration<RegistryType> config;
+    ConfDocument document;
+};
+
+/// @brief Builds a Configuration from values set in code, for tests and for
+/// applications that gather settings from somewhere other than a .conf file.
+///
+/// The result is an ordinary Configuration, so code can take
+/// `const Configuration<AppRegistry>&` and tests hand it one built here:
+/// @code
+/// auto config = cppfig::ConfigurationBuilder<AppRegistry> {}.Set<settings::ServerPort>(9000).Build();
+/// @endcode
+template <typename RegistryType>
+class ConfigurationBuilder {
+public:
+    ConfigurationBuilder() = default;
+    ConfigurationBuilder(const ConfigurationBuilder&) = delete;
+    auto operator=(const ConfigurationBuilder&) -> ConfigurationBuilder& = delete;
+    ConfigurationBuilder(ConfigurationBuilder&&) = default;
+    auto operator=(ConfigurationBuilder&&) -> ConfigurationBuilder& = default;
+    ~ConfigurationBuilder() = default;
+
+    /// Sets one setting's value, replacing any value set before. Only settings
+    /// of this registry, with their own value type, are accepted.
+    template <typename S>
+        requires(RegistryType::template has_setting<S>)
+    auto Set(typename S::value_type value) -> ConfigurationBuilder&
+    {
+        using Slot = detail::StorageSlot<RegistryType::template index<S>, std::optional<typename S::value_type>>;
+        static_cast<Slot&>(values_).value.emplace(std::move(value));
+        return *this;
+    }
+
+    /// Validates the values set, fills the others from their defaults (which
+    /// are validated too) and freezes them. Every invalid value is reported.
+    /// The builder is empty afterwards, whether or not building succeeded.
+    [[nodiscard]] auto Build() -> StatusOr<Configuration<RegistryType>>
+    {
+        auto result = Configuration<RegistryType>::FromCandidates(values_);
+        std::destroy_at(&values_);
+        std::construct_at(&values_);
+        return result;
+    }
+
+private:
+    typename Configuration<RegistryType>::candidate_storage values_;
+};
+
+template <typename RegistryType>
+auto Configuration<RegistryType>::FromText(std::string text, std::string_view source, LoadOptions options)
+    -> StatusOr<LoadResult<RegistryType>>
+{
+    auto state_owner = std::make_unique<LoadState>();
+    auto& state = *state_owner;
+    state.source = source;
+    state.unknown_key_policy = options.unknown_keys;
+
+    ParseText(state, text);
+    ApplyEnvironment(state, options.environment);
+    CompleteFromDefaults(state);
+    if (!state.errors.empty()) {
+        return std::move(state.errors).ToStatus();
+    }
+
+    const bool needs_save = !state.migrations.empty();
+    auto document = ConfDocument::AppendMigrations(std::move(text), state.migrations);
+    return LoadResult<RegistryType> { Configuration(state.values),
+                                      ConfDocument(std::move(document), std::move(state.unknown_keys), needs_save) };
+}
 
 }  // namespace cppfig

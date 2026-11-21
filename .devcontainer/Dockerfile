@@ -1,7 +1,7 @@
-FROM mcr.microsoft.com/devcontainers/cpp:0-ubuntu-22.04
+FROM mcr.microsoft.com/devcontainers/cpp:ubuntu26.04
 
 ARG REINSTALL_CMAKE_VERSION_FROM_SOURCE="3.31.7"
-ARG REINSTALL_LLVM_VERSION="20"
+ARG REINSTALL_LLVM_VERSION="22"
 
 # Optionally install the cmake for vcpkg
 COPY ./reinstall-cmake.sh /tmp/

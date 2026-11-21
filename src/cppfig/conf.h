@@ -1,289 +1,231 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
-#include <istream>
-#include <map>
-#include <set>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
-#include <vector>
-
-#include "cppfig/status.h"
-#include "cppfig/value.h"
 
 namespace cppfig {
 
-/// @brief Flat key-value `.conf` serializer — the default, zero-dependency serializer.
-///
-/// File format:
-/// @code
-/// # Comment lines start with #
-///
-/// server.host = localhost
-/// server.port = 8080
-/// logging.enabled = true
-/// logging.level = info
-/// @endcode
-///
-/// Keys are the full dot-separated setting paths. There are no sections
-/// or grouping — each line is simply `path = value`.
-///
-/// Type inference during parsing:
-/// - `true`/`false`/`yes`/`no`/`on`/`off` → bool
-/// - All-digit strings (optional leading `-`) → int64
-/// - Numeric with decimal point or exponent → double
-/// - Quoted strings (`"..."`) → string (quotes stripped)
-/// - Everything else → string
-struct ConfSerializer {
-    using data_type = Value;
+/// @brief One `path = value` entry. Columns are 1-based byte offsets in the line.
+struct ConfEntry {
+    std::string_view path;
+    std::string_view text;
+    std::size_t line;
+    std::size_t column;
+    std::size_t value_column;
+};
 
-    /// @brief Parses a `.conf` stream into a Value tree.
-    static auto Parse(std::istream& is) -> StatusOr<Value>
+/// @brief A syntax error on one line. The column is a 1-based byte offset.
+struct ConfError {
+    std::size_t line;
+    std::size_t column;
+    std::string_view message;
+};
+
+/// @brief Allocation-conscious parser for flat `path = value` documents.
+///
+/// The grammar is documented in docs/conf-format.md. In short: blank lines
+/// and lines starting with `#` are ignored; `#` outside quotes starts a
+/// comment; unquoted values are trimmed views into the source; quoted values
+/// support \\, \", \n, \r and \t and use one temporary decoding string per entry.
+class ConfParser {
+public:
+    /// Calls on_entry for each entry and on_error for each malformed line, in
+    /// line order. A malformed line is skipped and parsing continues with the
+    /// next one, so every error in a document is found in one pass.
+    template <typename EntryFn, typename ErrorFn>
+    static void ForEachEntry(std::string_view document, EntryFn&& on_entry, ErrorFn&& on_error)
     {
-        Value result = Value::Object();
-        std::string line;
-        int line_number = 0;
+        std::size_t offset = 0;
+        std::size_t line_number = 1;
+        std::string decoded;
 
-        while (std::getline(is, line)) {
+        while (offset < document.size()) {
+            const std::size_t newline = document.find('\n', offset);
+            const std::size_t end = newline == std::string_view::npos ? document.size() : newline;
+            const auto line = document.substr(offset, end - offset);
+            ParseLine(line, line_number, decoded, on_entry, on_error);
+
+            if (newline == std::string_view::npos) {
+                break;
+            }
+            offset = newline + 1;
             ++line_number;
-
-            auto trimmed = Trim(line);
-
-            // Skip empty lines and comments
-            if (trimmed.empty() || trimmed[0] == '#') {
-                continue;
-            }
-
-            // key = value
-            auto eq_pos = trimmed.find('=');
-            if (eq_pos == std::string::npos) {
-                return InvalidArgumentError("conf parse error: missing '=' on line " + std::to_string(line_number));
-            }
-
-            std::string key = Trim(trimmed.substr(0, eq_pos));
-            std::string value_str = Trim(trimmed.substr(eq_pos + 1));
-
-            // Reject keys SetAtPath would have to ignore, so a malformed file
-            // is reported with its line number rather than silently dropped.
-            if (Value::SplitPath(key).empty()) {
-                return InvalidArgumentError("conf parse error: ill-formed key '" + key + "' on line " + std::to_string(line_number));
-            }
-
-            result.SetAtPath(key, InferValue(value_str));
         }
-
-        return result;
-    }
-
-    /// @brief Parses a `.conf` string into a Value tree.
-    static auto ParseString(std::string_view str) -> StatusOr<Value>
-    {
-        std::istringstream stream { std::string(str) };
-        return Parse(stream);
-    }
-
-    /// @brief Converts a Value tree to flat `key = value` lines.
-    static auto Stringify(const Value& data) -> std::string
-    {
-        std::vector<std::pair<std::string, const Value*>> leaves;
-        CollectLeaves(data, "", leaves);
-
-        std::ostringstream stream;
-        for (const auto& [path, val] : leaves) {
-            stream << path << " = " << ValueToString(*val) << '\n';
-        }
-
-        return stream.str();
-    }
-
-    /// @brief Rewrites an existing `.conf` document, preserving its layout.
-    ///
-    /// Regenerating the file from the Value tree sorts the keys and drops
-    /// every comment the user wrote, which is user-hostile for a format whose
-    /// whole point is being hand-editable. Merge instead walks the existing
-    /// lines, updates the value of each key it recognises, leaves comments,
-    /// blank lines and ordering alone, and appends the keys the file does not
-    /// have yet.
-    ///
-    /// Lines whose value is unchanged are emitted verbatim, so a save that
-    /// changes nothing leaves the file byte-identical.
-    ///
-    /// @param existing The current file contents.
-    /// @param data The Value tree to write.
-    static auto Merge(std::string_view existing, const Value& data) -> std::string
-    {
-        std::vector<std::pair<std::string, const Value*>> leaves;
-        CollectLeaves(data, "", leaves);
-
-        std::map<std::string, const Value*, std::less<>> by_path;
-        for (const auto& [path, val] : leaves) {
-            by_path.emplace(path, val);
-        }
-
-        std::set<std::string, std::less<>> updated;
-        std::ostringstream out;
-        std::istringstream in { std::string(existing) };
-        std::string line;
-
-        while (std::getline(in, line)) {
-            auto trimmed = Trim(line);
-            auto eq_pos = line.find('=');
-
-            // Comments, blank lines and anything without a separator are the
-            // user's; pass them through untouched.
-            if (trimmed.empty() || trimmed[0] == '#' || eq_pos == std::string::npos) {
-                out << line << '\n';
-                continue;
-            }
-
-            const std::string key = Trim(line.substr(0, eq_pos));
-            auto entry = by_path.find(key);
-            if (entry == by_path.end()) {
-                // A key the schema no longer has. Removing it is the user's
-                // call, not ours.
-                out << line << '\n';
-                continue;
-            }
-
-            updated.insert(key);
-
-            const std::string rendered = ValueToString(*entry->second);
-            if (InferValue(Trim(line.substr(eq_pos + 1))) == *entry->second) {
-                out << line << '\n';  // unchanged — keep the user's spacing
-            }
-            else {
-                out << line.substr(0, eq_pos + 1) << ' ' << rendered << '\n';
-            }
-        }
-
-        AppendMissing(out, leaves, updated);
-        return out.str();
     }
 
 private:
-    /// @brief Trims leading/trailing whitespace.
-    static auto Trim(std::string_view sv) -> std::string
+    static constexpr std::string_view kWhitespace = " \t\r";
+
+    template <typename EntryFn, typename ErrorFn>
+    static void ParseLine(std::string_view line, std::size_t line_number, std::string& decoded, EntryFn& on_entry, ErrorFn& on_error)
     {
-        auto start = sv.find_first_not_of(" \t\r\n");
-        if (start == std::string_view::npos) {
-            return "";
+        const std::size_t first = line.find_first_not_of(kWhitespace);
+        if (first == std::string_view::npos || line[first] == '#') {
+            return;
         }
-        auto end = sv.find_last_not_of(" \t\r\n");
-        return std::string(sv.substr(start, end - start + 1));
+
+        const std::size_t equals = line.find('=', first);
+        if (equals == std::string_view::npos) {
+            on_error(ConfError { line_number, first + 1, "missing '=' after the setting path" });
+            return;
+        }
+
+        const auto path = TrimRight(line.substr(first, equals - first));
+        if (!IsPathWellFormed(path)) {
+            const std::string message = "ill-formed setting path '" + std::string(path) + "'";
+            on_error(ConfError { line_number, first + 1, message });
+            return;
+        }
+
+        std::size_t value_start = line.find_first_not_of(kWhitespace, equals + 1);
+        if (value_start == std::string_view::npos) {
+            value_start = line.size();
+        }
+        const auto value = DecodeValue(line, value_start, decoded);
+        if (!value.ok()) {
+            on_error(ConfError { line_number, value.column, value.message });
+            return;
+        }
+        on_entry(ConfEntry { path, value.text, line_number, first + 1, value_start + 1 });
     }
 
-    /// @brief Infers the Value type from a raw string.
-    static auto InferValue(const std::string& str) -> Value
+    [[nodiscard]] static constexpr auto TrimRight(std::string_view text) -> std::string_view
     {
-        // Quoted string
-        if (str.size() >= 2 && str.front() == '"' && str.back() == '"') {
-            return { str.substr(1, str.size() - 2) };
-        }
+        const std::size_t last = text.find_last_not_of(kWhitespace);
+        return last == std::string_view::npos ? std::string_view {} : text.substr(0, last + 1);
+    }
 
-        // Empty → empty string
-        if (str.empty()) {
-            return { std::string("") };
+    [[nodiscard]] static constexpr auto IsPathWellFormed(std::string_view path) -> bool
+    {
+        if (path.empty() || path.front() == '.' || path.back() == '.') {
+            return false;
         }
-
-        // Boolean
-        if (str == "true" || str == "yes" || str == "on") {
-            return { true };
-        }
-        if (str == "false" || str == "no" || str == "off") {
-            return { false };
-        }
-
-        // Integer
-        try {
-            std::size_t pos = 0;
-            auto int_val = std::stoll(str, &pos);
-            if (pos == str.size()) {
-                return { static_cast<std::int64_t>(int_val) };
+        for (std::size_t i = 0; i < path.size(); ++i) {
+            const char c = path[i];
+            const auto value = static_cast<unsigned char>(c);
+            if (value <= 0x20U || value == 0x7fU || c == '#' || c == '"' || c == '\\') {
+                return false;
+            }
+            if (c == '.' && i > 0 && path[i - 1] == '.') {
+                return false;
             }
         }
-        catch (...) {
+        return true;
+    }
+
+    /// A decoded value, or an error message with its 1-based column.
+    struct DecodedValue {
+        std::string_view text;
+        std::size_t column = 0;
+        std::string message;
+
+        [[nodiscard]] auto ok() const -> bool { return message.empty(); }
+    };
+
+    [[nodiscard]] static auto Error(std::size_t index, std::string message) -> DecodedValue
+    {
+        return DecodedValue { {}, index + 1, std::move(message) };
+    }
+
+    /// Decodes the value starting at index start of line. A `#` outside quotes
+    /// ends the value and starts a comment.
+    [[nodiscard]] static auto DecodeValue(std::string_view line, std::size_t start, std::string& decoded) -> DecodedValue
+    {
+        if (start == line.size() || line[start] != '"') {
+            const std::size_t comment = line.find('#', start);
+            const auto raw = TrimRight(line.substr(start, comment == std::string_view::npos ? std::string_view::npos : comment - start));
+            if (const std::size_t quote = raw.find('"'); quote != std::string_view::npos) {
+                return Error(start + quote, "unexpected quote in an unquoted value");
+            }
+            return DecodedValue { raw, 0, {} };
         }
 
-        // Double (only if it contains a decimal point or exponent)
-        if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
-            try {
-                std::size_t pos = 0;
-                auto double_val = std::stod(str, &pos);
-                if (pos == str.size()) {
-                    return { double_val };
+        decoded.clear();
+        for (std::size_t i = start + 1; i < line.size(); ++i) {
+            const char c = line[i];
+            if (c == '"') {
+                const std::size_t next = line.find_first_not_of(kWhitespace, i + 1);
+                if (next != std::string_view::npos && line[next] != '#') {
+                    return Error(next, "characters after the closing quote");
                 }
+                return DecodedValue { decoded, 0, {} };
             }
-            catch (...) {
-            }
-        }
-
-        // Unquoted string
-        return { str };
-    }
-
-    /// @brief Converts a leaf Value to its string representation.
-    static auto ValueToString(const Value& val) -> std::string
-    {
-        if (val.IsNull()) {
-            return "";
-        }
-        if (val.IsBoolean()) {
-            return val.Get<bool>() ? "true" : "false";
-        }
-        if (val.IsInteger()) {
-            return std::to_string(val.Get<std::int64_t>());
-        }
-        if (val.IsDouble()) {
-            std::ostringstream stream;
-            stream << val.Get<double>();
-            return stream.str();
-        }
-        if (val.IsString()) {
-            const auto& str = val.Get<std::string>();
-            // Quote if the string contains special characters or is empty
-            bool needs_quoting = str.empty() || str.front() == ' ' || str.back() == ' ' || str.front() == '"' || str.find_first_of("=#\n\r") != std::string::npos;
-            if (needs_quoting) {
-                return "\"" + str + "\"";
-            }
-            return str;
-        }
-        return "";
-    }
-
-    /// @brief Appends the settings the existing document did not contain.
-    static void AppendMissing(std::ostringstream& out,
-                              const std::vector<std::pair<std::string, const Value*>>& leaves,
-                              const std::set<std::string, std::less<>>& updated)
-    {
-        bool wrote_header = false;
-        for (const auto& [path, val] : leaves) {
-            if (updated.contains(path)) {
+            if (c != '\\') {
+                decoded.push_back(c);
                 continue;
             }
-            if (!wrote_header) {
-                out << "\n# Added by cppfig\n";
-                wrote_header = true;
+            if (i + 1 == line.size()) {
+                return Error(i, "unterminated escape sequence");
             }
-            out << path << " = " << ValueToString(*val) << '\n';
+            switch (line[++i]) {
+            case '\\':
+                decoded.push_back('\\');
+                break;
+            case '"':
+                decoded.push_back('"');
+                break;
+            case 'n':
+                decoded.push_back('\n');
+                break;
+            case 'r':
+                decoded.push_back('\r');
+                break;
+            case 't':
+                decoded.push_back('\t');
+                break;
+            default:
+                return Error(i - 1, "unknown escape sequence");
+            }
         }
-    }
 
-    /// @brief Recursively collects all leaf (path, Value*) pairs.
-    static void CollectLeaves(const Value& node, const std::string& prefix, std::vector<std::pair<std::string, const Value*>>& leaves)
-    {
-        if (node.IsObject()) {
-            for (const auto& [key, val] : node.Items()) {
-                std::string path = prefix.empty() ? key : prefix + "." + key;
-                CollectLeaves(val, path, leaves);
-            }
-        }
-        else {
-            leaves.emplace_back(prefix, &node);
-        }
+        return Error(start, "unterminated quoted value");
     }
 };
+
+/// @brief Appends a serialized value to out, quoted and escaped only when the
+/// flat grammar requires it.
+inline void AppendConfValue(std::string& out, std::string_view value)
+{
+    const bool needs_quotes = value.empty() || value.front() == ' ' || value.back() == ' ' || value.front() == '\t'
+        || value.back() == '\t' || value.find_first_of("=#\"\\\n\r\t") != std::string_view::npos;
+    if (!needs_quotes) {
+        out.append(value);
+        return;
+    }
+
+    out.push_back('"');
+    for (const char c : value) {
+        switch (c) {
+        case '\\':
+            out.append("\\\\");
+            break;
+        case '"':
+            out.append("\\\"");
+            break;
+        case '\n':
+            out.append("\\n");
+            break;
+        case '\r':
+            out.append("\\r");
+            break;
+        case '\t':
+            out.append("\\t");
+            break;
+        default:
+            out.push_back(c);
+        }
+    }
+    out.push_back('"');
+}
+
+/// @brief Escapes a serialized value only when the flat grammar requires quotes.
+[[nodiscard]] inline auto EscapeConfValue(std::string_view value) -> std::string
+{
+    std::string escaped;
+    AppendConfValue(escaped, value);
+    return escaped;
+}
 
 }  // namespace cppfig

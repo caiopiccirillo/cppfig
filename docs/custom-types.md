@@ -1,216 +1,127 @@
 # Custom Types
 
-cppfig supports custom types through `ConfigTraits<T>` template specialization. This allows you to use any type in your configuration settings.
+Every value type needs a `cppfig::ConfigTraits<T>` specialization that converts between the type and its text in the `.conf` file. cppfig provides conversions for common types; you add your own the same way.
 
-## Manual ConfigTraits Specialization (Recommended)
+## Built-in conversions
 
-Implement all four static functions to teach cppfig how to handle your type:
+| Type | Text | Notes |
+| --- | --- | --- |
+| `bool` | `true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0` | Lowercase only; written as `true`/`false` |
+| `short`, `int`, `long`, `long long`, their unsigned forms, `signed char`, `unsigned char`, and the `<cstdint>` aliases | Decimal, as `std::from_chars` reads it | Exact: no `+`, no prefix, no trailing text, range-checked. `char`, `wchar_t` and `charN_t` are text, not numbers, and have no conversion. |
+| `float`, `double`, `long double` | `std::from_chars` general format | `long double` only where the standard library supports it |
+| `std::string` | The text as is | Written quoted when needed; see [the format](conf-format.md#writing) |
+| `std::filesystem::path` | The path in the native narrow encoding | |
+| `std::chrono::duration<Rep, Period>` | An integer and a unit: `250ms`, `30s`, `5min`, `2h` | Needs `#include <cppfig/chrono.h>`. See below. |
+
+### Durations
 
 ```cpp
-#include <cppfig/cppfig.h>
+#include <cppfig/chrono.h>
 
-struct Color {
-    uint8_t r, g, b, a;
+struct RequestTimeout {
+    static constexpr std::string_view path = "http.timeout";
+    using value_type = std::chrono::milliseconds;
+    static constexpr auto default_value() -> std::chrono::milliseconds { return std::chrono::seconds { 30 }; }
 };
+```
+
+- The unit is required. The units are `ns`, `us`, `ms`, `s`, `min` and `h`.
+- Any unit can be used for any duration type, as long as the result is exact and fits: `2s` reads as 2000 milliseconds, and `1500us` is rejected for milliseconds.
+- `Rep` must be an integer type, and `Period` one of those six units.
+- Durations are written in their own unit, so the default above is saved as `30000ms`.
+
+`<cppfig/chrono.h>` is separate from `<cppfig/cppfig.h>` because the full `<chrono>` header roughly doubles cppfig's parse time. Include it in the files that declare duration settings.
+
+## Enums
+
+Map each enumerator to a name with `EnumTraits` and a `constexpr` table:
+
+```cpp
+enum class LogLevel { kDebug, kInfo, kWarning, kError };
+
+inline constexpr std::array<cppfig::EnumName<LogLevel>, 4> kLogLevelNames { {
+    { LogLevel::kDebug, "debug" },
+    { LogLevel::kInfo, "info" },
+    { LogLevel::kWarning, "warning" },
+    { LogLevel::kError, "error" },
+} };
 
 template <>
-struct cppfig::ConfigTraits<Color> {
-    // Serialize to a cppfig::Value
-    static auto Serialize(const Color& value) -> cppfig::Value {
-        auto obj = cppfig::Value::Object();
-        obj["r"] = cppfig::Value(static_cast<int64_t>(value.r));
-        obj["g"] = cppfig::Value(static_cast<int64_t>(value.g));
-        obj["b"] = cppfig::Value(static_cast<int64_t>(value.b));
-        obj["a"] = cppfig::Value(static_cast<int64_t>(value.a));
-        return obj;
-    }
-
-    // Deserialize from a cppfig::Value
-    static auto Deserialize(const cppfig::Value& val) -> std::optional<Color> {
-        auto r = val["r"].TryGet<int>();
-        auto g = val["g"].TryGet<int>();
-        auto b = val["b"].TryGet<int>();
-        auto a = val["a"].TryGet<int>();
-        if (!r || !g || !b || !a) {
-            return std::nullopt;
-        }
-        return Color{
-            static_cast<uint8_t>(*r),
-            static_cast<uint8_t>(*g),
-            static_cast<uint8_t>(*b),
-            static_cast<uint8_t>(*a)
-        };
-    }
-
-    // Convert to string (for logging/debugging)
-    static auto ToString(const Color& value) -> std::string {
-        return "rgba(" + std::to_string(value.r) + "," +
-               std::to_string(value.g) + "," +
-               std::to_string(value.b) + "," +
-               std::to_string(value.a) + ")";
-    }
-
-    // Parse from string (for environment variables)
-    static auto FromString(std::string_view str) -> std::optional<Color> {
-        // Parse format like "rgba(r,g,b,a)" or fall back
-        return std::nullopt;
-    }
-};
+struct cppfig::ConfigTraits<LogLevel> : cppfig::EnumTraits<kLogLevelNames> { };
 ```
 
-### Use in Settings
+Names are matched exactly, so `INFO` and `1` are rejected. Names and values must each be unique, which is checked at compile time. List every value a setting can hold: an enumerator missing from the table is written as its underlying number, which then fails to load.
+
+## Your own types
+
+Specialize `ConfigTraits` with two static functions:
 
 ```cpp
-struct BackgroundColor {
-    static constexpr std::string_view path = "ui.background_color";
-    using value_type = Color;
-    static auto default_value() -> Color { return Color{255, 255, 255, 255}; }
-};
-```
-
-## Using nlohmann::json ADL (Requires JSON Feature)
-
-If your type already has `to_json` / `from_json` functions and you have the
-JSON feature enabled, you can use the `ConfigTraitsFromJsonAdl` helper:
-
-### Step 1: Enable JSON support
-
-```cmake
-# CMakeLists.txt
-set(CPPFIG_ENABLE_JSON ON)
-```
-
-### Step 2: Define Your Type with JSON Serialization
-
-```cpp
-#include <cppfig/json.h>  // must be included for ConfigTraitsFromJsonAdl
-
-struct Point {
-    int x = 0;
-    int y = 0;
-
-    bool operator==(const Point& other) const {
-        return x == other.x && y == other.y;
-    }
-
-    // nlohmann::json ADL functions
-    friend void to_json(nlohmann::json& j, const Point& p) {
-        j = nlohmann::json{{"x", p.x}, {"y", p.y}};
-    }
-
-    friend void from_json(const nlohmann::json& j, Point& p) {
-        j.at("x").get_to(p.x);
-        j.at("y").get_to(p.y);
-    }
-};
-```
-
-### Step 3: Specialize ConfigTraits
-
-```cpp
-template <>
-struct cppfig::ConfigTraits<Point> : cppfig::ConfigTraitsFromJsonAdl<Point> {};
-```
-
-## ConfigTraits Interface
-
-The `ConfigTraits<T>` template must provide these static functions:
-
-| Function | Purpose |
-|----------|---------|
-| `Serialize(const T&) -> Value` | Serialize value to a `cppfig::Value` |
-| `Deserialize(const Value&) -> std::optional<T>` | Deserialize from a `cppfig::Value` |
-| `ToString(const T&) -> std::string` | Convert to human-readable string |
-| `FromString(std::string_view) -> std::optional<T>` | Parse from string (env vars) |
-
-All functions must be `static`. Return `std::nullopt` from `Deserialize` and
-`FromString` on parse failure.
-
-## Complete Example
-
-```cpp
-#include <cppfig/cppfig.h>
-
-// Custom type — no external dependencies required
-struct ServerEndpoint {
+struct Endpoint {
     std::string host;
-    int port;
-    bool use_ssl;
+    std::uint16_t port = 0;
 };
 
-// Register with cppfig using Value-based traits
 template <>
-struct cppfig::ConfigTraits<ServerEndpoint> {
-    static auto Serialize(const ServerEndpoint& e) -> cppfig::Value {
-        auto obj = cppfig::Value::Object();
-        obj["host"] = cppfig::Value(e.host);
-        obj["port"] = cppfig::Value(e.port);
-        obj["use_ssl"] = cppfig::Value(e.use_ssl);
-        return obj;
-    }
-
-    static auto Deserialize(const cppfig::Value& val) -> std::optional<ServerEndpoint> {
-        auto host = val["host"].TryGet<std::string>();
-        auto port = val["port"].TryGet<int>();
-        auto use_ssl = val["use_ssl"].TryGet<bool>();
-        if (!host || !port || !use_ssl) {
+struct cppfig::ConfigTraits<Endpoint> {
+    static auto FromString(std::string_view text) -> std::optional<Endpoint>
+    {
+        const auto colon = text.rfind(':');
+        if (colon == std::string_view::npos || colon == 0) {
             return std::nullopt;
         }
-        return ServerEndpoint{*host, *port, *use_ssl};
+        auto port = ConfigTraits<std::uint16_t>::FromString(text.substr(colon + 1));
+        if (!port) {
+            return std::nullopt;
+        }
+        return Endpoint { std::string(text.substr(0, colon)), *port };
     }
 
-    static auto ToString(const ServerEndpoint& e) -> std::string {
-        return e.host + ":" + std::to_string(e.port) +
-               (e.use_ssl ? " (SSL)" : "");
-    }
-
-    static auto FromString(std::string_view) -> std::optional<ServerEndpoint> {
-        return std::nullopt;  // not supported via env var
-    }
-};
-
-// Use in settings
-namespace settings {
-
-struct ApiServer {
-    static constexpr std::string_view path = "api.server";
-    using value_type = ServerEndpoint;
-    static auto default_value() -> ServerEndpoint {
-        return {"api.example.com", 443, true};
+    static auto ToString(const Endpoint& value) -> std::string
+    {
+        return value.host + ":" + ConfigTraits<std::uint16_t>::ToString(value.port);
     }
 };
 
-}  // namespace settings
-
-using MySchema = cppfig::ConfigSchema<settings::ApiServer>;
-
-int main() {
-    // Uses default .conf serializer — no JSON dependency
-    cppfig::Configuration<MySchema> config("config.conf");
-    config.Load();
-
-    ServerEndpoint api = config.Get<settings::ApiServer>();
-    std::cout << "API: " << api.host << ":" << api.port << std::endl;
-}
+struct Upstream {
+    static constexpr std::string_view path = "proxy.upstream";
+    using value_type = Endpoint;
+    static auto default_value() -> Endpoint { return { "localhost", 9000 }; }
+};
 ```
 
-## Validating Custom Types
+```conf
+proxy.upstream = backend.internal:9000
+```
+
+### Requirements
+
+| Function | Contract |
+| --- | --- |
+| `static auto FromString(std::string_view) -> std::optional<T>` | Parses the whole text. Returns `std::nullopt` on any error rather than throwing. |
+| `static auto ToString(const T&) -> std::string` | Produces text that `FromString` reads back to an equal value. |
+
+- The text is a single value; quoting and escaping in the file are handled for you.
+- Conversions run only while loading and when migrated defaults are written; `Get` never calls them.
+- To build with `-fno-exceptions`, the conversions must not throw.
+- Compose the built-in conversions, as `Endpoint` does with `ConfigTraits<std::uint16_t>`, instead of hand-parsing numbers.
+
+The type itself needs no default constructor and no copy constructor: move-only types work.
+
+A type without a conversion fails the `Configurable<T>` concept, and the setting fails `IsSetting`, at compile time.
+
+## Validating custom types
+
+Add a validator for rules beyond what parsing checks:
 
 ```cpp
-struct ApiServer {
-    static constexpr std::string_view path = "api.server";
-    using value_type = ServerEndpoint;
-    static auto default_value() -> ServerEndpoint {
-        return {"api.example.com", 443, true};
-    }
-
-    static auto validator() -> cppfig::Validator<ServerEndpoint> {
-        return cppfig::Predicate<ServerEndpoint>(
-            [](const ServerEndpoint& e) {
-                return !e.host.empty() && e.port > 0 && e.port < 65536;
-            },
-            "Server endpoint must have non-empty host and valid port"
-        );
+struct Upstream {
+    static constexpr std::string_view path = "proxy.upstream";
+    using value_type = Endpoint;
+    static auto default_value() -> Endpoint { return { "localhost", 9000 }; }
+    static auto validator()
+    {
+        return cppfig::Predicate<Endpoint>([](const Endpoint& endpoint) { return endpoint.port != 0; }, "port must not be 0");
     }
 };
 ```

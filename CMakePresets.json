@@ -96,6 +96,27 @@
             }
         },
         {
+            "name": "config-fuzz-clang",
+            "displayName": "Fuzz Clang",
+            "description": "Configure libFuzzer targets with AddressSanitizer and UndefinedBehaviorSanitizer",
+            "binaryDir": "${sourceDir}/build/fuzz/clang",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "CMAKE_C_COMPILER": "/usr/local/bin/clang",
+                "CMAKE_CXX_COMPILER": "/usr/local/bin/clang++",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "STRICT_BUILD": "ON",
+                "CPPFIG_BUILD_FUZZERS": "ON",
+                "CPPFIG_BUILD_TESTS": "OFF",
+                "CPPFIG_BUILD_BENCHMARKS": "OFF",
+                "CPPFIG_BUILD_EXAMPLES": "OFF",
+                "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all",
+                "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+            }
+        },
+        {
             "name": "config-coverage",
             "displayName": "Coverage",
             "description": "Configure build with code coverage enabled",
@@ -165,6 +186,12 @@
             "description": "Build with ThreadSanitizer enabled"
         },
         {
+            "name": "build-fuzz-clang",
+            "configurePreset": "config-fuzz-clang",
+            "displayName": "Fuzz Clang",
+            "description": "Build the libFuzzer targets"
+        },
+        {
             "name": "build-coverage",
             "configurePreset": "config-coverage",
             "displayName": "Coverage",
@@ -214,6 +241,15 @@
             "configurePreset": "config-tsan-clang",
             "displayName": "Test ThreadSanitizer Clang",
             "description": "Run tests under ThreadSanitizer"
+        },
+        {
+            "name": "test-fuzz-clang",
+            "configurePreset": "config-fuzz-clang",
+            "displayName": "Fuzz Clang",
+            "description": "Run each fuzzer for CPPFIG_FUZZ_SECONDS",
+            "output": {
+                "outputOnFailure": true
+            }
         },
         {
             "name": "test-coverage",
@@ -309,6 +345,23 @@
                 {
                     "type": "test",
                     "name": "test-tsan-clang"
+                }
+            ]
+        },
+        {
+            "name": "fuzz-clang",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "config-fuzz-clang"
+                },
+                {
+                    "type": "build",
+                    "name": "build-fuzz-clang"
+                },
+                {
+                    "type": "test",
+                    "name": "test-fuzz-clang"
                 }
             ]
         },

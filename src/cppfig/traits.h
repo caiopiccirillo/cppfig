@@ -1,224 +1,220 @@
 #pragma once
 
+#include <charconv>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <type_traits>
-
-#include "cppfig/value.h"
 
 namespace cppfig {
 
-/// @brief Primary template for configuration type traits.
+/// @brief Converts configuration values to and from their flat text representation.
 ///
-/// Users must specialize this template for custom types to enable
-/// serialization, deserialization, and validation. Default specializations
-/// are provided for primitive types (int, double, bool, std::string).
-///
-/// @tparam T The configuration value type.
+/// Specialize this template for custom types. Both operations are used only
+/// during initialization or migration, never by Configuration::Get.
 template <typename T>
 struct ConfigTraits {
-    /// @brief Serializes a value to a Value node.
-    /// @param value The value to serialize.
-    /// @return The Value representation of the value.
-    static auto Serialize(const T& value) -> Value = delete;
-
-    /// @brief Deserializes a value from a Value node.
-    /// @param value The Value node to deserialize.
-    /// @return The deserialized value, or std::nullopt on failure.
-    static auto Deserialize(const Value& value) -> std::optional<T> = delete;
-
-    /// @brief Converts a value to a human-readable string.
-    /// @param value The value to convert.
-    /// @return String representation of the value.
+    static auto FromString(std::string_view text) -> std::optional<T> = delete;
     static auto ToString(const T& value) -> std::string = delete;
-
-    /// @brief Parses a value from a string (e.g., from environment variables).
-    /// @param str The string to parse.
-    /// @return The parsed value, or std::nullopt on failure.
-    static auto FromString(std::string_view str) -> std::optional<T> = delete;
 };
 
-/// @brief Concept constraining types that can be used as configuration values.
-///
-/// A type satisfies Configurable if ConfigTraits<T> provides the required
-/// static member functions for serialization and conversion.
+/// @brief Types with complete non-throwing flat-text conversion traits.
 template <typename T>
-concept Configurable = requires(const T& value, const Value& val, std::string_view str) {
-    { ConfigTraits<T>::Serialize(value) } -> std::convertible_to<Value>;
-    { ConfigTraits<T>::Deserialize(val) } -> std::same_as<std::optional<T>>;
-    { ConfigTraits<T>::ToString(value) } -> std::convertible_to<std::string>;
-    { ConfigTraits<T>::FromString(str) } -> std::same_as<std::optional<T>>;
+concept Configurable = requires(const T& value, std::string_view text) {
+    { ConfigTraits<T>::FromString(text) } -> std::same_as<std::optional<T>>;
+    { ConfigTraits<T>::ToString(value) } -> std::same_as<std::string>;
 };
+
+namespace detail {
+
+    template <typename T>
+    struct IntegerTraits {
+        static auto FromString(std::string_view text) -> std::optional<T>
+        {
+            if (text.empty()) {
+                return std::nullopt;
+            }
+            T value {};
+            const auto* first = text.data();
+            const auto* last = first + text.size();
+            const auto result = std::from_chars(first, last, value);
+            if (result.ec != std::errc {} || result.ptr != last) {
+                return std::nullopt;
+            }
+            return value;
+        }
+
+        static auto ToString(T value) -> std::string
+        {
+            char buffer[32] {};
+            const auto result = std::to_chars(std::begin(buffer), std::end(buffer), value);
+            return std::string(buffer, result.ptr);
+        }
+    };
+
+    /// Character types hold text, not numbers, so they get no integer traits.
+    template <typename T>
+    concept CharacterType = std::is_same_v<T, char> || std::is_same_v<T, wchar_t> || std::is_same_v<T, char8_t>
+        || std::is_same_v<T, char16_t> || std::is_same_v<T, char32_t>;
+
+    template <typename T>
+    concept ConfigurableInteger = std::is_integral_v<T> && !std::is_same_v<T, bool> && !CharacterType<T>;
+
+    /// Floating-point types the standard library can convert with from_chars/to_chars.
+    template <typename T>
+    concept ConfigurableFloating = std::is_floating_point_v<T> && requires(const char* text, char* buffer, T value) {
+        std::from_chars(text, text, value, std::chars_format::general);
+        std::to_chars(buffer, buffer, value, std::chars_format::general);
+    };
+
+    template <typename T>
+    struct FloatingTraits {
+        static auto FromString(std::string_view text) -> std::optional<T>
+        {
+            if (text.empty()) {
+                return std::nullopt;
+            }
+            if constexpr (std::is_same_v<T, long double>) {
+                // libstdc++ parses long double with code that, for "inf" and
+                // "nan", reads past the end of the range. Values are views
+                // into larger text, so parse a terminated copy instead. float
+                // and double use a parser that stays within the range.
+                const std::string terminated(text);
+                return Parse(terminated);
+            }
+            else {
+                return Parse(text);
+            }
+        }
+
+        static auto ToString(T value) -> std::string
+        {
+            char buffer[160] {};
+            const auto result = std::to_chars(std::begin(buffer), std::end(buffer), value, std::chars_format::general);
+            return std::string(buffer, result.ptr);
+        }
+
+    private:
+        static auto Parse(std::string_view text) -> std::optional<T>
+        {
+            T value {};
+            const auto* first = text.data();
+            const auto* last = first + text.size();
+            const auto result = std::from_chars(first, last, value, std::chars_format::general);
+            if (result.ec != std::errc {} || result.ptr != last) {
+                return std::nullopt;
+            }
+            return value;
+        }
+    };
+
+}  // namespace detail
 
 template <>
 struct ConfigTraits<bool> {
-    static auto Serialize(bool value) -> Value { return value; }
-
-    static auto Deserialize(const Value& value) -> std::optional<bool>
+    static auto FromString(std::string_view text) -> std::optional<bool>
     {
-        if (!value.Fits<bool>()) {
-            return std::nullopt;
-        }
-        return value.Get<bool>();
-    }
-
-    static auto ToString(bool value) -> std::string { return value ? "true" : "false"; }
-
-    static auto FromString(std::string_view str) -> std::optional<bool>
-    {
-        if (str == "true" || str == "1" || str == "yes" || str == "on") {
+        if (text == "true" || text == "1" || text == "yes" || text == "on") {
             return true;
         }
-        if (str == "false" || str == "0" || str == "no" || str == "off") {
+        if (text == "false" || text == "0" || text == "no" || text == "off") {
             return false;
         }
         return std::nullopt;
     }
+
+    static auto ToString(bool value) -> std::string { return value ? "true" : "false"; }
 };
 
-template <>
-struct ConfigTraits<int> {
-    static auto Serialize(int value) -> Value { return value; }
+/// Every standard integer type except bool and the character types.
+/// Parsing is exact: no sign for unsigned types, no prefixes, no trailing text,
+/// and out-of-range values are rejected.
+template <detail::ConfigurableInteger T>
+struct ConfigTraits<T> : detail::IntegerTraits<T> { };
 
-    static auto Deserialize(const Value& value) -> std::optional<int>
-    {
-        // Rejects an int64 too large for an int rather than discarding its
-        // high bits, which would turn a plainly wrong value into a
-        // plausible-looking one that then passes validation.
-        if (!value.Fits<int>()) {
-            return std::nullopt;
-        }
-        return value.Get<int>();
-    }
-
-    static auto ToString(int value) -> std::string { return std::to_string(value); }
-
-    static auto FromString(std::string_view str) -> std::optional<int>
-    {
-        try {
-            std::size_t pos = 0;
-            int result = std::stoi(std::string(str), &pos);
-            if (pos != str.size()) {
-                return std::nullopt;
-            }
-            return result;
-        }
-        catch (...) {
-            return std::nullopt;
-        }
-    }
-};
-
-template <>
-struct ConfigTraits<std::int64_t> {
-    static auto Serialize(std::int64_t value) -> Value { return value; }
-
-    static auto Deserialize(const Value& value) -> std::optional<std::int64_t>
-    {
-        if (!value.Fits<std::int64_t>()) {
-            return std::nullopt;
-        }
-        return value.Get<std::int64_t>();
-    }
-
-    static auto ToString(std::int64_t value) -> std::string { return std::to_string(value); }
-
-    static auto FromString(std::string_view str) -> std::optional<std::int64_t>
-    {
-        try {
-            std::size_t pos = 0;
-            std::int64_t result = std::stoll(std::string(str), &pos);
-            if (pos != str.size()) {
-                return std::nullopt;
-            }
-            return result;
-        }
-        catch (...) {
-            return std::nullopt;
-        }
-    }
-};
-
-template <>
-struct ConfigTraits<double> {
-    static auto Serialize(double value) -> Value { return value; }
-
-    static auto Deserialize(const Value& value) -> std::optional<double>
-    {
-        if (!value.Fits<double>()) {
-            return std::nullopt;
-        }
-        return value.Get<double>();
-    }
-
-    static auto ToString(double value) -> std::string { return std::to_string(value); }
-
-    static auto FromString(std::string_view str) -> std::optional<double>
-    {
-        try {
-            std::size_t pos = 0;
-            double result = std::stod(std::string(str), &pos);
-            if (pos != str.size()) {
-                return std::nullopt;
-            }
-            return result;
-        }
-        catch (...) {
-            return std::nullopt;
-        }
-    }
-};
-
-template <>
-struct ConfigTraits<float> {
-    static auto Serialize(float value) -> Value { return value; }
-
-    static auto Deserialize(const Value& value) -> std::optional<float>
-    {
-        // A double outside the float range would otherwise arrive as infinity.
-        if (!value.Fits<float>()) {
-            return std::nullopt;
-        }
-        return value.Get<float>();
-    }
-
-    static auto ToString(float value) -> std::string { return std::to_string(value); }
-
-    static auto FromString(std::string_view str) -> std::optional<float>
-    {
-        try {
-            std::size_t pos = 0;
-            float result = std::stof(std::string(str), &pos);
-            if (pos != str.size()) {
-                return std::nullopt;
-            }
-            return result;
-        }
-        catch (...) {
-            return std::nullopt;
-        }
-    }
-};
+/// Every floating-point type the standard library can convert exactly.
+template <detail::ConfigurableFloating T>
+struct ConfigTraits<T> : detail::FloatingTraits<T> { };
 
 template <>
 struct ConfigTraits<std::string> {
-    static auto Serialize(const std::string& value) -> Value { return value; }
+    static auto FromString(std::string_view text) -> std::optional<std::string> { return std::string(text); }
+    static auto ToString(const std::string& value) -> std::string { return value; }
+};
 
-    static auto Deserialize(const Value& value) -> std::optional<std::string>
+/// Paths are stored as text in the native narrow encoding.
+template <>
+struct ConfigTraits<std::filesystem::path> {
+    static auto FromString(std::string_view text) -> std::optional<std::filesystem::path> { return std::filesystem::path(text); }
+    static auto ToString(const std::filesystem::path& value) -> std::string { return value.string(); }
+};
+
+/// @brief One enumerator and its name in a .conf file, for EnumTraits.
+template <typename E>
+    requires std::is_enum_v<E>
+struct EnumName {
+    E value;
+    std::string_view name;
+};
+
+/// @brief ConfigTraits for an enum, mapping enumerators to names through a
+/// constexpr table. Names are matched exactly; anything else fails to parse.
+///
+/// @code
+/// enum class Level { kDebug, kInfo };
+/// inline constexpr std::array<cppfig::EnumName<Level>, 2> kLevelNames { {
+///     { Level::kDebug, "debug" },
+///     { Level::kInfo, "info" },
+/// } };
+/// template <>
+/// struct cppfig::ConfigTraits<Level> : cppfig::EnumTraits<kLevelNames> { };
+/// @endcode
+///
+/// An enumerator missing from the table is written as its underlying number,
+/// which the table then fails to parse back; list every value a setting can hold.
+template <const auto& Names>
+struct EnumTraits {
+    using value_type = std::remove_cvref_t<decltype(Names[0].value)>;
+
+    static_assert(std::size(Names) > 0, "EnumTraits needs at least one name");
+    static_assert(
+        [] {
+            for (std::size_t i = 0; i < std::size(Names); ++i) {
+                for (std::size_t j = i + 1; j < std::size(Names); ++j) {
+                    if (Names[i].name == Names[j].name || Names[i].value == Names[j].value) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }(),
+        "EnumTraits names and values must each be unique");
+
+    static auto FromString(std::string_view text) -> std::optional<value_type>
     {
-        if (!value.Fits<std::string>()) {
-            return std::nullopt;
+        for (const auto& entry : Names) {
+            if (entry.name == text) {
+                return entry.value;
+            }
         }
-        return value.Get<std::string>();
+        return std::nullopt;
     }
 
-    static auto ToString(const std::string& value) -> std::string { return value; }
-
-    static auto FromString(std::string_view str) -> std::optional<std::string> { return std::string(str); }
+    static auto ToString(const value_type& value) -> std::string
+    {
+        for (const auto& entry : Names) {
+            if (entry.value == value) {
+                return std::string(entry.name);
+            }
+        }
+        return ConfigTraits<std::underlying_type_t<value_type>>::ToString(static_cast<std::underlying_type_t<value_type>>(value));
+    }
 };
 
 }  // namespace cppfig

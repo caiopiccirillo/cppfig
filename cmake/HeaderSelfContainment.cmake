@@ -13,7 +13,7 @@
 # Usage:
 #   add_header_self_containment_target(cppfig_header_check
 #       LINK_LIBRARIES cppfig::cppfig
-#       HEADERS cppfig/status.h cppfig/value.h)
+#       HEADERS cppfig/status.h cppfig/configuration.h)
 
 function(add_header_self_containment_target target)
     cmake_parse_arguments(ARG "" "" "HEADERS;LINK_LIBRARIES" ${ARGN})

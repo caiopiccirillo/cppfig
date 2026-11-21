@@ -5,39 +5,32 @@
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B20)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A modern, header-only C++20 configuration library with **compile-time type safety**, **zero macros**, **IDE autocompletion**, and **pluggable serialization**.
+A header-only C++20 configuration library. You declare settings as types and list them in a registry; cppfig checks the registry at compile time, loads a flat `.conf` file and environment overrides once, and gives you a frozen configuration whose reads are a single load from typed storage.
+
+```cpp
+const int& port = config.Get<settings::ServerPort>();  // no lookup, no parsing, no allocation
+```
 
 ## Features
 
-- **Compile-time type safety** - All type errors caught at compile time
-- **Zero macros** - Pure C++20 templates and concepts
-- **IDE-friendly** - Full autocompletion: `config.Get<settings::ServerPort>()`
-- **Hierarchical configuration** - Dot-notation paths create nested structures
-- **Environment variable overrides** - Production-friendly configuration
-- **Validation** - Built-in validators with custom extensions
-- **Schema migration** - Automatically adds new settings to existing files
-- **Mockable** - GMock-compatible interfaces for unit testing
-- **Pluggable serialization** - Flat `.conf` default, JSON opt-in, extensible to YAML/TOML
-- **Thread-safe** - Opt-in `MultiThreadedPolicy` with reader-writer locking (zero overhead by default)
+- **Typed reads at the cost of a field access.** `Get<S>()` returns `const S::value_type&` from a slot chosen at compile time. Reading an integer takes about 0.2 ns, with zero allocations ([results](docs/BENCHMARK_RESULTS.md)).
+- **Compile-time checks.** Duplicate or malformed paths, duplicate or malformed environment variable names, unregistered settings, missing conversions, mismatched validators and constant defaults that fail their validator are all compile errors.
+- **IDE-friendly.** Settings are plain structs; clangd completes `Get<settings::...>()` and shows the real value type on hover.
+- **Validated, all-or-nothing initialization.** Defaults, file values and environment overrides are converted and validated once. Loading either yields a complete valid configuration or every error found, each with `file:line:column`.
+- **Lock-free concurrent reads.** The configuration is immutable once loaded, so any number of threads can read it without synchronization.
+- **Comment-preserving saves and migrations.** Saving writes your file back untouched, appending only settings it is missing. Saves are atomic and durable, and keep the file's permissions and symlinks.
+- **Lean memory.** The configuration holds the values and nothing else, with no padding between them; the source text lives in a separate, exactly sized document you can discard.
+- **No exceptions required.** Errors are returned as `Status`/`StatusOr`; the library builds with `-fno-exceptions`.
+- **Testable.** `ConfigurationBuilder` makes a real configuration from values set in code, and `Environment::From` replaces the process environment, so tests need neither files nor `setenv`.
 
 ## Quick Start
 
-### 1. Define Settings
+### 1. Declare settings and a registry
 
 ```cpp
 #include <cppfig/cppfig.h>
 
 namespace settings {
-
-struct ServerPort {
-    static constexpr std::string_view path = "server.port";
-    static constexpr std::string_view env_override = "SERVER_PORT";  // Optional
-    using value_type = int;
-    static auto default_value() -> int { return 8080; }
-    static auto validator() -> cppfig::Validator<int> {  // Optional
-        return cppfig::Range(1, 65535);
-    }
-};
 
 struct ServerHost {
     static constexpr std::string_view path = "server.host";
@@ -45,393 +38,144 @@ struct ServerHost {
     static auto default_value() -> std::string { return "localhost"; }
 };
 
-struct LogLevel {
-    static constexpr std::string_view path = "logging.level";
-    using value_type = std::string;
-    static auto default_value() -> std::string { return "info"; }
-    static auto validator() -> cppfig::Validator<std::string> {
-        return cppfig::OneOf<std::string>({"debug", "info", "warn", "error"});
-    }
+struct ServerPort {
+    static constexpr std::string_view path = "server.port";
+    static constexpr std::string_view env_override = "SERVER_PORT";  // optional
+    using value_type = std::uint16_t;
+    static constexpr auto default_value() -> std::uint16_t { return 8080; }
+    static constexpr auto validator() { return cppfig::Min<std::uint16_t>(1); }  // optional
 };
 
 }  // namespace settings
+
+struct AppRegistry : cppfig::Registry<settings::ServerHost, settings::ServerPort> { };
 ```
 
-### 2. Create Schema and Use
+### 2. Load, save if needed, and read
 
 ```cpp
-// Group settings into a schema
-using MySchema = cppfig::ConfigSchema<
-    settings::ServerPort,
-    settings::ServerHost,
-    settings::LogLevel
->;
-
-int main() {
-    // Create configuration manager (.conf format by default)
-    cppfig::Configuration<MySchema> config("config.conf");
-
-    // Load (creates file with defaults if missing)
-    auto status = config.Load();
-    if (!status.ok()) {
-        std::cerr << "Error: " << status.message() << std::endl;
-        return 1;
-    }
-
-    // Type-safe access with IDE autocompletion
-    int port = config.Get<settings::ServerPort>();
-    std::string host = config.Get<settings::ServerHost>();
-
-    // Modify with validation
-    status = config.Set<settings::ServerPort>(9000);
-    if (!status.ok()) {
-        std::cerr << "Validation error: " << status.message() << std::endl;
-    }
-
-    // Save changes
-    config.Save();
-
-    return 0;
+auto loaded = cppfig::LoadFile<AppRegistry>("app.conf");
+if (!loaded) {
+    std::cerr << loaded.error().message() << '\n';  // e.g. app.conf:3:15: cannot parse 'abc' as a value of 'server.port'
+    return 1;
 }
+
+// Creates the file, or appends settings missing from it, only when needed.
+if (loaded->document.NeedsSave()) {
+    if (auto status = cppfig::SaveFile("app.conf", loaded->document); !status.ok()) {
+        std::cerr << status.message() << '\n';
+    }
+}
+
+const auto& config = loaded->config;
+std::cout << config.Get<settings::ServerHost>() << ':' << config.Get<settings::ServerPort>() << '\n';
 ```
 
-### Generated .conf
+### 3. The generated `app.conf`
 
 ```conf
-server.port = 8080
 server.host = localhost
-logging.level = info
+server.port = 8080
 ```
 
-<details>
-<summary>Using JSON instead?</summary>
+Edit it freely: comments, ordering and spacing are preserved. Values come from, in order of precedence, the environment override, the file, and the default.
 
-```cpp
-#include <cppfig/cppfig.h>
-#include <cppfig/json.h>  // opt-in
+## Documentation
 
-cppfig::Configuration<MySchema, cppfig::JsonSerializer> config("config.json");
-```
-
-Enable with `-DCPPFIG_ENABLE_JSON=ON` or vcpkg feature `"json"`.
-See [Serializers](docs/serializers.md) for details.
-</details>
-```
+| Guide | Contents |
+| --- | --- |
+| [Getting Started](docs/getting-started.md) | Installation, first configuration, lifecycle |
+| [Defining Settings](docs/defining-settings.md) | Setting members, registries, compile-time checks, precedence |
+| [The `.conf` Format](docs/conf-format.md) | Grammar, quoting, comments, unknown keys, error messages |
+| [Custom Types](docs/custom-types.md) | Built-in conversions, durations, enums, your own types |
+| [Validators](docs/validators.md) | Built-in validators, composition, custom validators |
+| [Testing](docs/testing.md) | `ConfigurationBuilder`, replaceable environment, loading from text |
+| [Benchmark Results](docs/BENCHMARK_RESULTS.md) | Read, load, save, memory and compile-time measurements |
 
 ## Installation
 
 ### Requirements
 
-- C++20 compiler (GCC 11+, Clang 14+)
-- No external dependencies for the core library
+- A C++20 compiler and standard library with `constexpr std::string`: GCC 12 or newer, or Clang with libstdc++ 12 or newer. Validators are `constexpr` so that constant defaults are checked at compile time, and their results carry a `std::string`.
+- Linux x86-64 is the supported target. CI builds with GCC 15 and Clang 22; GCC 12 has also been checked.
+- No dependencies beyond the standard library
 
-### Optional Dependencies
-
-| Dependency | Feature | CMake Option |
-|------------|---------|-------------|
-| [nlohmann/json](https://github.com/nlohmann/json) | JSON serializer | `CPPFIG_ENABLE_JSON` |
-
-### Header-Only Integration
-
-```bash
-cp -r cppfig/src/cppfig your_project/include/
-```
-
-### CMake Integration
+### CMake
 
 ```cmake
-add_subdirectory(cppfig)
-target_link_libraries(your_target PRIVATE cppfig)
-
-# Optional: enable JSON support
-set(CPPFIG_ENABLE_JSON ON)
+add_subdirectory(cppfig)          # or FetchContent
+target_link_libraries(your_target PRIVATE cppfig::cppfig)
 ```
 
-<!--
-### vcpkg
+or, after `cmake --install`:
 
-Core (`.conf` only, no extra dependencies):
-
-```bash
-# No additional packages needed — cppfig is fully self-contained
+```cmake
+find_package(cppfig CONFIG REQUIRED)
+target_link_libraries(your_target PRIVATE cppfig::cppfig)
 ```
 
-With JSON support:
+### Header-only
 
-```json
-{
-    "dependencies": [
-        {
-            "name": "cppfig",
-            "features": ["json"]
-        }
-    ]
-}
-```
--->
-
-## Documentation
-
-| Guide | Description |
-|-------|-------------|
-| [Getting Started](docs/getting-started.md) | Installation and first steps |
-| [Defining Settings](docs/defining-settings.md) | Complete setting options |
-| [Custom Types](docs/custom-types.md) | Add support for your own types |
-| [Validators](docs/validators.md) | Built-in and custom validation |
-| [Testing](docs/testing.md) | Mock configuration in unit tests |
-| [Serializers](docs/serializers.md) | Custom serialization formats |
-| [Thread Safety](docs/getting-started.md#thread-safety) | Concurrent access with `MultiThreadedPolicy` |
-
-## Key Concepts
-
-### Thread Safety
-
-By default, `Configuration` uses `SingleThreadedPolicy` (zero overhead). For concurrent access, opt in to reader-writer locking:
-
-```cpp
-// Thread-safe configuration:
-cppfig::Configuration<MySchema, cppfig::ConfSerializer, cppfig::MultiThreadedPolicy>
-    config("config.conf");
-```
-
-| Policy | Overhead | Use case |
-|--------|----------|----------|
-| `SingleThreadedPolicy` (default) | None | Single-threaded or externally synchronized |
-| `MultiThreadedPolicy` | `std::shared_mutex` | Concurrent reads and writes from multiple threads |
-
-- `Get` acquires a **shared** (reader) lock — multiple concurrent readers allowed.
-- `Set` / `Load` acquire an **exclusive** (writer) lock.
-- `Save` / `Diff` / `ValidateAll` acquire a **shared** lock (read-only).
-- Validation in `Set` runs **before** the exclusive lock, so invalid values never block readers.
-
-### Setting Structure
-
-Every setting is a struct with:
-
-```cpp
-struct MySetting {
-    // Required
-    static constexpr std::string_view path = "path.to.setting";
-    using value_type = int;
-    static auto default_value() -> int { return 42; }
-
-    // Optional
-    static constexpr std::string_view env_override = "MY_SETTING";
-    static auto validator() -> cppfig::Validator<int> { return cppfig::Min(0); }
-};
-```
-
-### Value Resolution Order
-
-1. **Environment variable** (if `env_override` defined and env var set)
-2. **File value** (if present in configuration file)
-3. **Default value** (from `default_value()`)
-
-### Built-in Validators
-
-```cpp
-// Numeric
-cppfig::Min(0)
-cppfig::Max(100)
-cppfig::Range(1, 65535)
-cppfig::Positive<int>()
-cppfig::NonNegative<int>()
-
-// String
-cppfig::NotEmpty()
-cppfig::MinLength(8)
-cppfig::MaxLength(255)
-
-// Generic
-cppfig::OneOf<std::string>({"a", "b", "c"})
-cppfig::Predicate<int>([](int x) { return x % 2 == 0; }, "must be even")
-
-// Combine
-cppfig::Min(1).And(cppfig::Max(100))
-```
-
-### Custom Types
-
-```cpp
-struct Point {
-    int x, y;
-};
-
-// Register with cppfig — works with any serializer
-template <>
-struct cppfig::ConfigTraits<Point> {
-    static auto Serialize(const Point& p) -> cppfig::Value {
-        auto obj = cppfig::Value::Object();
-        obj["x"] = cppfig::Value(p.x);
-        obj["y"] = cppfig::Value(p.y);
-        return obj;
-    }
-    static auto Deserialize(const cppfig::Value& v) -> std::optional<Point> {
-        auto x = v["x"].TryGet<int>();
-        auto y = v["y"].TryGet<int>();
-        if (!x || !y) {
-            return std::nullopt;
-        }
-        return Point{*x, *y};
-    }
-    static auto ToString(const Point& p) -> std::string {
-        return "(" + std::to_string(p.x) + "," + std::to_string(p.y) + ")";
-    }
-    static auto FromString(std::string_view) -> std::optional<Point> {
-        return std::nullopt;
-    }
-};
-
-// Use in settings
-struct Origin {
-    static constexpr std::string_view path = "origin";
-    using value_type = Point;
-    static auto default_value() -> Point { return {0, 0}; }
-};
-```
-
-If you have the JSON feature enabled and your type already has nlohmann ADL functions, you can use the shortcut:
-
-```cpp
-#include <cppfig/json.h>
-
-template <>
-struct cppfig::ConfigTraits<Point> : cppfig::ConfigTraitsFromJsonAdl<Point> {};
-```
-
-### Testing
-
-```cpp
-#include <cppfig/testing/mock.h>
-
-TEST(MyTest, UsesConfiguration) {
-    cppfig::testing::MockConfiguration<MySchema> config;
-    config.SetValue<settings::ServerPort>(9000);
-
-    MyService service(config.Get<settings::ServerHost>(),
-                      config.Get<settings::ServerPort>());
-
-    EXPECT_EQ(service.GetPort(), 9000);
-}
-```
-
-## API Reference
-
-### Configuration Class
-
-```cpp
-cppfig::Configuration<Schema,
-                       Serializer = ConfSerializer,
-                       ThreadPolicy = SingleThreadedPolicy>
-
-// Methods
-auto Load() -> cppfig::Status;
-auto Save() const -> cppfig::Status;
-auto Get<Setting>() const -> typename Setting::value_type;
-auto Set<Setting>(value) -> cppfig::Status;
-auto Diff() const -> ConfigDiff;
-auto ValidateAll() const -> cppfig::Status;
-auto GetFilePath() const -> std::string_view;
-
-// Thread policies
-cppfig::SingleThreadedPolicy   // Zero-overhead (default)
-cppfig::MultiThreadedPolicy    // std::shared_mutex reader-writer locking
-
-// Serializers
-cppfig::ConfSerializer         // Built-in flat .conf (default)
-cppfig::JsonSerializer         // Requires CPPFIG_ENABLE_JSON
-```
-
-### ConfigSchema
-
-```cpp
-cppfig::ConfigSchema<Settings...>
-
-// Compile-time checks
-static constexpr bool has_setting<S>;
-static constexpr std::size_t size;
-
-// Runtime utilities
-static auto GetPaths() -> std::array<std::string_view, size>;
-static void ForEachSetting(auto&& fn);
-```
+Copy `src/cppfig` into your include path and `#include <cppfig/cppfig.h>`.
 
 ## Development
 
-### Building
+```bash
+cmake --workflow --preset=debug-gcc         # or debug-clang, release-gcc, release-clang
+ctest --test-dir build/debug/gcc --output-on-failure
+ctest --test-dir build/debug/gcc -LE compile-scale   # skip the 1024-setting compile-time test
+
+cmake --workflow --preset=sanitize-clang    # ASan + UBSan, runs the tests
+cmake --workflow --preset=tsan-clang        # ThreadSanitizer, runs the tests
+cmake --workflow --preset=coverage          # then: ninja -C build/coverage coverage
+cmake --workflow --preset=fuzz-clang        # libFuzzer + ASan/UBSan, 30 s per fuzzer
+
+./build/release/gcc/benchmark/cppfig_benchmark
+```
+
+### Fuzzing
+
+`fuzz/` holds three libFuzzer targets: the `.conf` parser and writer, the value conversions, and loading end to end. Each checks properties rather than only looking for crashes, for example that every value the parser reads is written back and read again unchanged. Every test build also replays the checked-in corpus in `fuzz/corpus/` with any compiler, so inputs that once failed stay fixed.
+
+For a longer run than the preset's:
 
 ```bash
-# Debug build (Clang)
-cmake --workflow --preset=debug-clang
-
-# Debug build (GCC)
-cmake --workflow --preset=debug-gcc
-
-# Release build (Clang)
-cmake --workflow --preset=release-clang
-
-# Run tests
-ctest --test-dir build/debug/clang --output-on-failure
-
-# Run example
-./build/debug/clang/examples/cppfig_example
-
-# Run benchmarks
-./build/release/clang/benchmark/cppfig_benchmark
+./build/fuzz/clang/fuzz/load_fuzz -max_total_time=600 -dict=fuzz/conf.dict \
+    build/fuzz/clang/fuzz/load_fuzz_corpus fuzz/corpus/load_fuzz
 ```
 
-### Code Coverage
+New inputs collect in the build tree. When a fuzzer finds a failure, fix it and copy the crashing input into `fuzz/corpus/<target>/`.
 
-```bash
-# Full workflow: configure, build, test, and generate report
-cmake --workflow --preset=coverage
-
-# Generate HTML report (after running tests)
-ninja -C build/coverage coverage
-
-# Generate text summary
-ninja -C build/coverage coverage-text
-
-# Generate XML report (Cobertura format for CI)
-ninja -C build/coverage coverage-xml
-```
-
-Coverage reports are generated in `build/coverage/coverage/`:
-- `index.html` - Detailed HTML report with line-by-line coverage
-- `coverage.xml` - Cobertura XML for CI integration
-
-### Project Structure
+### Project structure
 
 ```
-cppfig/
-├── src/cppfig/           # Library headers
-│   ├── cppfig.h          # Main include
-│   ├── configuration.h   # Configuration class
-│   ├── schema.h          # ConfigSchema template
-│   ├── setting.h         # Setting concepts
-│   ├── traits.h          # Type traits (Serialize/Deserialize)
-│   ├── value.h           # Core Value type
-│   ├── validator.h       # Validators
-│   ├── serializer.h      # Serializer concept
-│   ├── conf.h            # Built-in .conf serializer
-│   ├── json.h            # Optional JSON serializer
-│   ├── interface.h       # Mockable interfaces
-│   ├── diff.h            # Configuration diff
-│   ├── logging.h         # Logging utilities
-│   ├── thread_policy.h   # Thread safety policies
-│   └── testing/mock.h    # Testing helpers
-├── examples/             # Example code
-├── test/                 # Unit & integration tests
-├── benchmark/            # Performance benchmarks
-└── docs/                 # Documentation
+src/cppfig/
+├── cppfig.h          # Umbrella header
+├── schema.h          # Registry: membership, indexing, compile-time checks
+├── setting.h         # Setting concepts
+├── storage.h         # Typed, alignment-ordered value storage
+├── configuration.h   # Configuration, FromText, FromDefaults, ConfigurationBuilder
+├── document.h        # ConfDocument: source text, migrations, unknown keys
+├── environment.h     # Environment: the process environment or a fixed set
+├── file.h            # LoadFile, SaveFile (atomic), ReadConfFile
+├── conf.h            # .conf parser and value escaping
+├── traits.h          # ConfigTraits conversions, EnumTraits
+├── chrono.h          # Opt-in std::chrono::duration conversions
+├── validator.h       # Validators
+└── status.h          # Status and StatusOr
+test/                 # Unit, compile-fail and compile-scale tests
+fuzz/                 # libFuzzer targets and their corpus
+benchmark/            # Google Benchmark suites
+examples/             # Example program
+docs/                 # Guides and measurements
 ```
 
 ## Contributing
 
-1. Follow existing code style (`clang-format`)
+1. Follow the existing code style (`clang-format`)
 2. Run static analysis (`clang-tidy`)
 3. Add tests for new features
-4. Update documentation
+4. Update the documentation
 
 ## License
 

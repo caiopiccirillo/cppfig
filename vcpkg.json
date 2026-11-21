@@ -8,31 +8,9 @@
             "version>=": "1.16.0"
         },
         {
-            "name": "nlohmann-json",
-            "version>=": "3.11.3#1"
-        },
-        {
             "name": "benchmark",
             "version>=": "1.8.0"
         }
     ],
-    "features": {
-        "json": {
-            "description": "JSON serializer support (requires nlohmann-json)",
-            "dependencies": [
-                {
-                    "name": "nlohmann-json"
-                }
-            ]
-        },
-        "toml": {
-            "description": "TOML serializer support (requires toml++) — not yet implemented",
-            "dependencies": [
-                {
-                    "name": "tomlplusplus"
-                }
-            ]
-        }
-    },
     "builtin-baseline": "ce613c41372b23b1f51333815feb3edd87ef8a8b"
 }

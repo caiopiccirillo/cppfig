@@ -118,12 +118,8 @@ jobs:
             ./third/vcpkg/bootstrap-vcpkg.sh
             cmake --workflow --preset=${{ matrix.preset }}
             mkdir -p build/test-results
-            ./build/${{ matrix.build_dir }}/test/unit_test \
-              --gtest_output=xml:build/test-results/unit_test.xml
-            ./build/${{ matrix.build_dir }}/test/integration_test \
-              --gtest_output=xml:build/test-results/integration_test.xml
-            ./build/${{ matrix.build_dir }}/test/thread_safety_test \
-              --gtest_output=xml:build/test-results/thread_safety_test.xml
+            ctest --test-dir build/${{ matrix.build_dir }} --output-on-failure \
+              --output-junit "$PWD/build/test-results/ctest.xml"
 
       - name: Upload test results
         if: success() || failure()
@@ -190,6 +186,56 @@ jobs:
             ./third/vcpkg/bootstrap-vcpkg.sh
             cmake --workflow --preset=${{ matrix.preset }}
 
+  fuzz:
+    name: Fuzz (libFuzzer, ASan+UBSan)
+    runs-on: ubuntu-latest
+    needs: devcontainer
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: .vcpkg-binary-cache
+          key: vcpkg-${{ runner.os }}-fuzz-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-fuzz-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-${{ runner.os }}-fuzz-
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Each fuzzer runs for CPPFIG_FUZZ_SECONDS (30 by default) on top of the
+      # checked-in corpus. A failure leaves the crashing input in the build tree.
+      - name: Build and run the fuzzers
+        uses: devcontainers/ci@v0.3
+        with:
+          imageName: ${{ env.DEVCONTAINER_IMAGE }}
+          cacheFrom: ${{ env.DEVCONTAINER_IMAGE }}:${{ env.DEVCONTAINER_TAG }}
+          push: never
+          runCmd: |
+            set -euo pipefail
+            mkdir -p .vcpkg-binary-cache
+            export VCPKG_DEFAULT_BINARY_CACHE="$PWD/.vcpkg-binary-cache"
+            ./third/vcpkg/bootstrap-vcpkg.sh
+            cmake --workflow --preset=fuzz-clang
+
+      - name: Upload crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: build/fuzz/clang/fuzz/*-crash-*
+          if-no-files-found: ignore
+
   static-analysis:
     name: Static analysis
     runs-on: ubuntu-latest
@@ -244,7 +290,9 @@ jobs:
             # Reported, not enforced. The tree carries pre-existing findings
             # (readability-identifier-naming, misc-no-recursion and friends);
             # add -warnings-as-errors once those are triaged.
-            run-clang-tidy -p build/debug/clang | tee clang-tidy.log
+            # benchmark_scale.cpp instantiates a 1024-setting registry, which
+            # takes clang-tidy over ten minutes; the other sources take seconds.
+            run-clang-tidy -p build/debug/clang -source-filter '^(?!.*benchmark_scale\.cpp$).*' | tee clang-tidy.log
             grep -c ' warning: ' clang-tidy.log || true
 
   consumer:
@@ -291,7 +339,8 @@ jobs:
             cmake --build build/release/clang
             cmake --install build/release/clang
             test -f build/install/lib/cmake/cppfig/cppfig-config.cmake
-            test -f build/install/include/cppfig/thread_policy.h
+            test -f build/install/include/cppfig/document.h
+            test -f build/install/include/cppfig/chrono.h
 
   coverage:
     name: Coverage
@@ -342,11 +391,16 @@ jobs:
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             llvm-cov report \
-              build/coverage/test/unit_test \
-              --object=build/coverage/test/integration_test \
-              --object=build/coverage/test/thread_safety_test \
+              build/coverage/test/configuration_test \
+              --object=build/coverage/test/registry_test \
+              --object=build/coverage/test/traits_test \
+              --object=build/coverage/test/concurrency_test \
+              --object=build/coverage/test/allocation_test \
+              --object=build/coverage/fuzz/conf_parser_fuzz_replay \
+              --object=build/coverage/fuzz/traits_roundtrip_fuzz_replay \
+              --object=build/coverage/fuzz/load_fuzz_replay \
               -instr-profile=build/coverage/coverage.profdata \
-              "-ignore-filename-regex=(third|test|benchmark|build|examples|vcpkg_installed)/.*" \
+              "-ignore-filename-regex=(third|test|fuzz|benchmark|build|examples|vcpkg_installed)/.*" \
               2>/dev/null >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
 
