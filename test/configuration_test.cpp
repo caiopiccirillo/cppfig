@@ -280,10 +280,12 @@ namespace {
     TEST(ConfigurationIOTest, RejectsInvalidEnvironmentAndFileValues)
     {
         {
-            const std::array<EnvironmentVariable, 1> variables { { { "CPPFIG_TEST_SERVER_PORT", "not-a-number" } } };
+            const std::array<EnvironmentVariable, 1> variables { { { "CPPFIG_TEST_SERVER_PORT", "secret-token" } } };
             auto loaded = TestConfiguration::FromText(CompleteDocument(), "app.conf", { .environment = Environment::From(variables) });
             ASSERT_FALSE(loaded);
-            EXPECT_NE(loaded.error().message().find("environment variable CPPFIG_TEST_SERVER_PORT: "), std::string_view::npos);
+            // Environment variables often hold secrets, so the value is never quoted.
+            EXPECT_EQ(loaded.error().message(),
+                      "environment variable CPPFIG_TEST_SERVER_PORT: cannot parse the value for 'server.port'");
         }
         {
             const std::array<EnvironmentVariable, 1> variables { { { "CPPFIG_TEST_SERVER_PORT", "0" } } };

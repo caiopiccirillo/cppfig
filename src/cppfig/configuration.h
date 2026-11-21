@@ -159,13 +159,24 @@ namespace detail {
         return OkStatus();
     }
 
+    /// Where a value being assigned comes from. Environment variables often
+    /// carry secrets, so their text is never quoted in an error.
+    enum class TextOrigin : std::uint8_t {
+        kFile,
+        kEnvironment,
+    };
+
     /// Parses and validates text, then stores it in slot, replacing any value
     /// already there. On failure slot is left unchanged.
     template <typename T>
-    [[nodiscard]] auto AssignSettingText(const SettingInfo<T>& info, std::string_view text, std::optional<T>& slot) -> Status
+    [[nodiscard]] auto AssignSettingText(const SettingInfo<T>& info, std::string_view text, TextOrigin origin, std::optional<T>& slot)
+        -> Status
     {
         auto parsed = ConfigTraits<T>::FromString(text);
         if (!parsed) {
+            if (origin == TextOrigin::kEnvironment) {
+                return InvalidArgumentError("cannot parse the value for '" + std::string(info.path) + "'");
+            }
             return InvalidArgumentError("cannot parse '" + std::string(text) + "' as a value of '" + std::string(info.path) + "'");
         }
         auto status = CheckSettingValue(info, *parsed, "invalid value");
@@ -209,14 +220,14 @@ namespace detail {
     template <typename S>
     using OptionalSlot = std::optional<typename S::value_type>;
 
-    using AssignSlotFunction = auto (*)(std::string_view text, void* slot) -> Status;
+    using AssignSlotFunction = auto (*)(std::string_view text, TextOrigin origin, void* slot) -> Status;
     using CompleteSlotFunction = auto (*)(void* slot, std::string* migrations) -> Status;
     using CheckSlotFunction = auto (*)(void* slot) -> Status;
 
     template <typename S>
-    [[nodiscard]] auto AssignSlot(std::string_view text, void* slot) -> Status
+    [[nodiscard]] auto AssignSlot(std::string_view text, TextOrigin origin, void* slot) -> Status
     {
-        return AssignSettingText(setting_info<S>, text, *static_cast<OptionalSlot<S>*>(slot));
+        return AssignSettingText(setting_info<S>, text, origin, *static_cast<OptionalSlot<S>*>(slot));
     }
 
     /// Builds the default only here, so a setting whose value comes from the
@@ -418,7 +429,7 @@ private:
             }
             state.file_lines[index] = detail::CompactLine(entry.line);
 
-            if (auto status = slot_table::assign[index](entry.text, state.slots[index]); !status.ok()) {
+            if (auto status = slot_table::assign[index](entry.text, detail::TextOrigin::kFile, state.slots[index]); !status.ok()) {
                 state.errors.AddAt(state.source, entry.line, entry.value_column, status.message());
             }
         };
@@ -440,7 +451,7 @@ private:
                     return;
                 }
                 applied.set(index);
-                if (auto status = slot_table::assign[index](value, state.slots[index]); !status.ok()) {
+                if (auto status = slot_table::assign[index](value, detail::TextOrigin::kEnvironment, state.slots[index]); !status.ok()) {
                     state.errors.Add("environment variable ", name, ": ", status.message());
                 }
             });
