@@ -2,6 +2,7 @@
 
 #include <array>
 #include <bitset>
+#include <limits>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -59,107 +60,73 @@ namespace detail {
     template <typename T>
     struct SettingInfo {
         std::string_view path;
-        std::string_view env_override;
         ValidatorFunction<T> validate;
+        /// False when the default is a constant the registry already checked
+        /// at compile time, so checking it again at run time cannot fail.
+        bool check_default;
     };
 
     template <typename S>
-    inline constexpr SettingInfo<typename S::value_type> setting_info { S::path, GetEnvOverride<S>(), SettingValidatorOf<S>() };
+    inline constexpr SettingInfo<typename S::value_type> setting_info {
+        S::path, SettingValidatorOf<S>(), SettingValidatorOf<S>() != nullptr && !ConstantDefaultCheck<S>
+    };
 
     // Everything below is instantiated once per value type rather than once
     // per setting, which keeps large-registry compile time and code size down.
 
+    /// Runs the setting's validator. what names the value in the error, as in
+    /// "invalid value" or "invalid default".
     template <typename T>
-    [[nodiscard]] auto CheckSettingValue(const SettingInfo<T>& info, const T& value, std::string_view source) -> Status
+    [[nodiscard]] auto CheckSettingValue(const SettingInfo<T>& info, const T& value, std::string_view what) -> Status
     {
         if (info.validate == nullptr) {
             return OkStatus();
         }
         auto result = info.validate(value);
         if (!result) {
-            return InvalidArgumentError(std::string(info.path) + " " + std::string(source) + " is invalid: "
-                                        + result.error_message);
+            return InvalidArgumentError(std::string(what) + " for '" + std::string(info.path) + "': " + result.error_message);
         }
         return OkStatus();
     }
 
+    /// Parses and validates text, then stores it in slot, replacing any value
+    /// already there. On failure slot is left unchanged.
     template <typename T>
-    [[nodiscard]] auto ParseSettingText(const SettingInfo<T>& info, std::string_view text, std::optional<T>& slot) -> Status
+    [[nodiscard]] auto AssignSettingText(const SettingInfo<T>& info, std::string_view text, std::optional<T>& slot) -> Status
     {
         auto parsed = ConfigTraits<T>::FromString(text);
         if (!parsed) {
-            return InvalidArgumentError("Cannot parse value '" + std::string(text) + "' for '" + std::string(info.path) + "'");
+            return InvalidArgumentError("cannot parse '" + std::string(text) + "' as a value of '" + std::string(info.path) + "'");
+        }
+        auto status = CheckSettingValue(info, *parsed, "invalid value");
+        if (!status.ok()) {
+            return status;
         }
         slot.emplace(std::move(*parsed));
         return OkStatus();
     }
 
-    /// Where a setting's file value was read from.
-    struct FileLocation {
-        std::size_t line = 0;
-        std::size_t column = 0;
-    };
-
-    /// State shared by every setting while resolving effective values.
-    struct ResolveContext {
-        std::string_view source;
-        std::string migrations;
-        bool record_migrations = false;
-    };
-
-    /// Parses and validates an environment override into effective_value.
+    /// Validates a setting's default, appends it to migrations when given, and
+    /// stores it in slot when slot holds no value yet.
     template <typename T>
-    [[nodiscard]] auto ApplyEnvironmentValue(const SettingInfo<T>& info, std::string_view text, std::optional<T>& effective_value)
-        -> Status
+    [[nodiscard]] auto CompleteWithDefault(const SettingInfo<T>& info, T default_value, std::optional<T>& slot,
+                                           std::string* migrations) -> Status
     {
-        auto value = ConfigTraits<T>::FromString(text);
-        if (!value) {
-            return InvalidArgumentError(std::string(info.path) + " environment override '" + std::string(info.env_override)
-                                        + "' cannot be parsed");
-        }
-        auto status = CheckSettingValue(info, *value, "environment override");
-        if (!status.ok()) {
-            return status;
-        }
-        effective_value.emplace(std::move(*value));
-        return OkStatus();
-    }
-
-    /// Completes the effective value with precedence environment > file >
-    /// default; an environment override is already in effective_value. A
-    /// missing file entry records the default (never an environment value) as
-    /// a migration.
-    template <typename T>
-    [[nodiscard]] auto ResolveSetting(const SettingInfo<T>& info, T default_value, std::optional<T>& file_value,
-                                      std::optional<T>& effective_value, const FileLocation& location, ResolveContext& context)
-        -> Status
-    {
-        auto status = CheckSettingValue(info, default_value, "default");
-        if (!status.ok()) {
-            return status;
-        }
-
-        if (file_value) {
-            status = CheckSettingValue(info, *file_value, "file value");
+        if (info.check_default) {
+            auto status = CheckSettingValue(info, default_value, "invalid default");
             if (!status.ok()) {
-                return LocatedError(context.source, location.line, location.column, status.message());
+                return status;
             }
         }
-        else if (context.record_migrations) {
+        if (migrations != nullptr) {
             // Appended in place: building the line from temporaries cost one
             // allocation per setting whenever it outgrew the small-string buffer.
-            context.migrations.append(info.path).append(" = ");
-            AppendConfValue(context.migrations, ConfigTraits<T>::ToString(default_value));
-            context.migrations.push_back('\n');
+            migrations->append(info.path).append(" = ");
+            AppendConfValue(*migrations, ConfigTraits<T>::ToString(default_value));
+            migrations->push_back('\n');
         }
-
-        if (!effective_value) {
-            if (file_value) {
-                effective_value.emplace(std::move(*file_value));
-            }
-            else {
-                effective_value.emplace(std::move(default_value));
-            }
+        if (!slot) {
+            slot.emplace(std::move(default_value));
         }
         return OkStatus();
     }
@@ -172,42 +139,33 @@ namespace detail {
     template <typename S>
     using OptionalSlot = std::optional<typename S::value_type>;
 
-    using ParseSlotFunction = auto (*)(std::string_view text, void* file_slot) -> Status;
-    using EnvironmentSlotFunction = auto (*)(std::string_view text, void* effective_slot) -> Status;
-    using ResolveSlotFunction = auto (*)(void* file_slot, void* effective_slot, const FileLocation& location,
-                                         ResolveContext& context) -> Status;
+    using AssignSlotFunction = auto (*)(std::string_view text, void* slot) -> Status;
+    using CompleteSlotFunction = auto (*)(void* slot, std::string* migrations) -> Status;
     using CheckSlotFunction = auto (*)(void* slot) -> Status;
 
     template <typename S>
-    [[nodiscard]] auto ParseSlot(std::string_view text, void* file_slot) -> Status
+    [[nodiscard]] auto AssignSlot(std::string_view text, void* slot) -> Status
     {
-        return ParseSettingText(setting_info<S>, text, *static_cast<OptionalSlot<S>*>(file_slot));
+        return AssignSettingText(setting_info<S>, text, *static_cast<OptionalSlot<S>*>(slot));
     }
 
+    /// Builds the default only here, so a setting whose value comes from the
+    /// file never runs its default factory.
     template <typename S>
-    [[nodiscard]] auto EnvironmentSlot(std::string_view text, void* effective_slot) -> Status
+    [[nodiscard]] auto CompleteSlot(void* slot, std::string* migrations) -> Status
     {
-        return ApplyEnvironmentValue(setting_info<S>, text, *static_cast<OptionalSlot<S>*>(effective_slot));
+        return CompleteWithDefault(setting_info<S>, S::default_value(), *static_cast<OptionalSlot<S>*>(slot), migrations);
     }
 
+    /// Validates a value supplied in code, or fills an empty slot with the default.
     template <typename S>
-    [[nodiscard]] auto ResolveSlot(void* file_slot, void* effective_slot, const FileLocation& location, ResolveContext& context)
-        -> Status
-    {
-        return ResolveSetting(setting_info<S>, S::default_value(), *static_cast<OptionalSlot<S>*>(file_slot),
-                              *static_cast<OptionalSlot<S>*>(effective_slot), location, context);
-    }
-
-    /// Fills an empty test slot from the setting's default and validates the result.
-    template <typename S>
-    [[nodiscard]] auto CheckTestSlot(void* slot) -> Status
+    [[nodiscard]] auto CheckSlot(void* slot) -> Status
     {
         auto& candidate = *static_cast<OptionalSlot<S>*>(slot);
-        const bool supplied = candidate.has_value();
-        if (!supplied) {
-            candidate.emplace(S::default_value());
+        if (candidate) {
+            return CheckSettingValue(setting_info<S>, *candidate, "invalid value");
         }
-        return CheckSettingValue(setting_info<S>, *candidate, supplied ? "test value" : "default");
+        return CompleteSlot<S>(slot, nullptr);
     }
 
     /// Per-registry tables of slot addresses and per-setting entry points.
@@ -233,34 +191,35 @@ namespace detail {
         }
 
         template <std::size_t... I>
-        static constexpr auto MakeParse(std::index_sequence<I...>) -> std::array<ParseSlotFunction, size>
+        static constexpr auto MakeAssign(std::index_sequence<I...>) -> std::array<AssignSlotFunction, size>
         {
-            return { &ParseSlot<Setting<I>>... };
+            return { &AssignSlot<Setting<I>>... };
         }
 
         template <std::size_t... I>
-        static constexpr auto MakeEnvironment(std::index_sequence<I...>) -> std::array<EnvironmentSlotFunction, size>
+        static constexpr auto MakeComplete(std::index_sequence<I...>) -> std::array<CompleteSlotFunction, size>
         {
-            return { &EnvironmentSlot<Setting<I>>... };
+            return { &CompleteSlot<Setting<I>>... };
         }
 
         template <std::size_t... I>
-        static constexpr auto MakeResolve(std::index_sequence<I...>) -> std::array<ResolveSlotFunction, size>
+        static constexpr auto MakeCheck(std::index_sequence<I...>) -> std::array<CheckSlotFunction, size>
         {
-            return { &ResolveSlot<Setting<I>>... };
+            return { &CheckSlot<Setting<I>>... };
         }
 
-        template <std::size_t... I>
-        static constexpr auto MakeCheckTest(std::index_sequence<I...>) -> std::array<CheckSlotFunction, size>
-        {
-            return { &CheckTestSlot<Setting<I>>... };
-        }
-
-        static constexpr std::array<ParseSlotFunction, size> parse = MakeParse(std::make_index_sequence<size>());
-        static constexpr std::array<EnvironmentSlotFunction, size> environment = MakeEnvironment(std::make_index_sequence<size>());
-        static constexpr std::array<ResolveSlotFunction, size> resolve = MakeResolve(std::make_index_sequence<size>());
-        static constexpr std::array<CheckSlotFunction, size> check_test = MakeCheckTest(std::make_index_sequence<size>());
+        static constexpr std::array<AssignSlotFunction, size> assign = MakeAssign(std::make_index_sequence<size>());
+        static constexpr std::array<CompleteSlotFunction, size> complete = MakeComplete(std::make_index_sequence<size>());
+        static constexpr std::array<CheckSlotFunction, size> check = MakeCheck(std::make_index_sequence<size>());
     };
+
+    /// A line number in four bytes. Lines past the range saturate, which only
+    /// affects the line quoted in a duplicate-setting error.
+    [[nodiscard]] constexpr auto CompactLine(std::size_t line) -> std::uint32_t
+    {
+        constexpr std::size_t largest = std::numeric_limits<std::uint32_t>::max();
+        return static_cast<std::uint32_t>(line < largest ? line : largest);
+    }
 
 }  // namespace detail
 
@@ -290,20 +249,26 @@ public:
     /// file it was read from. Settings missing from the text are appended to
     /// the returned document as migrations. To read a file, see LoadFile in
     /// cppfig/file.h.
+    ///
+    /// Precedence is environment > text > default. A setting's default is
+    /// built only when the text lacks the setting, since only then is it used
+    /// or written as a migration.
     [[nodiscard]] static auto FromText(std::string text, std::string_view source, LoadOptions options = {})
         -> StatusOr<LoadResult<RegistryType>>;
 
-    /// Creates a configuration from defaults without file or environment input.
+    /// Creates a configuration from defaults without text or environment input.
     [[nodiscard]] static auto FromDefaults() -> StatusOr<Configuration>
     {
         // Candidate storage scales with the registry; keep it off the caller's stack.
-        auto state_owner = std::make_unique<InitializationState>();
-        auto& state = *state_owner;
-        auto build_status = BuildValues(state);
-        if (!build_status.ok()) {
-            return build_status;
+        auto candidates = std::make_unique<candidate_storage>();
+        const auto slots = slot_table::Addresses(*candidates);
+        for (std::size_t i = 0; i < RegistryType::size; ++i) {
+            auto status = slot_table::check[i](slots[i]);
+            if (!status.ok()) {
+                return status;
+            }
         }
-        return Configuration(state);
+        return Configuration(*candidates);
     }
 
     template <typename S>
@@ -324,51 +289,52 @@ private:
     using candidate_storage = typename RegistryType::template held_values_type<std::optional>;
     using slot_table = detail::SlotTable<RegistryType>;
 
-    struct InitializationState {
-        candidate_storage file_values;
-        candidate_storage effective_values;
-        std::array<void*, RegistryType::size> file_slots = slot_table::Addresses(file_values);
-        std::array<void*, RegistryType::size> effective_slots = slot_table::Addresses(effective_values);
-        std::array<detail::FileLocation, RegistryType::size> locations {};
-        std::bitset<RegistryType::size> seen;
-        std::string document;
-        detail::ResolveContext context;
+    /// Everything loading needs besides the text, kept together on the heap.
+    /// Values are parsed straight into the one candidate slot of their setting:
+    /// a file value, then an environment override replacing it, then the
+    /// default for settings that are still empty.
+    struct LoadState {
+        candidate_storage values;
+        std::array<void*, RegistryType::size> slots = slot_table::Addresses(values);
+        /// Line of each setting's file entry; 0 when the file lacks the setting.
+        std::array<std::uint32_t, RegistryType::size> file_lines {};
+        std::string_view source;
+        std::string migrations;
         std::vector<UnknownKey> unknown_keys;
         UnknownKeyPolicy unknown_key_policy = UnknownKeyPolicy::kReject;
 
         // The slot addresses point into this object.
-        InitializationState() = default;
-        InitializationState(const InitializationState&) = delete;
-        auto operator=(const InitializationState&) -> InitializationState& = delete;
+        LoadState() = default;
+        LoadState(const LoadState&) = delete;
+        auto operator=(const LoadState&) -> LoadState& = delete;
     };
 
-    /// Requires every effective value in state to be engaged.
-    explicit Configuration(InitializationState& state)
-        : values_(detail::from_engaged, state.effective_values)
+    /// Moves every value out of candidates, all of which must be engaged.
+    explicit Configuration(candidate_storage& candidates)
+        : values_(detail::from_engaged, candidates)
     {
     }
 
-    [[nodiscard]] static auto ParseDocument(InitializationState& state) -> Status
+    [[nodiscard]] static auto ParseText(LoadState& state, std::string_view text) -> Status
     {
-        const auto source = state.context.source;
-        return ConfParser::ForEachEntry(state.document, source, [&state, source](const ConfEntry& entry) -> Status {
+        const auto source = state.source;
+        return ConfParser::ForEachEntry(text, source, [&state, source](const ConfEntry& entry) -> Status {
             const std::size_t index = RegistryType::FindPath(entry.path);
             if (index == RegistryType::size) {
                 if (state.unknown_key_policy == UnknownKeyPolicy::kPreserve) {
                     state.unknown_keys.push_back(UnknownKey { std::string(entry.path), entry.line });
                     return OkStatus();
                 }
-                return LocatedError(source, entry.line, entry.column, "Unknown configuration setting '" + std::string(entry.path) + "'");
+                return LocatedError(source, entry.line, entry.column, "unknown setting '" + std::string(entry.path) + "'");
             }
-            if (state.seen.test(index)) {
+            if (state.file_lines[index] != 0) {
                 return LocatedError(source, entry.line, entry.column,
-                                    "Duplicate configuration setting '" + std::string(entry.path) + "' (first set on line "
-                                        + std::to_string(state.locations[index].line) + ")");
+                                    "duplicate setting '" + std::string(entry.path) + "' (first set on line "
+                                        + std::to_string(state.file_lines[index]) + ")");
             }
-            state.seen.set(index);
-            state.locations[index] = detail::FileLocation { entry.line, entry.value_column };
+            state.file_lines[index] = detail::CompactLine(entry.line);
 
-            auto status = slot_table::parse[index](entry.text, state.file_slots[index]);
+            auto status = slot_table::assign[index](entry.text, state.slots[index]);
             if (!status.ok()) {
                 return LocatedError(source, entry.line, entry.value_column, status.message());
             }
@@ -378,7 +344,7 @@ private:
 
     /// Applies the environment overrides found in environment, reading it in
     /// one pass and looking each variable up among the override names.
-    [[nodiscard]] static auto ApplyEnvironment(InitializationState& state, const Environment& environment) -> Status
+    [[nodiscard]] static auto ApplyEnvironment(LoadState& state, const Environment& environment) -> Status
     {
         if constexpr (RegistryType::env_override_count == 0) {
             return OkStatus();
@@ -392,22 +358,27 @@ private:
                     return;
                 }
                 applied.set(index);
-                status = slot_table::environment[index](value, state.effective_slots[index]);
+                auto assigned = slot_table::assign[index](value, state.slots[index]);
+                if (!assigned.ok()) {
+                    status = InvalidArgumentError("environment variable " + std::string(name) + ": " + std::string(assigned.message()));
+                }
             });
             return status;
         }
     }
 
-    /// Resolves settings in declaration order through a table of per-setting
-    /// functions. A single fold expression over all settings produced one
-    /// enormous function whose optimization dominated compile time for large
-    /// registries. On success every effective value is engaged.
-    [[nodiscard]] static auto BuildValues(InitializationState& state) -> Status
+    /// Fills settings the text lacks from their defaults, recording each as a
+    /// migration. Goes through a table of per-setting functions: a single fold
+    /// expression over all settings produced one enormous function whose
+    /// optimization dominated compile time for large registries.
+    [[nodiscard]] static auto CompleteFromDefaults(LoadState& state) -> Status
     {
         for (std::size_t i = 0; i < RegistryType::size; ++i) {
-            auto status = slot_table::resolve[i](state.file_slots[i], state.effective_slots[i], state.locations[i], state.context);
-            if (!status.ok()) {
-                return status;
+            if (state.file_lines[i] == 0) {
+                auto status = slot_table::complete[i](state.slots[i], &state.migrations);
+                if (!status.ok()) {
+                    return status;
+                }
             }
         }
         return OkStatus();
@@ -430,14 +401,12 @@ template <typename RegistryType>
 auto Configuration<RegistryType>::FromText(std::string text, std::string_view source, LoadOptions options)
     -> StatusOr<LoadResult<RegistryType>>
 {
-    auto state_owner = std::make_unique<InitializationState>();
+    auto state_owner = std::make_unique<LoadState>();
     auto& state = *state_owner;
-    state.context.source = source;
-    state.context.record_migrations = true;
+    state.source = source;
     state.unknown_key_policy = options.unknown_keys;
-    state.document = std::move(text);
 
-    auto status = ParseDocument(state);
+    auto status = ParseText(state, text);
     if (!status.ok()) {
         return status;
     }
@@ -445,14 +414,14 @@ auto Configuration<RegistryType>::FromText(std::string text, std::string_view so
     if (!status.ok()) {
         return status;
     }
-    status = BuildValues(state);
+    status = CompleteFromDefaults(state);
     if (!status.ok()) {
         return status;
     }
 
-    const bool needs_save = !state.context.migrations.empty();
-    auto document = ConfDocument::AppendMigrations(std::move(state.document), state.context.migrations);
-    return LoadResult<RegistryType> { Configuration(state),
+    const bool needs_save = !state.migrations.empty();
+    auto document = ConfDocument::AppendMigrations(std::move(text), state.migrations);
+    return LoadResult<RegistryType> { Configuration(state.values),
                                       ConfDocument(std::move(document), std::move(state.unknown_keys), needs_save) };
 }
 

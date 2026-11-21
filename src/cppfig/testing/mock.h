@@ -74,7 +74,7 @@ public:
     {
         const auto slots = slot_table::Addresses(values_);
         for (std::size_t i = 0; i < RegistryType::size; ++i) {
-            auto status = slot_table::check_test[i](slots[i]);
+            auto status = slot_table::check[i](slots[i]);
             if (!status.ok()) {
                 return status;
             }

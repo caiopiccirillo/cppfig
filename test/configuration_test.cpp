@@ -106,14 +106,14 @@ namespace {
         auto unknown = LoadFile<TestRegistry>(unknown_path);
         ASSERT_FALSE(unknown.has_value());
         EXPECT_TRUE(unknown.error().message().starts_with(unknown_path + ":1:1: ")) << unknown.error().message();
-        EXPECT_NE(unknown.error().message().find("Unknown configuration setting 'server.unknown'"), std::string_view::npos);
+        EXPECT_NE(unknown.error().message().find("unknown setting 'server.unknown'"), std::string_view::npos);
 
         directory.write("duplicate.conf", "server.port = 1\n  server.port = 2\n");
         const auto duplicate_path = directory.file("duplicate.conf").string();
         auto duplicate = LoadFile<TestRegistry>(duplicate_path);
         ASSERT_FALSE(duplicate.has_value());
         EXPECT_TRUE(duplicate.error().message().starts_with(duplicate_path + ":2:3: ")) << duplicate.error().message();
-        EXPECT_NE(duplicate.error().message().find("Duplicate configuration setting 'server.port' (first set on line 1)"),
+        EXPECT_NE(duplicate.error().message().find("duplicate setting 'server.port' (first set on line 1)"),
                   std::string_view::npos);
     }
 
@@ -145,7 +145,7 @@ namespace {
         directory.write("app.conf", "server.port = 1\nserver.port = 2\n");
         auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string(), { .unknown_keys = UnknownKeyPolicy::kPreserve });
         ASSERT_FALSE(loaded.has_value());
-        EXPECT_NE(loaded.error().message().find("Duplicate configuration setting"), std::string_view::npos);
+        EXPECT_NE(loaded.error().message().find("duplicate setting"), std::string_view::npos);
     }
 
     TEST(ConfigurationIOTest, RejectPolicyIsTheDefault)
@@ -187,7 +187,7 @@ namespace {
         auto loaded = LoadFile<TestRegistry>(path);
         ASSERT_FALSE(loaded.has_value());
         EXPECT_TRUE(loaded.error().message().starts_with(path + ":3:15: ")) << loaded.error().message();
-        EXPECT_NE(loaded.error().message().find("file value is invalid"), std::string_view::npos);
+        EXPECT_NE(loaded.error().message().find("invalid value for 'server.port'"), std::string_view::npos);
     }
 
     TEST(ConfigurationIOTest, ReportsTheColumnOfAnUnterminatedQuote)
@@ -282,13 +282,13 @@ namespace {
             const std::array<EnvironmentVariable, 1> variables { { { "CPPFIG_TEST_SERVER_PORT", "not-a-number" } } };
             auto loaded = TestConfiguration::FromText(CompleteDocument(), "app.conf", { .environment = Environment::From(variables) });
             ASSERT_FALSE(loaded);
-            EXPECT_NE(loaded.error().message().find("environment override"), std::string_view::npos);
+            EXPECT_NE(loaded.error().message().find("environment variable CPPFIG_TEST_SERVER_PORT: "), std::string_view::npos);
         }
         {
             const std::array<EnvironmentVariable, 1> variables { { { "CPPFIG_TEST_SERVER_PORT", "0" } } };
             auto loaded = TestConfiguration::FromText(CompleteDocument(), "app.conf", { .environment = Environment::From(variables) });
             ASSERT_FALSE(loaded);
-            EXPECT_NE(loaded.error().message().find("environment override"), std::string_view::npos);
+            EXPECT_NE(loaded.error().message().find("environment variable CPPFIG_TEST_SERVER_PORT: "), std::string_view::npos);
         }
 
         std::string invalid_file = CompleteDocument();
@@ -297,7 +297,7 @@ namespace {
         const std::array<EnvironmentVariable, 1> valid_override { { { "CPPFIG_TEST_SERVER_PORT", "10000" } } };
         auto loaded = TestConfiguration::FromText(invalid_file, "invalid.conf", { .environment = Environment::From(valid_override) });
         ASSERT_FALSE(loaded);
-        EXPECT_NE(loaded.error().message().find("file value"), std::string_view::npos);
+        EXPECT_NE(loaded.error().message().find("invalid.conf:4:15: invalid value for 'server.port'"), std::string_view::npos);
     }
 
     TEST(ConfigurationIOTest, ReadsOverridesFromAGivenEnvironment)

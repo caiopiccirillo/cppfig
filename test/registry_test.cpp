@@ -231,6 +231,21 @@ namespace {
         EXPECT_EQ(loaded->Get<CountedDefault>(), 42);
     }
 
+    TEST(ConfigurationTest, BuildsADefaultOnlyWhenTheTextLacksTheSetting)
+    {
+        using CountedRegistry = Registry<CountedDefault>;
+        CountedDefault::calls = 0;
+        auto supplied = Configuration<CountedRegistry>::FromText("factory.value = 7\n", "app.conf", { .environment = Environment::None() });
+        ASSERT_TRUE(supplied) << supplied.error().message();
+        EXPECT_EQ(supplied->config.Get<CountedDefault>(), 7);
+        EXPECT_EQ(CountedDefault::calls, 0);
+
+        auto missing = Configuration<CountedRegistry>::FromText("", "app.conf", { .environment = Environment::None() });
+        ASSERT_TRUE(missing) << missing.error().message();
+        EXPECT_EQ(missing->config.Get<CountedDefault>(), 42);
+        EXPECT_EQ(CountedDefault::calls, 1);
+    }
+
     TEST(TraitsTest, RoundTripsBuiltInTypes)
     {
         EXPECT_EQ(ConfigTraits<bool>::FromString("yes"), true);
