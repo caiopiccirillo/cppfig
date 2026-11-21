@@ -14,7 +14,7 @@ namespace {
     TEST(ConcurrencyTest, FrozenConfigurationSupportsConcurrentReads)
     {
         auto loaded = TestConfiguration::FromDefaults();
-        ASSERT_TRUE(loaded.ok());
+        ASSERT_TRUE(loaded.has_value());
         const auto& config = loaded.value();
         constexpr std::size_t thread_count = 8;
         constexpr int iterations = 10000;
@@ -42,7 +42,7 @@ namespace {
     {
         const TempDirectory directory;
         auto loaded = TestConfiguration::Load(directory.file("app.conf").string());
-        ASSERT_TRUE(loaded.ok());
+        ASSERT_TRUE(loaded.has_value());
         const auto& config = loaded->config;
         const auto& document = loaded->document;
         const auto* host = std::addressof(config.Get<settings::ServerHost>());

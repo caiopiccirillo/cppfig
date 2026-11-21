@@ -166,23 +166,23 @@ extern "C" auto LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t siz
 
     const auto strict = fuzz::FuzzConfiguration::Load(FilePath());
     auto lenient = fuzz::FuzzConfiguration::Load(FilePath(), { .unknown_keys = cppfig::UnknownKeyPolicy::kPreserve });
-    if (strict.ok()) {
-        CPPFIG_FUZZ_CHECK(lenient.ok());
+    if (strict.has_value()) {
+        CPPFIG_FUZZ_CHECK(lenient.has_value());
     }
-    if (!lenient.ok()) {
+    if (!lenient.has_value()) {
         return 0;
     }
 
     const auto& first = lenient.value();
     CPPFIG_FUZZ_CHECK(first.document.GetSourceText().starts_with(text));
-    if (strict.ok()) {
+    if (strict.has_value()) {
         CPPFIG_FUZZ_CHECK(first.document.GetUnknownKeys().empty());
         CPPFIG_FUZZ_CHECK(SameValues(strict.value().config, first.config, fuzz::FuzzRegistry {}));
     }
 
     WriteFile(first.document.GetSourceText());
     const auto second = fuzz::FuzzConfiguration::Load(FilePath(), { .unknown_keys = cppfig::UnknownKeyPolicy::kPreserve });
-    CPPFIG_FUZZ_CHECK(second.ok());
+    CPPFIG_FUZZ_CHECK(second.has_value());
     CPPFIG_FUZZ_CHECK(SameValues(first.config, second.value().config, fuzz::FuzzRegistry {}));
     CPPFIG_FUZZ_CHECK(second.value().document.GetSourceText() == first.document.GetSourceText());
     CPPFIG_FUZZ_CHECK(!second.value().document.NeedsSave());

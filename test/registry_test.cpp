@@ -125,7 +125,7 @@ namespace {
         static_assert(InterleavedRegistry::index<LayoutWideB> == 3);
 
         auto loaded = Configuration<InterleavedRegistry>::FromDefaults();
-        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
         EXPECT_TRUE(loaded->Get<LayoutFlagA>());
         EXPECT_DOUBLE_EQ(loaded->Get<LayoutWideA>(), 1.5);
         EXPECT_FALSE(loaded->Get<LayoutFlagB>());
@@ -141,14 +141,14 @@ namespace {
     {
         using MoveOnlyRegistry = Registry<MoveOnlySetting, LayoutFlagA>;
         auto loaded = Configuration<MoveOnlyRegistry>::FromDefaults();
-        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
         EXPECT_EQ(*loaded->Get<MoveOnlySetting>().value, 5);
         EXPECT_TRUE(loaded->Get<LayoutFlagA>());
 
         testing::MockConfigurationBuilder<MoveOnlyRegistry> builder;
         builder.Set<MoveOnlySetting>(MoveOnlyValue { 9 });
         auto built = builder.Build();
-        ASSERT_TRUE(built.ok()) << built.status().message();
+        ASSERT_TRUE(built.has_value()) << built.error().message();
         EXPECT_EQ(*built->Get<MoveOnlySetting>().value, 9);
     }
 
@@ -163,7 +163,7 @@ namespace {
     TEST(RegistryTest, DerivedRegistryWorksLikeItsBase)
     {
         auto loaded = Configuration<DerivedRegistry>::FromDefaults();
-        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
         EXPECT_EQ(loaded->Get<settings::ServerPort>(), 8080);
         EXPECT_EQ(loaded->Get<settings::AppName>(), "MyApplication");
     }
@@ -181,7 +181,7 @@ namespace {
     TEST(ConfigurationTest, CreatesTypedValuesFromDefaults)
     {
         auto loaded = TestConfiguration::FromDefaults();
-        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
         const auto& config = loaded.value();
 
         EXPECT_EQ(config.Get<settings::AppName>(), "MyApplication");
@@ -196,7 +196,7 @@ namespace {
     TEST(ConfigurationTest, GetReturnsStableConstReferences)
     {
         auto loaded = TestConfiguration::FromDefaults();
-        ASSERT_TRUE(loaded.ok());
+        ASSERT_TRUE(loaded.has_value());
         const auto& config = loaded.value();
 
         static_assert(std::is_same_v<decltype(config.Get<settings::ServerPort>()), const int&>);
@@ -211,7 +211,7 @@ namespace {
     TEST(ConfigurationTest, PreservesNaturalAlignmentForEverySetting)
     {
         auto loaded = TestConfiguration::FromDefaults();
-        ASSERT_TRUE(loaded.ok());
+        ASSERT_TRUE(loaded.has_value());
         const auto& config = loaded.value();
 
         TestRegistry::ForEachSetting([&]<typename S>() {
@@ -226,7 +226,7 @@ namespace {
         using CountedRegistry = Registry<CountedDefault>;
         CountedDefault::calls = 0;
         auto loaded = Configuration<CountedRegistry>::FromDefaults();
-        ASSERT_TRUE(loaded.ok());
+        ASSERT_TRUE(loaded.has_value());
         EXPECT_EQ(CountedDefault::calls, 1);
         EXPECT_EQ(loaded->Get<CountedDefault>(), 42);
     }
@@ -279,7 +279,7 @@ namespace {
         testing::MockConfigurationBuilder<TestRegistry> builder;
         builder.Set<settings::ServerPort>(9000).Set<settings::AppName>("TestApp");
         auto built = builder.Build();
-        ASSERT_TRUE(built.ok()) << built.status().message();
+        ASSERT_TRUE(built.has_value()) << built.error().message();
 
         const auto& mock = built.value();
         EXPECT_EQ(mock.Get<settings::ServerPort>(), 9000);
@@ -292,8 +292,8 @@ namespace {
         testing::MockConfigurationBuilder<TestRegistry> builder;
         builder.Set<settings::ServerPort>(0);
         auto built = builder.Build();
-        ASSERT_FALSE(built.ok());
-        EXPECT_NE(built.status().message().find("server.port"), std::string_view::npos);
+        ASSERT_FALSE(built.has_value());
+        EXPECT_NE(built.error().message().find("server.port"), std::string_view::npos);
     }
 
 }  // namespace

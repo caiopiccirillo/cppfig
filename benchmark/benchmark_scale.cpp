@@ -139,7 +139,7 @@ namespace {
     auto CreateCompleteFile(const std::string& path) -> bool
     {
         auto created = ScaleConfiguration<N>::Load(path);
-        return created.ok() && created->document.Save().ok();
+        return created.has_value() && created->document.Save().ok();
     }
 
     template <std::size_t N>
@@ -218,7 +218,7 @@ namespace {
     {
         const TemporaryFile file("save_" + std::to_string(N));
         auto loaded = ScaleConfiguration<N>::Load(file.path());
-        if (!loaded.ok()) {
+        if (!loaded.has_value()) {
             state.SkipWithError("could not load the configuration");
             return;
         }

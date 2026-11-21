@@ -24,12 +24,12 @@ static_assert(LargeRegistry::size == CPPFIG_SCALE_SETTINGS);
 auto LoadLarge(const std::string& path) -> int
 {
     auto loaded = cppfig::Configuration<scale::LargeRegistry>::Load(path);
-    if (!loaded.ok() || !loaded->document.Save().ok()) {
+    if (!loaded.has_value() || !loaded->document.Save().ok()) {
         return -1;
     }
     auto defaults = cppfig::Configuration<scale::LargeRegistry>::FromDefaults();
     auto fake = cppfig::testing::MockConfigurationBuilder<scale::LargeRegistry> {}.Build();
-    if (!defaults.ok() || !fake.ok()) {
+    if (!defaults.has_value() || !fake.has_value()) {
         return -1;
     }
     constexpr std::size_t last = CPPFIG_SCALE_SETTINGS - 4;

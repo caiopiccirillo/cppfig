@@ -114,7 +114,7 @@ namespace {
         allocation_count = 0;
         auto loaded = Configuration<ScaleRegistry>::FromDefaults();
         const auto allocations = allocation_count.load();
-        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
         EXPECT_LT(allocations, 8U);
     }
 
@@ -125,7 +125,7 @@ namespace {
         allocation_count = 0;
         auto loaded = Configuration<ScaleRegistry>::Load(path);
         const auto allocations = allocation_count.load();
-        ASSERT_TRUE(loaded.ok()) << loaded.status().message();
+        ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
         EXPECT_NE(loaded->document.GetSourceText().find("scale.s127 = 0.5\n"), std::string_view::npos);
         EXPECT_LT(allocations, 40U);
     }
@@ -133,7 +133,7 @@ namespace {
     TEST(AllocationTest, TypedReadsNeverAllocate)
     {
         auto loaded = TestConfiguration::FromDefaults();
-        ASSERT_TRUE(loaded.ok());
+        ASSERT_TRUE(loaded.has_value());
         const auto& config = loaded.value();
         constexpr int iterations = 1000;
 

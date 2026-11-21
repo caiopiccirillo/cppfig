@@ -38,8 +38,8 @@ using AppRegistry = cppfig::Registry<settings::AppName, settings::ServerHost, se
 int main()
 {
     auto loaded = cppfig::Configuration<AppRegistry>::Load("/tmp/cppfig_example.conf");
-    if (!loaded.ok()) {
-        std::cerr << "Failed to load configuration: " << loaded.status().message() << '\n';
+    if (!loaded.has_value()) {
+        std::cerr << "Failed to load configuration: " << loaded.error().message() << '\n';
         return 1;
     }
 

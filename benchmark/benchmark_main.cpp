@@ -195,7 +195,7 @@ static void LoadExisting(benchmark::State& state)
     const TemporaryFile file("load");
     {
         auto created = Configuration<RegistryType>::Load(file.path());
-        if (!created.ok() || !created->document.Save().ok()) {
+        if (!created.has_value() || !created->document.Save().ok()) {
             state.SkipWithError("could not create the configuration file");
             return;
         }
@@ -217,7 +217,7 @@ static void SaveDocument(benchmark::State& state)
 {
     const TemporaryFile file("save");
     auto loaded = Configuration<RegistryType>::Load(file.path());
-    if (!loaded.ok()) {
+    if (!loaded.has_value()) {
         state.SkipWithError("could not load the configuration");
         return;
     }
