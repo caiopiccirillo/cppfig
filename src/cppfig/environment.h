@@ -4,7 +4,7 @@
 #include <span>
 #include <string_view>
 
-#if defined(_WIN32)
+#ifdef _WIN32
 #include <stdlib.h>  // _environ
 #else
 // POSIX defines environ but no header is required to declare it.
@@ -27,17 +27,17 @@ struct EnvironmentVariable {
 class Environment {
 public:
     /// The environment of the running process. The default for loading.
-    [[nodiscard]] static constexpr auto Process() noexcept -> Environment { return Environment(Kind::kProcess, {}); }
+    [[nodiscard]] static constexpr auto Process() noexcept -> Environment { return { Kind::kProcess, {} }; }
 
     /// No variables: environment overrides are not applied.
-    [[nodiscard]] static constexpr auto None() noexcept -> Environment { return Environment(Kind::kList, {}); }
+    [[nodiscard]] static constexpr auto None() noexcept -> Environment { return { Kind::kList, {} }; }
 
     /// A fixed set of variables, for tests and for applications that gather
     /// their environment elsewhere. The variables are not copied and must stay
     /// valid while loading. When a name repeats, the first one wins.
     [[nodiscard]] static constexpr auto From(std::span<const EnvironmentVariable> variables) noexcept -> Environment
     {
-        return Environment(Kind::kList, variables);
+        return { Kind::kList, variables };
     }
 
     /// Calls fn(name, value) for every variable, in order.
@@ -50,7 +50,7 @@ public:
             }
             return;
         }
-        for (char** entry = ProcessEntries(); entry != nullptr && *entry != nullptr; ++entry) {
+        for (char* const* entry = ProcessEntries(); entry != nullptr && *entry != nullptr; ++entry) {
             const std::string_view text(*entry);
             const auto equals = text.find('=');
             if (equals != std::string_view::npos) {
@@ -73,7 +73,7 @@ private:
 
     [[nodiscard]] static auto ProcessEntries() noexcept -> char**
     {
-#if defined(_WIN32)
+#ifdef _WIN32
         return _environ;
 #else
         return environ;

@@ -5,7 +5,6 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -100,9 +99,9 @@ namespace detail {
 
         void AppendNumber(std::size_t value)
         {
-            char buffer[24] {};
-            const auto result = std::to_chars(std::begin(buffer), std::end(buffer), value);
-            text_.append(buffer, result.ptr);
+            std::array<char, std::numeric_limits<std::size_t>::digits10 + 1> buffer {};
+            const auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
+            text_.append(buffer.data(), result.ptr);
         }
 
         std::string text_;
