@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <iterator>
 #include <span>
 #include <string>
 #include <string_view>
@@ -12,10 +13,92 @@ namespace cppfig {
 template <typename RegistryType>
 class Configuration;
 
-/// @brief A file entry kept under UnknownKeyPolicy::kPreserve.
+/// @brief A file entry kept under UnknownKeyPolicy::kPreserve. The path is a
+/// view into the document's text.
 struct UnknownKey {
-    std::string path;
+    std::string_view path;
     std::size_t line = 0;
+};
+
+namespace detail {
+
+    /// Where an unknown key's path sits in the document text. Positions rather
+    /// than views or copies: they stay valid when the document is moved, and
+    /// cost no allocation per key.
+    struct KeyPosition {
+        std::size_t offset;
+        std::size_t length;
+        std::size_t line;
+    };
+
+}  // namespace detail
+
+/// @brief The unknown keys of a document, in text order. A view: it is valid
+/// while the document it came from is neither moved nor destroyed.
+class UnknownKeys {
+public:
+    class Iterator {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using difference_type = std::ptrdiff_t;
+        using value_type = UnknownKey;
+        using reference = UnknownKey;
+        using pointer = void;
+
+        Iterator() = default;
+
+        [[nodiscard]] auto operator*() const -> UnknownKey { return MakeKey(text_, *position_); }
+
+        auto operator++() -> Iterator&
+        {
+            ++position_;
+            return *this;
+        }
+
+        auto operator++(int) -> Iterator
+        {
+            auto previous = *this;
+            ++position_;
+            return previous;
+        }
+
+        [[nodiscard]] auto operator==(const Iterator& other) const -> bool { return position_ == other.position_; }
+
+    private:
+        friend class UnknownKeys;
+
+        Iterator(std::string_view text, const detail::KeyPosition* position)
+            : text_(text)
+            , position_(position)
+        {
+        }
+
+        std::string_view text_;
+        const detail::KeyPosition* position_ = nullptr;
+    };
+
+    [[nodiscard]] auto size() const noexcept -> std::size_t { return positions_.size(); }
+    [[nodiscard]] auto empty() const noexcept -> bool { return positions_.empty(); }
+    [[nodiscard]] auto operator[](std::size_t index) const -> UnknownKey { return MakeKey(text_, positions_[index]); }
+    [[nodiscard]] auto begin() const -> Iterator { return { text_, positions_.data() }; }
+    [[nodiscard]] auto end() const -> Iterator { return { text_, positions_.data() + positions_.size() }; }
+
+private:
+    friend class ConfDocument;
+
+    UnknownKeys(std::string_view text, std::span<const detail::KeyPosition> positions)
+        : text_(text)
+        , positions_(positions)
+    {
+    }
+
+    [[nodiscard]] static auto MakeKey(std::string_view text, const detail::KeyPosition& position) -> UnknownKey
+    {
+        return { text.substr(position.offset, position.length), position.line };
+    }
+
+    std::string_view text_;
+    std::span<const detail::KeyPosition> positions_;
 };
 
 /// @brief The flat .conf text a configuration was loaded from, with any
@@ -37,13 +120,13 @@ public:
 
     /// Entries that were kept because their path is not in the registry, in
     /// text order. Always empty under UnknownKeyPolicy::kReject.
-    [[nodiscard]] auto GetUnknownKeys() const noexcept -> std::span<const UnknownKey> { return unknown_keys_; }
+    [[nodiscard]] auto GetUnknownKeys() const noexcept -> UnknownKeys { return { text_, unknown_keys_ }; }
 
 private:
     template <typename RegistryType>
     friend class Configuration;
 
-    ConfDocument(std::string text, std::vector<UnknownKey> unknown_keys, bool needs_save)
+    ConfDocument(std::string text, std::vector<detail::KeyPosition> unknown_keys, bool needs_save)
         : text_(std::move(text))
         , unknown_keys_(std::move(unknown_keys))
         , needs_save_(needs_save)
@@ -75,7 +158,7 @@ private:
     }
 
     std::string text_;
-    std::vector<UnknownKey> unknown_keys_;
+    std::vector<detail::KeyPosition> unknown_keys_;
     bool needs_save_ = false;
 };
 

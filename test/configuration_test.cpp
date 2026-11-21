@@ -136,7 +136,18 @@ namespace {
         EXPECT_EQ(unknown[1].path, "future.added");
         EXPECT_EQ(unknown[1].line, 12U);
 
-        ASSERT_TRUE(SaveFile(directory.file("app.conf").string(), loaded->document).ok());
+        std::size_t visited = 0;
+        for (const UnknownKey key : unknown) {
+            EXPECT_EQ(key.path, unknown[visited].path);
+            ++visited;
+        }
+        EXPECT_EQ(visited, 2U);
+
+        // Keys are positions in the text, so they survive moving the document.
+        const ConfDocument moved = std::move(loaded->document);
+        EXPECT_EQ(moved.GetUnknownKeys()[1].path, "future.added");
+
+        ASSERT_TRUE(SaveFile(directory.file("app.conf").string(), moved).ok());
         EXPECT_EQ(directory.read("app.conf"), document);
     }
 

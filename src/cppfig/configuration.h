@@ -379,7 +379,7 @@ private:
         std::array<std::uint32_t, RegistryType::size> file_lines {};
         std::string_view source;
         std::string migrations;
-        std::vector<UnknownKey> unknown_keys;
+        std::vector<detail::KeyPosition> unknown_keys;
         UnknownKeyPolicy unknown_key_policy = UnknownKeyPolicy::kReject;
         detail::ErrorList errors;
 
@@ -409,11 +409,12 @@ private:
 
     static void ParseText(LoadState& state, std::string_view text)
     {
-        const auto on_entry = [&state](const ConfEntry& entry) {
+        const auto on_entry = [&state, text](const ConfEntry& entry) {
             const std::size_t index = RegistryType::FindPath(entry.path);
             if (index == RegistryType::size) {
                 if (state.unknown_key_policy == UnknownKeyPolicy::kPreserve) {
-                    state.unknown_keys.push_back(UnknownKey { std::string(entry.path), entry.line });
+                    const auto offset = static_cast<std::size_t>(entry.path.data() - text.data());
+                    state.unknown_keys.push_back(detail::KeyPosition { offset, entry.path.size(), entry.line });
                 }
                 else {
                     const std::string message = "unknown setting '" + std::string(entry.path) + "'";
