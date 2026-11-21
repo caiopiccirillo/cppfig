@@ -18,6 +18,8 @@ namespace {
     static_assert(TestRegistry::has_setting<settings::ServerPort>);
     static_assert(TestRegistry::size == 7);
     static_assert(!std::is_polymorphic_v<TestConfiguration>);
+    // A success costs one pointer; the error lives behind it.
+    static_assert(sizeof(Status) == sizeof(void*));
 
     struct Unregistered {
         static constexpr std::string_view path = "unregistered.value";

@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <new>
+#include <string>
 
 #include "generated_registry.h"
 #include "test_settings.h"
@@ -128,6 +129,30 @@ namespace {
         ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
         EXPECT_NE(loaded->document.GetText().find("scale.s127 = 0.5\n"), std::string_view::npos);
         EXPECT_LT(allocations, 40U);
+    }
+
+    template <typename RegistryType>
+    auto CountAllocationsOfLoadingDefaults() -> std::size_t
+    {
+        auto created = Configuration<RegistryType>::FromText("", "app.conf", { .environment = Environment::None() });
+        EXPECT_TRUE(created);
+        const std::string text(created->document.GetText());
+
+        allocation_count = 0;
+        auto loaded = Configuration<RegistryType>::FromText(text, "app.conf", { .environment = Environment::None() });
+        const auto allocations = allocation_count.load();
+        EXPECT_TRUE(loaded) << loaded.error().message();
+        return allocations;
+    }
+
+    // Values are parsed into one set of candidate slots, so loading a complete
+    // file costs the same number of allocations whatever the registry's size.
+    TEST(AllocationTest, LoadingACompleteFileAllocatesAFixedNumberOfTimes)
+    {
+        const auto small = CountAllocationsOfLoadingDefaults<scale::GeneratedRegistry<16>>();
+        const auto large = CountAllocationsOfLoadingDefaults<ScaleRegistry>();
+        EXPECT_EQ(small, large);
+        EXPECT_LE(large, 8U);
     }
 
     TEST(AllocationTest, BuiltInValidatorsDoNotAllocateForValidValues)
