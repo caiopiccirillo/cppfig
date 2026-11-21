@@ -23,98 +23,102 @@
 #include "fuzz_check.h"
 
 namespace fuzz {
+namespace {
 
-enum class Mode : std::uint8_t { kFast,
-                                 kSafe,
-                                 kDebug };
+    enum class Mode : std::uint8_t { kFast,
+                                     kSafe,
+                                     kDebug };
 
-inline constexpr std::array<cppfig::EnumName<Mode>, 3> kModeNames { {
-    { Mode::kFast, "fast" },
-    { Mode::kSafe, "safe" },
-    { Mode::kDebug, "debug" },
-} };
+    constexpr std::array<cppfig::EnumName<Mode>, 3> kModeNames { {
+        { .value = Mode::kFast, .name = "fast" },
+        { .value = Mode::kSafe, .name = "safe" },
+        { .value = Mode::kDebug, .name = "debug" },
+    } };
 
+}  // namespace
 }  // namespace fuzz
 
 template <>
 struct cppfig::ConfigTraits<fuzz::Mode> : cppfig::EnumTraits<fuzz::kModeNames> { };
 
 namespace fuzz {
+namespace {
 
-struct Name {
-    static constexpr std::string_view path = "app.name";
-    using value_type = std::string;
-    static auto default_value() -> std::string { return "fuzz app"; }
-    static auto validator() { return cppfig::NotEmpty(); }
-};
+    struct Name {
+        static constexpr std::string_view path = "app.name";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "fuzz app"; }
+        static auto validator() { return cppfig::NotEmpty(); }
+    };
 
-struct Greeting {
-    static constexpr std::string_view path = "app.greeting";
-    using value_type = std::string;
-    static auto default_value() -> std::string { return "line one\n\"quoted\" # not a comment\t"; }
-};
+    struct Greeting {
+        static constexpr std::string_view path = "app.greeting";
+        using value_type = std::string;
+        static auto default_value() -> std::string { return "line one\n\"quoted\" # not a comment\t"; }
+    };
 
-struct Port {
-    static constexpr std::string_view path = "server.port";
-    using value_type = std::uint16_t;
-    static constexpr auto default_value() -> std::uint16_t { return 8080; }
-    static constexpr auto validator() { return cppfig::Min<std::uint16_t>(1); }
-};
+    struct Port {
+        static constexpr std::string_view path = "server.port";
+        using value_type = std::uint16_t;
+        static constexpr auto default_value() -> std::uint16_t { return 8080; }
+        static constexpr auto validator() { return cppfig::Min<std::uint16_t>(1); }
+    };
 
-struct Workers {
-    static constexpr std::string_view path = "server.workers";
-    using value_type = int;
-    static constexpr auto default_value() -> int { return 4; }
-    static constexpr auto validator() { return cppfig::Range(1, 64); }
-};
+    struct Workers {
+        static constexpr std::string_view path = "server.workers";
+        using value_type = int;
+        static constexpr auto default_value() -> int { return 4; }
+        static constexpr auto validator() { return cppfig::Range(1, 64); }
+    };
 
-struct Offset {
-    static constexpr std::string_view path = "server.offset";
-    using value_type = long long;
-    static constexpr auto default_value() -> long long { return -9'000'000'000LL; }
-};
+    struct Offset {
+        static constexpr std::string_view path = "server.offset";
+        using value_type = long long;
+        static constexpr auto default_value() -> long long { return -9'000'000'000LL; }
+    };
 
-struct Ratio {
-    static constexpr std::string_view path = "cache.ratio";
-    using value_type = double;
-    static constexpr auto default_value() -> double { return 0.1; }
-};
+    struct Ratio {
+        static constexpr std::string_view path = "cache.ratio";
+        using value_type = double;
+        static constexpr auto default_value() -> double { return 0.1; }
+    };
 
-struct Scale {
-    static constexpr std::string_view path = "cache.scale";
-    using value_type = float;
-    static constexpr auto default_value() -> float { return 1.0e-30F; }
-};
+    struct Scale {
+        static constexpr std::string_view path = "cache.scale";
+        using value_type = float;
+        static constexpr auto default_value() -> float { return 1.0e-30F; }
+    };
 
-struct Enabled {
-    static constexpr std::string_view path = "cache.enabled";
-    using value_type = bool;
-    static constexpr auto default_value() -> bool { return true; }
-};
+    struct Enabled {
+        static constexpr std::string_view path = "cache.enabled";
+        using value_type = bool;
+        static constexpr auto default_value() -> bool { return true; }
+    };
 
-struct LogMode {
-    static constexpr std::string_view path = "log.mode";
-    using value_type = Mode;
-    static constexpr auto default_value() -> Mode { return Mode::kSafe; }
-};
+    struct LogMode {
+        static constexpr std::string_view path = "log.mode";
+        using value_type = Mode;
+        static constexpr auto default_value() -> Mode { return Mode::kSafe; }
+    };
 
-struct Timeout {
-    static constexpr std::string_view path = "http.timeout";
-    using value_type = std::chrono::milliseconds;
-    static constexpr auto default_value() -> std::chrono::milliseconds { return std::chrono::seconds { 30 }; }
-};
+    struct Timeout {
+        static constexpr std::string_view path = "http.timeout";
+        using value_type = std::chrono::milliseconds;
+        static constexpr auto default_value() -> std::chrono::milliseconds { return std::chrono::seconds { 30 }; }
+    };
 
-struct Directory {
-    static constexpr std::string_view path = "storage.directory";
-    using value_type = std::filesystem::path;
-    static auto default_value() -> std::filesystem::path { return "/var/lib/fuzz app"; }
-};
+    struct Directory {
+        static constexpr std::string_view path = "storage.directory";
+        using value_type = std::filesystem::path;
+        static auto default_value() -> std::filesystem::path { return "/var/lib/fuzz app"; }
+    };
 
-struct FuzzRegistry
-    : cppfig::Registry<Name, Greeting, Port, Workers, Offset, Ratio, Scale, Enabled, LogMode, Timeout, Directory> { };
+    struct FuzzRegistry
+        : cppfig::Registry<Name, Greeting, Port, Workers, Offset, Ratio, Scale, Enabled, LogMode, Timeout, Directory> { };
 
-using FuzzConfiguration = cppfig::Configuration<FuzzRegistry>;
+    using FuzzConfiguration = cppfig::Configuration<FuzzRegistry>;
 
+}  // namespace
 }  // namespace fuzz
 
 namespace {

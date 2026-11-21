@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <memory>
 #include <thread>
 
 #include "test_settings.h"
@@ -41,7 +42,7 @@ namespace {
     TEST(ConcurrencyTest, SavingDoesNotChangeTypedValuesOrReferences)
     {
         const TempDirectory directory;
-        auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string());
+        auto loaded = LoadFile<TestRegistry>(directory.File("app.conf").string());
         ASSERT_TRUE(loaded.has_value());
         const auto& config = loaded->config;
         const auto& document = loaded->document;
@@ -57,7 +58,7 @@ namespace {
             }
         });
         for (int i = 0; i < 20; ++i) {
-            if (!SaveFile(directory.file("app.conf"), document).ok()) {
+            if (!SaveFile(directory.File("app.conf"), document).ok()) {
                 valid = false;
             }
         }

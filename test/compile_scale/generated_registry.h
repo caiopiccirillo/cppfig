@@ -26,7 +26,7 @@ struct Name {
         std::size_t count = 0;
         std::size_t value = I;
         do {
-            digits[count++] = static_cast<char>('0' + value % 10);
+            digits[count++] = static_cast<char>('0' + (value % 10));
             value /= 10;
         } while (value != 0);
         while (count != 0) {
@@ -42,7 +42,12 @@ struct EnvName {
     static constexpr auto storage = [] {
         auto buffer = Name<I>::storage.first;
         for (char& c : buffer) {
-            c = c == '.' ? '_' : (c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c);
+            if (c == '.') {
+                c = '_';
+            }
+            else if (c >= 'a' && c <= 'z') {
+                c = static_cast<char>(c - 'a' + 'A');
+            }
         }
         return buffer;
     }();
@@ -94,6 +99,6 @@ struct MakeRegistry<std::index_sequence<I...>> {
 /// A registry of N generated settings: a quarter each of validated ints with
 /// environment overrides, strings, bools and validated doubles.
 template <std::size_t N>
-using GeneratedRegistry = typename MakeRegistry<std::make_index_sequence<N>>::type;
+using GeneratedRegistry = MakeRegistry<std::make_index_sequence<N>>::type;
 
 }  // namespace scale

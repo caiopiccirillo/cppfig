@@ -1,11 +1,13 @@
 #include <cppfig/cppfig.h>
 #include <gtest/gtest.h>
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdlib>
 #include <new>
 #include <string>
+#include <string_view>
 
 #include "generated_registry.h"
 #include "test_settings.h"
@@ -43,29 +45,29 @@ void* operator new(std::size_t size) { return CountedAllocateOrAbort(size, 0); }
 void* operator new[](std::size_t size) { return CountedAllocateOrAbort(size, 0); }
 void* operator new(std::size_t size, std::align_val_t alignment) { return CountedAllocateOrAbort(size, static_cast<std::size_t>(alignment)); }
 void* operator new[](std::size_t size, std::align_val_t alignment) { return CountedAllocateOrAbort(size, static_cast<std::size_t>(alignment)); }
-void* operator new(std::size_t size, const std::nothrow_t&) noexcept { return CountedAllocate(size, 0); }
-void* operator new[](std::size_t size, const std::nothrow_t&) noexcept { return CountedAllocate(size, 0); }
-void* operator new(std::size_t size, std::align_val_t alignment, const std::nothrow_t&) noexcept
+void* operator new(std::size_t size, const std::nothrow_t& /*tag*/) noexcept { return CountedAllocate(size, 0); }
+void* operator new[](std::size_t size, const std::nothrow_t& /*tag*/) noexcept { return CountedAllocate(size, 0); }
+void* operator new(std::size_t size, std::align_val_t alignment, const std::nothrow_t& /*tag*/) noexcept
 {
     return CountedAllocate(size, static_cast<std::size_t>(alignment));
 }
-void* operator new[](std::size_t size, std::align_val_t alignment, const std::nothrow_t&) noexcept
+void* operator new[](std::size_t size, std::align_val_t alignment, const std::nothrow_t& /*tag*/) noexcept
 {
     return CountedAllocate(size, static_cast<std::size_t>(alignment));
 }
 
 void operator delete(void* pointer) noexcept { std::free(pointer); }
 void operator delete[](void* pointer) noexcept { std::free(pointer); }
-void operator delete(void* pointer, std::size_t) noexcept { std::free(pointer); }
-void operator delete[](void* pointer, std::size_t) noexcept { std::free(pointer); }
-void operator delete(void* pointer, std::align_val_t) noexcept { std::free(pointer); }
-void operator delete[](void* pointer, std::align_val_t) noexcept { std::free(pointer); }
-void operator delete(void* pointer, std::size_t, std::align_val_t) noexcept { std::free(pointer); }
-void operator delete[](void* pointer, std::size_t, std::align_val_t) noexcept { std::free(pointer); }
-void operator delete(void* pointer, const std::nothrow_t&) noexcept { std::free(pointer); }
-void operator delete[](void* pointer, const std::nothrow_t&) noexcept { std::free(pointer); }
-void operator delete(void* pointer, std::align_val_t, const std::nothrow_t&) noexcept { std::free(pointer); }
-void operator delete[](void* pointer, std::align_val_t, const std::nothrow_t&) noexcept { std::free(pointer); }
+void operator delete(void* pointer, std::size_t /*size*/) noexcept { std::free(pointer); }
+void operator delete[](void* pointer, std::size_t /*size*/) noexcept { std::free(pointer); }
+void operator delete(void* pointer, std::align_val_t /*alignment*/) noexcept { std::free(pointer); }
+void operator delete[](void* pointer, std::align_val_t /*alignment*/) noexcept { std::free(pointer); }
+void operator delete(void* pointer, std::size_t /*size*/, std::align_val_t /*alignment*/) noexcept { std::free(pointer); }
+void operator delete[](void* pointer, std::size_t /*size*/, std::align_val_t /*alignment*/) noexcept { std::free(pointer); }
+void operator delete(void* pointer, const std::nothrow_t& /*tag*/) noexcept { std::free(pointer); }
+void operator delete[](void* pointer, const std::nothrow_t& /*tag*/) noexcept { std::free(pointer); }
+void operator delete(void* pointer, std::align_val_t /*alignment*/, const std::nothrow_t& /*tag*/) noexcept { std::free(pointer); }
+void operator delete[](void* pointer, std::align_val_t /*alignment*/, const std::nothrow_t& /*tag*/) noexcept { std::free(pointer); }
 // NOLINTEND(misc-new-delete-overloads)
 
 namespace cppfig::test {
@@ -82,7 +84,7 @@ namespace {
     TEST(AllocationTest, CounterObservesEveryAllocationForm)
     {
         struct alignas(64) OverAligned {
-            char bytes[64];
+            std::array<char, 64> bytes;
         };
 
         // DoNotOptimize keeps the compiler from eliding the new/delete pairs.
@@ -122,7 +124,7 @@ namespace {
     TEST(AllocationTest, MigrationDoesNotAllocatePerSetting)
     {
         const TempDirectory directory;
-        const auto path = directory.file("app.conf").string();
+        const auto path = directory.File("app.conf").string();
         allocation_count = 0;
         auto loaded = LoadFile<ScaleRegistry>(path);
         const auto allocations = allocation_count.load();

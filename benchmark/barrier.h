@@ -14,7 +14,8 @@ namespace cppfig::bench {
 template <typename T>
 inline __attribute__((always_inline)) void KeepValue(T& value)
 {
-    if constexpr (std::is_trivially_copyable_v<T> && sizeof(T) <= sizeof(void*)) {
+    // The branches differ only in their asm constraint, which the check ignores.
+    if constexpr (std::is_trivially_copyable_v<T> && sizeof(T) <= sizeof(void*)) {  // NOLINT(bugprone-branch-clone)
         asm volatile("" : "+r"(value) : : "memory");
     }
     else {

@@ -11,6 +11,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <ratio>
 #include <string>
 #include <string_view>
 
@@ -22,9 +23,9 @@ namespace {
                                       kError };
 
     inline constexpr std::array<EnumName<Level>, 3> kLevelNames { {
-        { Level::kDebug, "debug" },
-        { Level::kInfo, "info" },
-        { Level::kError, "error" },
+        { .value = Level::kDebug, .name = "debug" },
+        { .value = Level::kInfo, .name = "info" },
+        { .value = Level::kError, .name = "error" },
     } };
 
 }  // namespace
@@ -72,11 +73,12 @@ namespace {
     {
         if constexpr (Configurable<long double>) {
             for (const std::string_view text : { "inf", "-inf", "nan" }) {
-                const auto buffer = std::make_unique<char[]>(text.size());
+                // Exactly sized, so AddressSanitizer reports any read past the text.
+                const auto buffer = std::make_unique<char[]>(text.size());  // NOLINT(modernize-avoid-c-arrays)
                 std::memcpy(buffer.get(), text.data(), text.size());
                 const auto value = ConfigTraits<long double>::FromString(std::string_view(buffer.get(), text.size()));
                 ASSERT_TRUE(value.has_value()) << text;
-                EXPECT_EQ(std::isnan(*value), text == "nan") << text;
+                EXPECT_EQ(std::isnan(value.value_or(0.0L)), text == "nan") << text;
             }
         }
     }

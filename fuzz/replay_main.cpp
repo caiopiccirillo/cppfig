@@ -6,8 +6,8 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <iterator>
-#include <string>
 #include <vector>
 
 extern "C" auto LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size) -> int;
