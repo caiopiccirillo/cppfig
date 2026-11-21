@@ -1,5 +1,4 @@
 #include <cppfig/cppfig.h>
-#include <cppfig/testing/mock.h>
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -18,7 +17,6 @@ namespace {
     static_assert(!HasEnvOverride<settings::AppName>);
     static_assert(TestRegistry::has_setting<settings::ServerPort>);
     static_assert(TestRegistry::size == 7);
-    static_assert(ConfigurationProvider<TestConfiguration, TestRegistry>);
     static_assert(!std::is_polymorphic_v<TestConfiguration>);
 
     struct Unregistered {
@@ -145,7 +143,7 @@ namespace {
         EXPECT_EQ(*loaded->Get<MoveOnlySetting>().value, 5);
         EXPECT_TRUE(loaded->Get<LayoutFlagA>());
 
-        testing::MockConfigurationBuilder<MoveOnlyRegistry> builder;
+        ConfigurationBuilder<MoveOnlyRegistry> builder;
         builder.Set<MoveOnlySetting>(MoveOnlyValue { 9 });
         auto built = builder.Build();
         ASSERT_TRUE(built.has_value()) << built.error().message();
@@ -155,10 +153,6 @@ namespace {
     /// Deriving gives the registry a short name of its own, which keeps
     /// diagnostics, clangd hovers and symbol names readable.
     struct DerivedRegistry : Registry<settings::ServerPort, settings::AppName> { };
-
-    static_assert(ConfigurationProvider<Configuration<DerivedRegistry>, DerivedRegistry>);
-    static_assert(ConfigurationProvider<testing::MockConfiguration<DerivedRegistry>, DerivedRegistry>);
-    static_assert(!ConfigurationProvider<Configuration<DerivedRegistry>, TestRegistry>);
 
     TEST(RegistryTest, DerivedRegistryWorksLikeItsBase)
     {
@@ -305,29 +299,46 @@ namespace {
     static_assert(detail::ConstantDefaultCheck<ConstantLevel>);
     static_assert(Registry<ConstantLevel>::size == 1);
 
-    TEST(MockTest, BuilderFreezesValuesAndSatisfiesProviderConcept)
+    TEST(BuilderTest, BuildsAConfigurationFromValuesSetInCode)
     {
-        using Mock = testing::MockConfiguration<TestRegistry>;
-        static_assert(ConfigurationProvider<Mock, TestRegistry>);
-
-        testing::MockConfigurationBuilder<TestRegistry> builder;
+        ConfigurationBuilder<TestRegistry> builder;
         builder.Set<settings::ServerPort>(9000).Set<settings::AppName>("TestApp");
         auto built = builder.Build();
-        ASSERT_TRUE(built.has_value()) << built.error().message();
+        static_assert(std::is_same_v<decltype(built), StatusOr<TestConfiguration>>);
+        ASSERT_TRUE(built) << built.error().message();
 
-        const auto& mock = built.value();
-        EXPECT_EQ(mock.Get<settings::ServerPort>(), 9000);
-        EXPECT_EQ(mock.Get<settings::AppName>(), "TestApp");
-        EXPECT_EQ(mock.Get<settings::ServerHost>(), "localhost");
+        const TestConfiguration& config = built.value();
+        EXPECT_EQ(config.Get<settings::ServerPort>(), 9000);
+        EXPECT_EQ(config.Get<settings::AppName>(), "TestApp");
+        EXPECT_EQ(config.Get<settings::ServerHost>(), "localhost");
     }
 
-    TEST(MockTest, RejectsInvalidTestValuesAtBuild)
+    struct Workers {
+        static constexpr std::string_view path = "server.workers";
+        using value_type = int;
+        static constexpr auto default_value() -> int { return 4; }
+        static constexpr auto validator() { return Range(1, 64); }
+    };
+
+    TEST(BuilderTest, ReportsEveryInvalidValueAtBuild)
     {
-        testing::MockConfigurationBuilder<TestRegistry> builder;
-        builder.Set<settings::ServerPort>(0);
+        ConfigurationBuilder<Registry<settings::ServerPort, Workers>> builder;
+        builder.Set<settings::ServerPort>(0).Set<Workers>(65);
         auto built = builder.Build();
-        ASSERT_FALSE(built.has_value());
-        EXPECT_NE(built.error().message().find("server.port"), std::string_view::npos);
+        ASSERT_FALSE(built);
+        EXPECT_EQ(built.error().message(), "invalid value for 'server.port': Value 0 is outside [1, 65535]\n"
+                                           "invalid value for 'server.workers': Value 65 is outside [1, 64]");
+    }
+
+    TEST(BuilderTest, IsEmptyAfterBuilding)
+    {
+        ConfigurationBuilder<TestRegistry> builder;
+        builder.Set<settings::ServerPort>(9000);
+        ASSERT_TRUE(builder.Build());
+
+        auto rebuilt = builder.Build();
+        ASSERT_TRUE(rebuilt) << rebuilt.error().message();
+        EXPECT_EQ(rebuilt->Get<settings::ServerPort>(), 8080);
     }
 
 }  // namespace

@@ -3,11 +3,10 @@
 #include <array>
 #include <bitset>
 #include <charconv>
-#include <iterator>
-#include <limits>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
+#include <iterator>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -307,6 +306,9 @@ namespace detail {
 template <typename RegistryType>
 struct LoadResult;
 
+template <typename RegistryType>
+class ConfigurationBuilder;
+
 /// @brief An initialized, immutable configuration with direct typed storage.
 ///
 /// Construction succeeds only after every default, file value and environment
@@ -337,17 +339,13 @@ public:
     [[nodiscard]] static auto FromText(std::string text, std::string_view source, LoadOptions options = {})
         -> StatusOr<LoadResult<RegistryType>>;
 
-    /// Creates a configuration from defaults without text or environment input.
+    /// Creates a configuration from defaults without text or environment
+    /// input. To set some values in code, use ConfigurationBuilder.
     [[nodiscard]] static auto FromDefaults() -> StatusOr<Configuration>
     {
         // Candidate storage scales with the registry; keep it off the caller's stack.
         auto candidates = std::make_unique<candidate_storage>();
-        detail::ErrorList errors;
-        CheckCandidates(*candidates, errors);
-        if (!errors.empty()) {
-            return std::move(errors).ToStatus();
-        }
-        return Configuration(*candidates);
+        return FromCandidates(*candidates);
     }
 
     template <typename S>
@@ -365,6 +363,8 @@ public:
     auto Get() const&& -> const typename S::value_type& = delete;
 
 private:
+    friend class ConfigurationBuilder<RegistryType>;
+
     using candidate_storage = typename RegistryType::template held_values_type<std::optional>;
     using slot_table = detail::SlotTable<RegistryType>;
 
@@ -395,16 +395,21 @@ private:
     {
     }
 
-    /// Validates the values already in candidates and fills the empty ones
-    /// from their defaults. Candidates are complete when errors stays empty.
-    static void CheckCandidates(candidate_storage& candidates, detail::ErrorList& errors)
+    /// Validates the values already in candidates, fills the empty ones from
+    /// their defaults and moves them all into a configuration.
+    [[nodiscard]] static auto FromCandidates(candidate_storage& candidates) -> StatusOr<Configuration>
     {
         const auto slots = slot_table::Addresses(candidates);
+        detail::ErrorList errors;
         for (std::size_t i = 0; i < RegistryType::size; ++i) {
             if (auto status = slot_table::check[i](slots[i]); !status.ok()) {
                 errors.Add(status.message());
             }
         }
+        if (!errors.empty()) {
+            return std::move(errors).ToStatus();
+        }
+        return Configuration(candidates);
     }
 
     static void ParseText(LoadState& state, std::string_view text)
@@ -485,6 +490,50 @@ template <typename RegistryType>
 struct LoadResult {
     Configuration<RegistryType> config;
     ConfDocument document;
+};
+
+/// @brief Builds a Configuration from values set in code, for tests and for
+/// applications that gather settings from somewhere other than a .conf file.
+///
+/// The result is an ordinary Configuration, so code can take
+/// `const Configuration<AppRegistry>&` and tests hand it one built here:
+/// @code
+/// auto config = cppfig::ConfigurationBuilder<AppRegistry> {}.Set<settings::ServerPort>(9000).Build();
+/// @endcode
+template <typename RegistryType>
+class ConfigurationBuilder {
+public:
+    ConfigurationBuilder() = default;
+    ConfigurationBuilder(const ConfigurationBuilder&) = delete;
+    auto operator=(const ConfigurationBuilder&) -> ConfigurationBuilder& = delete;
+    ConfigurationBuilder(ConfigurationBuilder&&) = default;
+    auto operator=(ConfigurationBuilder&&) -> ConfigurationBuilder& = default;
+    ~ConfigurationBuilder() = default;
+
+    /// Sets one setting's value, replacing any value set before. Only settings
+    /// of this registry, with their own value type, are accepted.
+    template <typename S>
+        requires(RegistryType::template has_setting<S>)
+    auto Set(typename S::value_type value) -> ConfigurationBuilder&
+    {
+        using Slot = detail::StorageSlot<RegistryType::template index<S>, std::optional<typename S::value_type>>;
+        static_cast<Slot&>(values_).value.emplace(std::move(value));
+        return *this;
+    }
+
+    /// Validates the values set, fills the others from their defaults (which
+    /// are validated too) and freezes them. Every invalid value is reported.
+    /// The builder is empty afterwards, whether or not building succeeded.
+    [[nodiscard]] auto Build() -> StatusOr<Configuration<RegistryType>>
+    {
+        auto result = Configuration<RegistryType>::FromCandidates(values_);
+        std::destroy_at(&values_);
+        std::construct_at(&values_);
+        return result;
+    }
+
+private:
+    typename Configuration<RegistryType>::candidate_storage values_;
 };
 
 template <typename RegistryType>

@@ -1,9 +1,8 @@
-// Compiles the complete initialization path (Load, FromDefaults, Save, the
-// test fake and Get) for a generated registry of CPPFIG_SCALE_SETTINGS
+// Compiles the complete initialization path (LoadFile, FromDefaults, SaveFile,
+// ConfigurationBuilder and Get) for a generated registry of CPPFIG_SCALE_SETTINGS
 // settings with mixed value types, environment overrides and validators.
 // CTest runs it at -O2 with a timeout to catch compile-time regressions.
 #include <cppfig/cppfig.h>
-#include <cppfig/testing/mock.h>
 
 #include <cstddef>
 #include <string>
@@ -28,7 +27,7 @@ auto LoadLarge(const std::string& path) -> int
         return -1;
     }
     auto defaults = cppfig::Configuration<scale::LargeRegistry>::FromDefaults();
-    auto fake = cppfig::testing::MockConfigurationBuilder<scale::LargeRegistry> {}.Build();
+    auto fake = cppfig::ConfigurationBuilder<scale::LargeRegistry> {}.Build();
     if (!defaults.has_value() || !fake.has_value()) {
         return -1;
     }

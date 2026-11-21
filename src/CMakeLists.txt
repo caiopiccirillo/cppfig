@@ -6,14 +6,12 @@ set(CPPFIG_CORE_HEADERS
     cppfig/document.h
     cppfig/environment.h
     cppfig/file.h
-    cppfig/interface.h
     cppfig/schema.h
     cppfig/setting.h
     cppfig/status.h
     cppfig/storage.h
     cppfig/traits.h
     cppfig/validator.h
-    cppfig/testing/mock.h
 )
 
 add_library(cppfig INTERFACE)
@@ -28,8 +26,6 @@ target_sources(cppfig
 
 target_compile_features(cppfig INTERFACE cxx_std_20)
 
-# The test fake (cppfig/testing/mock.h) does not depend on any test framework,
-# so it ships and installs with the library for consumers' own tests.
 if(CPPFIG_BUILD_TESTS)
     add_header_self_containment_target(cppfig_header_check
         LINK_LIBRARIES cppfig::cppfig cppfig_warnings

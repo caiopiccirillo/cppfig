@@ -5,7 +5,6 @@
 #include "cppfig/document.h"       // IWYU pragma: export
 #include "cppfig/environment.h"    // IWYU pragma: export
 #include "cppfig/file.h"           // IWYU pragma: export
-#include "cppfig/interface.h"      // IWYU pragma: export
 #include "cppfig/schema.h"         // IWYU pragma: export
 #include "cppfig/setting.h"        // IWYU pragma: export
 #include "cppfig/status.h"         // IWYU pragma: export
