@@ -4,6 +4,7 @@
 // operation, the frozen configuration's size and the document's size.
 #include <benchmark/benchmark.h>
 #include <cppfig/cppfig.h>
+#include <malloc.h>
 
 #include <atomic>
 #include <cstddef>
@@ -21,6 +22,17 @@ namespace {
 
 std::atomic<std::size_t> allocation_count = 0;
 std::atomic<std::size_t> allocated_bytes = 0;
+// Heap held by live allocations, as the allocator sizes them (glibc's
+// malloc_usable_size), so capacity slack in retained buffers is counted.
+std::atomic<std::ptrdiff_t> live_bytes = 0;
+
+void Release(void* pointer) noexcept
+{
+    if (pointer != nullptr) {
+        live_bytes.fetch_sub(static_cast<std::ptrdiff_t>(::malloc_usable_size(pointer)), std::memory_order_relaxed);
+    }
+    std::free(pointer);
+}
 
 auto CountedAllocate(std::size_t size, std::size_t alignment) noexcept -> void*
 {
@@ -29,10 +41,13 @@ auto CountedAllocate(std::size_t size, std::size_t alignment) noexcept -> void*
     if (size == 0) {
         size = 1;
     }
-    if (alignment <= __STDCPP_DEFAULT_NEW_ALIGNMENT__) {
-        return std::malloc(size);
+    void* pointer = alignment <= __STDCPP_DEFAULT_NEW_ALIGNMENT__
+        ? std::malloc(size)
+        : std::aligned_alloc(alignment, (size + alignment - 1) / alignment * alignment);
+    if (pointer != nullptr) {
+        live_bytes.fetch_add(static_cast<std::ptrdiff_t>(::malloc_usable_size(pointer)), std::memory_order_relaxed);
     }
-    return std::aligned_alloc(alignment, (size + alignment - 1) / alignment * alignment);
+    return pointer;
 }
 
 auto CountedAllocateOrAbort(std::size_t size, std::size_t alignment) -> void*
@@ -60,18 +75,18 @@ void* operator new[](std::size_t size, std::align_val_t alignment, const std::no
 {
     return CountedAllocate(size, static_cast<std::size_t>(alignment));
 }
-void operator delete(void* pointer) noexcept { std::free(pointer); }
-void operator delete[](void* pointer) noexcept { std::free(pointer); }
-void operator delete(void* pointer, std::size_t) noexcept { std::free(pointer); }
-void operator delete[](void* pointer, std::size_t) noexcept { std::free(pointer); }
-void operator delete(void* pointer, std::align_val_t) noexcept { std::free(pointer); }
-void operator delete[](void* pointer, std::align_val_t) noexcept { std::free(pointer); }
-void operator delete(void* pointer, std::size_t, std::align_val_t) noexcept { std::free(pointer); }
-void operator delete[](void* pointer, std::size_t, std::align_val_t) noexcept { std::free(pointer); }
-void operator delete(void* pointer, const std::nothrow_t&) noexcept { std::free(pointer); }
-void operator delete[](void* pointer, const std::nothrow_t&) noexcept { std::free(pointer); }
-void operator delete(void* pointer, std::align_val_t, const std::nothrow_t&) noexcept { std::free(pointer); }
-void operator delete[](void* pointer, std::align_val_t, const std::nothrow_t&) noexcept { std::free(pointer); }
+void operator delete(void* pointer) noexcept { Release(pointer); }
+void operator delete[](void* pointer) noexcept { Release(pointer); }
+void operator delete(void* pointer, std::size_t) noexcept { Release(pointer); }
+void operator delete[](void* pointer, std::size_t) noexcept { Release(pointer); }
+void operator delete(void* pointer, std::align_val_t) noexcept { Release(pointer); }
+void operator delete[](void* pointer, std::align_val_t) noexcept { Release(pointer); }
+void operator delete(void* pointer, std::size_t, std::align_val_t) noexcept { Release(pointer); }
+void operator delete[](void* pointer, std::size_t, std::align_val_t) noexcept { Release(pointer); }
+void operator delete(void* pointer, const std::nothrow_t&) noexcept { Release(pointer); }
+void operator delete[](void* pointer, const std::nothrow_t&) noexcept { Release(pointer); }
+void operator delete(void* pointer, std::align_val_t, const std::nothrow_t&) noexcept { Release(pointer); }
+void operator delete[](void* pointer, std::align_val_t, const std::nothrow_t&) noexcept { Release(pointer); }
 // NOLINTEND(misc-new-delete-overloads)
 
 namespace cppfig::bench {
@@ -160,6 +175,13 @@ namespace {
         counter.Report(state);
         ReportLayout<N>(state);
         state.counters["document_bytes"] = static_cast<double>(document_bytes);
+
+        // Heap still held by one load's result: the document's text (with any
+        // capacity slack) and whatever the values themselves allocate.
+        const auto live_before = live_bytes.load();
+        auto kept = cppfig::LoadFile<Scale<N>>(file.path());
+        state.counters["retained_bytes"] = static_cast<double>(live_bytes.load() - live_before);
+        benchmark::DoNotOptimize(kept);
     }
 
     /// Loads with no file: every default is serialized into a new document.
