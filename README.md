@@ -16,12 +16,12 @@ const int& port = config.Get<settings::ServerPort>();  // no lookup, no parsing,
 - **Typed reads at the cost of a field access.** `Get<S>()` returns `const S::value_type&` from a slot chosen at compile time. Reading an integer takes about 0.2 ns, with zero allocations ([results](docs/BENCHMARK_RESULTS.md)).
 - **Compile-time checks.** Duplicate or malformed paths, duplicate or malformed environment variable names, unregistered settings, missing conversions, mismatched validators and constant defaults that fail their validator are all compile errors.
 - **IDE-friendly.** Settings are plain structs; clangd completes `Get<settings::...>()` and shows the real value type on hover.
-- **Validated, all-or-nothing initialization.** Defaults, file values and environment overrides are converted and validated once. Loading either yields a complete valid configuration or an error with `file:line:column`.
+- **Validated, all-or-nothing initialization.** Defaults, file values and environment overrides are converted and validated once. Loading either yields a complete valid configuration or every error found, each with `file:line:column`.
 - **Lock-free concurrent reads.** The configuration is immutable once loaded, so any number of threads can read it without synchronization.
 - **Comment-preserving saves and migrations.** Saving writes your file back untouched, appending only settings it is missing. Saves are atomic and durable, and keep the file's permissions and symlinks.
-- **Lean memory.** The configuration holds the values and nothing else, with no padding between them; the source text lives in a separate document you can discard.
+- **Lean memory.** The configuration holds the values and nothing else, with no padding between them; the source text lives in a separate, exactly sized document you can discard.
 - **No exceptions required.** Errors are returned as `Status`/`StatusOr`; the library builds with `-fno-exceptions`.
-- **Testable.** Depend on the `ConfigurationProvider` concept and substitute an in-memory `MockConfiguration` in tests.
+- **Testable.** `ConfigurationBuilder` makes a real configuration from values set in code, and `Environment::From` replaces the process environment, so tests need neither files nor `setenv`.
 
 ## Quick Start
 
@@ -54,15 +54,15 @@ struct AppRegistry : cppfig::Registry<settings::ServerHost, settings::ServerPort
 ### 2. Load, save if needed, and read
 
 ```cpp
-auto loaded = cppfig::Configuration<AppRegistry>::Load("app.conf");
-if (!loaded.ok()) {
-    std::cerr << loaded.status().message() << '\n';  // e.g. app.conf:3:15: Cannot parse value 'abc' for 'server.port'
+auto loaded = cppfig::LoadFile<AppRegistry>("app.conf");
+if (!loaded) {
+    std::cerr << loaded.error().message() << '\n';  // e.g. app.conf:3:15: cannot parse 'abc' as a value of 'server.port'
     return 1;
 }
 
 // Creates the file, or appends settings missing from it, only when needed.
 if (loaded->document.NeedsSave()) {
-    if (auto status = loaded->document.Save(); !status.ok()) {
+    if (auto status = cppfig::SaveFile("app.conf", loaded->document); !status.ok()) {
         std::cerr << status.message() << '\n';
     }
 }
@@ -89,7 +89,7 @@ Edit it freely: comments, ordering and spacing are preserved. Values come from, 
 | [The `.conf` Format](docs/conf-format.md) | Grammar, quoting, comments, unknown keys, error messages |
 | [Custom Types](docs/custom-types.md) | Built-in conversions, durations, enums, your own types |
 | [Validators](docs/validators.md) | Built-in validators, composition, custom validators |
-| [Testing](docs/testing.md) | `MockConfiguration` and dependency injection |
+| [Testing](docs/testing.md) | `ConfigurationBuilder`, replaceable environment, loading from text |
 | [Benchmark Results](docs/BENCHMARK_RESULTS.md) | Read, load, save, memory and compile-time measurements |
 
 ## Installation
@@ -135,7 +135,7 @@ cmake --workflow --preset=fuzz-clang        # libFuzzer + ASan/UBSan, 30 s per f
 
 ### Fuzzing
 
-`fuzz/` holds three libFuzzer targets: the `.conf` parser and writer, the value conversions, and `Load` end to end. Each checks properties rather than only looking for crashes, for example that every value the parser reads is written back and read again unchanged. Every test build also replays the checked-in corpus in `fuzz/corpus/` with any compiler, so inputs that once failed stay fixed.
+`fuzz/` holds three libFuzzer targets: the `.conf` parser and writer, the value conversions, and loading end to end. Each checks properties rather than only looking for crashes, for example that every value the parser reads is written back and read again unchanged. Every test build also replays the checked-in corpus in `fuzz/corpus/` with any compiler, so inputs that once failed stay fixed.
 
 For a longer run than the preset's:
 
@@ -154,15 +154,15 @@ src/cppfig/
 ├── schema.h          # Registry: membership, indexing, compile-time checks
 ├── setting.h         # Setting concepts
 ├── storage.h         # Typed, alignment-ordered value storage
-├── configuration.h   # Configuration, Load, FromDefaults, LoadResult
-├── document.h        # ConfDocument: source text, migrations, atomic Save
+├── configuration.h   # Configuration, FromText, FromDefaults, ConfigurationBuilder
+├── document.h        # ConfDocument: source text, migrations, unknown keys
+├── environment.h     # Environment: the process environment or a fixed set
+├── file.h            # LoadFile, SaveFile (atomic), ReadConfFile
 ├── conf.h            # .conf parser and value escaping
 ├── traits.h          # ConfigTraits conversions, EnumTraits
 ├── chrono.h          # Opt-in std::chrono::duration conversions
 ├── validator.h       # Validators
-├── interface.h       # ConfigurationProvider concept
-├── status.h          # Status and StatusOr
-└── testing/mock.h    # MockConfiguration for tests
+└── status.h          # Status and StatusOr
 test/                 # Unit, compile-fail and compile-scale tests
 fuzz/                 # libFuzzer targets and their corpus
 benchmark/            # Google Benchmark suites

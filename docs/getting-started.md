@@ -73,33 +73,50 @@ The registry is checked when it is instantiated. A duplicate path, a path that i
 ## 3. Load
 
 ```cpp
-auto loaded = cppfig::Configuration<AppRegistry>::Load("config.conf");
-if (!loaded.ok()) {
-    std::cerr << "Configuration error: " << loaded.status().message() << '\n';
+auto loaded = cppfig::LoadFile<AppRegistry>("config.conf");
+if (!loaded) {
+    std::cerr << "Configuration error:\n" << loaded.error().message() << '\n';
     return 1;
 }
 ```
 
-`Load` reads the file, applies environment overrides, converts and validates every value, and returns a `LoadResult` holding two objects:
+`LoadFile` reads the file, applies environment overrides, converts and validates every value, and returns a `LoadResult` holding two objects:
 
 - `config`, the frozen `Configuration<AppRegistry>`: just the typed values.
 - `document`, a `ConfDocument`: the file's text plus any settings that were missing from it.
 
-If anything is wrong, such as a syntax error, an unknown or duplicate key, an unparsable value or a value its validator rejects, `Load` returns an error and no configuration. Errors that point into the file start with `config.conf:line:column:`.
+If anything is wrong, such as a syntax error, an unknown or duplicate key, an unparsable value or a value its validator rejects, loading returns an error and no configuration. The error lists every problem found, one per line, so a file can be fixed in one go. Errors that point into the file start with `config.conf:line:column:`. The values of environment variables are never quoted in errors, because they often hold secrets.
 
 A missing file is not an error: every setting takes its default, and the document holds a complete new file.
+
+`LoadFile` lives in `<cppfig/file.h>`, which `<cppfig/cppfig.h>` includes. Code that only reads a configuration can include `<cppfig/configuration.h>` alone and stay clear of the file system and POSIX headers.
+
+### Loading from text
+
+`Configuration<AppRegistry>::FromText(text, source)` does the same from text you already have, such as an embedded default file or a string received over the network. `source` names the text in error messages. `LoadFile` is a thin wrapper that reads the file and calls it.
+
+### Choosing the environment
+
+Overrides come from the process environment unless `LoadOptions::environment` says otherwise:
+
+```cpp
+const std::array<cppfig::EnvironmentVariable, 1> variables { { { "SERVER_PORT", "9000" } } };
+auto loaded = cppfig::LoadFile<AppRegistry>("config.conf", { .environment = cppfig::Environment::From(variables) });
+```
+
+`Environment::None()` ignores the environment entirely. The environment is read once, in a single pass; like `getenv`, reading the process environment must not race with `setenv`.
 
 ## 4. Save if needed
 
 ```cpp
 if (loaded->document.NeedsSave()) {
-    if (auto status = loaded->document.Save(); !status.ok()) {
+    if (auto status = cppfig::SaveFile("config.conf", loaded->document); !status.ok()) {
         std::cerr << "Could not save: " << status.message() << '\n';
     }
 }
 ```
 
-`NeedsSave()` is true when the file did not exist or settings were missing from it. Saving writes the original text back unchanged and appends the missing settings with their defaults, so comments and formatting survive. Environment overrides are never written. The save is atomic: readers see either the old or the new file.
+`NeedsSave()` is true when settings were missing from the file, which includes a file that did not exist. Saving writes the original text back unchanged and appends the missing settings with their defaults, so comments and formatting survive. Environment overrides are never written. The save is atomic: readers see either the old or the new file.
 
 ## 5. Read
 
@@ -135,15 +152,44 @@ See [The `.conf` Format](conf-format.md) for the full grammar.
 
 ## Configuration without a file
 
-`FromDefaults()` builds a configuration from defaults alone, without reading a file or the environment. It is useful in tests and tools:
+`FromDefaults()` builds a configuration from defaults alone, without reading a file or the environment. `ConfigurationBuilder` does the same with some values set in code; it is what tests use:
 
 ```cpp
 auto defaults = cppfig::Configuration<AppRegistry>::FromDefaults();
+auto custom = cppfig::ConfigurationBuilder<AppRegistry> {}.Set<settings::ServerPort>(9000).Build();
 ```
+
+Defaults are built only when they are used. When loading, a setting present in the file never runs its `default_value()`.
 
 ## Threads
 
-A configuration never changes after it is created, so any number of threads may call `Get` on it at the same time without locks. Create and publish it before other threads start reading, as you would any object. To pick up changes to the file or the environment, load a new configuration.
+A configuration never changes after it is created, so any number of threads may call `Get` on it at the same time without locks. Create and publish it before other threads start reading, as you would any object.
+
+## Reloading
+
+A configuration is never modified; to pick up changes to the file or the environment, load a new one and swap it in. Readers that hold a `std::shared_ptr` keep the version they started with until they are done:
+
+```cpp
+std::atomic<std::shared_ptr<const cppfig::Configuration<AppRegistry>>> current;
+
+void Reload()
+{
+    auto loaded = cppfig::LoadFile<AppRegistry>("config.conf");
+    if (!loaded) {
+        log_error(loaded.error().message());  // keep serving the previous configuration
+        return;
+    }
+    current.store(std::make_shared<const cppfig::Configuration<AppRegistry>>(std::move(loaded->config)));
+}
+
+void HandleRequest()
+{
+    const auto config = current.load();  // one consistent snapshot for the whole request
+    Serve(config->Get<settings::ServerPort>());
+}
+```
+
+Keeping the configuration on the heap this way also keeps it off the stack, which matters for registries with hundreds of settings: a configuration is as large as its values.
 
 ## Next steps
 
@@ -151,4 +197,4 @@ A configuration never changes after it is created, so any number of threads may 
 - [The `.conf` Format](conf-format.md): grammar, quoting, unknown keys, error messages
 - [Custom Types](custom-types.md): durations, enums and your own types
 - [Validators](validators.md): built-in and custom validation
-- [Testing](testing.md): mock configurations for unit tests
+- [Testing](testing.md): building configurations in tests

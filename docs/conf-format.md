@@ -97,14 +97,15 @@ Entries with unknown paths must still be syntactically valid. Duplicate known pa
 
 ## Errors
 
-Load errors that point into the file start with `file:line:column:`, as compiler diagnostics do. Columns count bytes from 1.
+Loading reports every error it finds, one per line, rather than stopping at the first. Errors that point into the file start with `file:line:column:`, as compiler diagnostics do. Columns count bytes from 1.
 
 ```
 app.conf:2:1: missing '=' after the setting path
-app.conf:4:3: Duplicate configuration setting 'server.port' (first set on line 2)
-app.conf:5:15: Cannot parse value 'abc' for 'server.port'
-app.conf:7:15: server.port file value is invalid: Value 0 is outside [1, 65535]
+app.conf:4:3: duplicate setting 'server.port' (first set on line 2)
+app.conf:5:15: cannot parse 'abc' as a value of 'server.port'
+app.conf:7:15: invalid value for 'server.port': Value 0 is outside [1, 65535]
 app.conf:9:12: unterminated quoted value
+environment variable SERVER_PORT: cannot parse the value for 'server.port'
 ```
 
-Errors in defaults and environment overrides name the setting instead, since they have no position in the file.
+Errors in defaults and environment overrides name the setting instead, since they have no position in the file; those from the environment never quote the variable's value, which may be a secret. After 20 errors the rest are only counted, so a file of garbage cannot produce an unbounded message.

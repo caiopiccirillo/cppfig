@@ -18,9 +18,9 @@ struct ServerPort {
 ## When validation runs
 
 - When the registry is instantiated, for defaults that can be evaluated at compile time. A failing constant default is a compile error.
-- During `Load`, for the default, the file value and the environment override, whichever are present. The first failure stops the load: the error names the setting and the source, and for file values gives `file:line:column`.
+- During loading, for the file value and the environment override, whichever are present, and for the default when the file lacks the setting (a default already checked at compile time is not checked again). Loading carries on past a failure and reports every one: each error names the setting, and for file values gives `file:line:column`.
 - During `FromDefaults`, for every default.
-- During `MockConfigurationBuilder::Build`, for every value supplied by a test and every default.
+- During `ConfigurationBuilder::Build`, for every value set in code and every default it uses.
 
 A configuration therefore never contains an invalid value.
 
@@ -117,8 +117,8 @@ struct ValidationResult {
 };
 ```
 
-The message is included in the error that `Load` returns, for example:
+The message is included in the error that loading returns, for example:
 
 ```
-app.conf:7:15: server.port file value is invalid: Value 0 is outside [1, 65535]
+app.conf:7:15: invalid value for 'server.port': Value 0 is outside [1, 65535]
 ```

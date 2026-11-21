@@ -18,7 +18,7 @@ struct ServerPort {
 | --- | --- |
 | `path` | The key in the `.conf` file. Convertible to `std::string_view`. |
 | `value_type` | The type `Get` returns a reference to. It needs a [`ConfigTraits`](custom-types.md) conversion. |
-| `default_value()` | Returns exactly `value_type`. Called once per `Load` or `FromDefaults`. |
+| `default_value()` | Returns exactly `value_type`. Called at most once per load or build, and only when the default is used: a setting present in the file never calls it. |
 
 Make `default_value()` `constexpr` when you can: a constant default is checked against the validator at compile time.
 
@@ -28,7 +28,7 @@ Make `default_value()` `constexpr` when you can: a constant default is checked a
 static constexpr std::string_view env_override = "SERVER_PORT";
 ```
 
-When the variable is set at load time, its value is parsed with the same conversion as the file and takes precedence over the file and the default. The environment is read once, during `Load`; later changes do not affect an existing configuration. Overrides are never written to the file.
+When the variable is set at load time, its value is parsed with the same conversion as the file and takes precedence over the file and the default. The environment is read once, in a single pass, during loading; later changes do not affect an existing configuration. `LoadOptions::environment` can replace the process environment with a fixed set of variables or none. Overrides are never written to the file.
 
 ### Optional: validator
 
@@ -100,7 +100,7 @@ For each setting, the effective value is the first available of:
 2. the value in the file;
 3. the default.
 
-Each value that is used is validated, and so is the default, even when an override or a file value replaces it. `Load` fails rather than skipping an invalid value.
+Each value that is read is validated: a file value even when an override replaces it, and a default whenever the file lacks the setting, since it is then written to the file as well. Loading fails rather than skipping an invalid value.
 
 ## A complete example
 
