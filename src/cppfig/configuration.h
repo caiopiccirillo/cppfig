@@ -219,33 +219,53 @@ namespace detail {
     template <typename S>
     using OptionalSlot = std::optional<typename S::value_type>;
 
-    using AssignSlotFunction = auto (*)(std::string_view text, TextOrigin origin, void* slot) -> Status;
-    using CompleteSlotFunction = auto (*)(void* slot, std::string* migrations) -> Status;
-    using CheckSlotFunction = auto (*)(void* slot) -> Status;
+    /// What a per-setting slot function is asked to do.
+    enum class SlotOperation : std::uint8_t {
+        /// Parse text read from the file into the slot.
+        kAssignFileText,
+        /// Parse an environment variable's text into the slot.
+        kAssignEnvironmentText,
+        /// Append the default as a migration and fill the slot if it is empty.
+        kAddDefault,
+        /// Validate a value set in code, or fill an empty slot with the default.
+        kCheck,
+    };
 
-    template <typename S>
-    [[nodiscard]] auto AssignSlot(std::string_view text, TextOrigin origin, void* slot) -> Status
-    {
-        return AssignSettingText(setting_info<S>, text, origin, *static_cast<OptionalSlot<S>*>(slot));
-    }
+    struct SlotRequest {
+        SlotOperation operation;
+        std::string_view text;
+        std::string* migrations = nullptr;
+    };
 
-    /// Builds the default only here, so a setting whose value comes from the
-    /// file never runs its default factory.
-    template <typename S>
-    [[nodiscard]] auto CompleteSlot(void* slot, std::string* migrations) -> Status
-    {
-        return CompleteWithDefault(setting_info<S>, S::default_value(), *static_cast<OptionalSlot<S>*>(slot), migrations);
-    }
+    using SlotFunction = auto (*)(void* slot, const SlotRequest& request) -> Status;
 
-    /// Validates a value supplied in code, or fills an empty slot with the default.
+    /// The one entry point per setting. A single function serving every
+    /// operation, rather than one function per operation, keeps the per-setting
+    /// cost to one table entry: in a position-independent binary each function
+    /// pointer in a table is a relocation the loader applies at startup, and
+    /// each function has its own unwind entry.
+    ///
+    /// The default is built only for kAddDefault and an empty kCheck, so a
+    /// setting whose value comes from the file never runs its default factory.
     template <typename S>
-    [[nodiscard]] auto CheckSlot(void* slot) -> Status
+    [[nodiscard]] auto RunSlot(void* slot, const SlotRequest& request) -> Status
     {
+        const auto& info = setting_info<S>;
         auto& candidate = *static_cast<OptionalSlot<S>*>(slot);
-        if (candidate) {
-            return CheckSettingValue(setting_info<S>, *candidate, "invalid value");
+        switch (request.operation) {
+        case SlotOperation::kAssignFileText:
+            return AssignSettingText(info, request.text, TextOrigin::kFile, candidate);
+        case SlotOperation::kAssignEnvironmentText:
+            return AssignSettingText(info, request.text, TextOrigin::kEnvironment, candidate);
+        case SlotOperation::kAddDefault:
+            return CompleteWithDefault(info, S::default_value(), candidate, request.migrations);
+        case SlotOperation::kCheck:
+            if (candidate) {
+                return CheckSettingValue(info, *candidate, "invalid value");
+            }
+            return CompleteWithDefault(info, S::default_value(), candidate, nullptr);
         }
-        return CompleteSlot<S>(slot, nullptr);
+        return OkStatus();
     }
 
     /// Per-registry tables of slot addresses and per-setting entry points.
@@ -271,26 +291,17 @@ namespace detail {
         }
 
         template <std::size_t... I>
-        static constexpr auto MakeAssign(std::index_sequence<I...>) -> std::array<AssignSlotFunction, size>
+        static constexpr auto MakeFunctions(std::index_sequence<I...>) -> std::array<SlotFunction, size>
         {
-            return { &AssignSlot<Setting<I>>... };
+            return { &RunSlot<Setting<I>>... };
         }
 
-        template <std::size_t... I>
-        static constexpr auto MakeComplete(std::index_sequence<I...>) -> std::array<CompleteSlotFunction, size>
-        {
-            return { &CompleteSlot<Setting<I>>... };
-        }
+        static constexpr std::array<SlotFunction, size> functions = MakeFunctions(std::make_index_sequence<size>());
 
-        template <std::size_t... I>
-        static constexpr auto MakeCheck(std::index_sequence<I...>) -> std::array<CheckSlotFunction, size>
+        [[nodiscard]] static auto Run(std::size_t index, void* slot, const SlotRequest& request) -> Status
         {
-            return { &CheckSlot<Setting<I>>... };
+            return functions[index](slot, request);
         }
-
-        static constexpr std::array<AssignSlotFunction, size> assign = MakeAssign(std::make_index_sequence<size>());
-        static constexpr std::array<CompleteSlotFunction, size> complete = MakeComplete(std::make_index_sequence<size>());
-        static constexpr std::array<CheckSlotFunction, size> check = MakeCheck(std::make_index_sequence<size>());
     };
 
     /// A line number in four bytes. Lines past the range saturate, which only
@@ -402,7 +413,7 @@ private:
         const auto slots = slot_table::Addresses(candidates);
         detail::ErrorList errors;
         for (std::size_t i = 0; i < RegistryType::size; ++i) {
-            if (auto status = slot_table::check[i](slots[i]); !status.ok()) {
+            if (auto status = slot_table::Run(i, slots[i], { detail::SlotOperation::kCheck, {} }); !status.ok()) {
                 errors.Add(status.message());
             }
         }
@@ -435,7 +446,7 @@ private:
             }
             state.file_lines[index] = detail::CompactLine(entry.line);
 
-            if (auto status = slot_table::assign[index](entry.text, detail::TextOrigin::kFile, state.slots[index]); !status.ok()) {
+            if (auto status = slot_table::Run(index, state.slots[index], { detail::SlotOperation::kAssignFileText, entry.text }); !status.ok()) {
                 state.errors.AddAt(state.source, entry.line, entry.value_column, status.message());
             }
         };
@@ -457,7 +468,7 @@ private:
                     return;
                 }
                 applied.set(index);
-                if (auto status = slot_table::assign[index](value, detail::TextOrigin::kEnvironment, state.slots[index]); !status.ok()) {
+                if (auto status = slot_table::Run(index, state.slots[index], { detail::SlotOperation::kAssignEnvironmentText, value }); !status.ok()) {
                     state.errors.Add("environment variable ", name, ": ", status.message());
                 }
             });
@@ -472,7 +483,7 @@ private:
     {
         for (std::size_t i = 0; i < RegistryType::size; ++i) {
             if (state.file_lines[i] == 0) {
-                if (auto status = slot_table::complete[i](state.slots[i], &state.migrations); !status.ok()) {
+                if (auto status = slot_table::Run(i, state.slots[i], { detail::SlotOperation::kAddDefault, {}, &state.migrations }); !status.ok()) {
                     state.errors.Add(status.message());
                 }
             }
