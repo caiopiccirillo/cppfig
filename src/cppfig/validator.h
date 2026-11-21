@@ -37,8 +37,11 @@ template <typename Left, typename Right>
 struct OrValidator;
 
 /// @brief CRTP mixin providing allocation-free validator composition.
+///
+/// Its constructor stays public: validators are aggregates, and aggregate
+/// initialization of a derived validator needs an accessible base constructor.
 template <typename Derived>
-struct ValidatorOps {
+struct ValidatorOps {  // NOLINT(bugprone-crtp-constructor-accessibility)
     template <typename Right>
     [[nodiscard]] constexpr auto And(Right right) const -> AndValidator<Derived, Right>
     {
@@ -227,7 +230,7 @@ struct PredicateValidator : ValidatorOps<PredicateValidator<T, PredicateType>> {
 
 template <typename T>
 struct AlwaysValidValidator : ValidatorOps<AlwaysValidValidator<T>> {
-    [[nodiscard]] constexpr auto operator()(const T&) const -> ValidationResult { return ValidationResult::Ok(); }
+    [[nodiscard]] constexpr auto operator()(const T& /*value*/) const -> ValidationResult { return ValidationResult::Ok(); }
 };
 
 template <typename T>
@@ -294,7 +297,7 @@ namespace detail {
     };
 
     template <typename Element, typename... Values>
-    using OneOfElement = typename OneOfElementOf<
+    using OneOfElement = OneOfElementOf<
         std::conditional_t<std::is_void_v<Element>, std::common_type_t<std::decay_t<Values>...>, Element>>::type;
 
 }  // namespace detail

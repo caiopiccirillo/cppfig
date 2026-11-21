@@ -23,9 +23,11 @@
 #if __has_include(<unistd.h>)
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdio>
 #define CPPFIG_HAS_POSIX_IO 1
 #else
 #define CPPFIG_HAS_POSIX_IO 0
@@ -59,13 +61,15 @@ namespace detail {
     {
         // Unique per process and call, so concurrent saves never share a temporary.
         static std::atomic<unsigned long> counter = 0;
+        constexpr int kMaxAttempts = 16;
+        // Lets the process umask decide the mode of a newly created file.
+        constexpr ::mode_t kNewFileMode = 0666;
         std::filesystem::path temporary;
         int fd = -1;
-        for (int attempt = 0; attempt < 16 && fd < 0; ++attempt) {
+        for (int attempt = 0; attempt < kMaxAttempts && fd < 0; ++attempt) {
             temporary = destination;
             temporary += ".cppfig-" + std::to_string(::getpid()) + "-" + std::to_string(counter.fetch_add(1)) + ".tmp";
-            // 0666 lets the process umask decide the mode of a newly created file.
-            fd = ::open(temporary.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0666);
+            fd = ::open(temporary.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, kNewFileMode);
             if (fd < 0 && errno != EEXIST) {
                 return InternalError("Failed to create temporary configuration file '" + temporary.string() + "': " + ErrorText(errno));
             }
@@ -84,7 +88,8 @@ namespace detail {
 
         struct ::stat existing {};
         if (::stat(destination.c_str(), &existing) == 0) {
-            if (::fchmod(fd, existing.st_mode & 07777) != 0) {
+            constexpr ::mode_t kPermissionBits = S_ISUID | S_ISGID | S_ISVTX | S_IRWXU | S_IRWXG | S_IRWXO;
+            if (::fchmod(fd, existing.st_mode & kPermissionBits) != 0) {
                 return fail("copy the permissions of", errno);
             }
             // Changing the owner needs privileges; without them the new file
