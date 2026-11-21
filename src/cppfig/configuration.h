@@ -14,6 +14,7 @@
 
 #include "cppfig/conf.h"
 #include "cppfig/document.h"
+#include "cppfig/environment.h"
 #include "cppfig/schema.h"
 #include "cppfig/status.h"
 
@@ -32,6 +33,8 @@ enum class UnknownKeyPolicy : std::uint8_t {
 /// @brief Options for Configuration::FromText and LoadFile.
 struct LoadOptions {
     UnknownKeyPolicy unknown_keys = UnknownKeyPolicy::kReject;
+    /// Where environment overrides are read from.
+    Environment environment = Environment::Process();
 };
 
 namespace detail {
@@ -101,12 +104,31 @@ namespace detail {
     struct ResolveContext {
         std::string_view source;
         std::string migrations;
-        bool apply_environment = false;
         bool record_migrations = false;
     };
 
-    /// Selects the effective value with precedence environment > file > default.
-    /// A missing file entry records the default (never an environment value) as a migration.
+    /// Parses and validates an environment override into effective_value.
+    template <typename T>
+    [[nodiscard]] auto ApplyEnvironmentValue(const SettingInfo<T>& info, std::string_view text, std::optional<T>& effective_value)
+        -> Status
+    {
+        auto value = ConfigTraits<T>::FromString(text);
+        if (!value) {
+            return InvalidArgumentError(std::string(info.path) + " environment override '" + std::string(info.env_override)
+                                        + "' cannot be parsed");
+        }
+        auto status = CheckSettingValue(info, *value, "environment override");
+        if (!status.ok()) {
+            return status;
+        }
+        effective_value.emplace(std::move(*value));
+        return OkStatus();
+    }
+
+    /// Completes the effective value with precedence environment > file >
+    /// default; an environment override is already in effective_value. A
+    /// missing file entry records the default (never an environment value) as
+    /// a migration.
     template <typename T>
     [[nodiscard]] auto ResolveSetting(const SettingInfo<T>& info, T default_value, std::optional<T>& file_value,
                                       std::optional<T>& effective_value, const FileLocation& location, ResolveContext& context)
@@ -131,28 +153,13 @@ namespace detail {
             context.migrations.push_back('\n');
         }
 
-        if (context.apply_environment && !info.env_override.empty()) {
-            const std::string environment_name(info.env_override);
-            if (const char* text = std::getenv(environment_name.c_str())) {
-                auto environment_value = ConfigTraits<T>::FromString(text);
-                if (!environment_value) {
-                    return InvalidArgumentError(std::string(info.path) + " environment override '" + environment_name
-                                                + "' cannot be parsed");
-                }
-                status = CheckSettingValue(info, *environment_value, "environment override");
-                if (!status.ok()) {
-                    return status;
-                }
-                effective_value.emplace(std::move(*environment_value));
-                return OkStatus();
+        if (!effective_value) {
+            if (file_value) {
+                effective_value.emplace(std::move(*file_value));
             }
-        }
-
-        if (file_value) {
-            effective_value.emplace(std::move(*file_value));
-        }
-        else {
-            effective_value.emplace(std::move(default_value));
+            else {
+                effective_value.emplace(std::move(default_value));
+            }
         }
         return OkStatus();
     }
@@ -166,6 +173,7 @@ namespace detail {
     using OptionalSlot = std::optional<typename S::value_type>;
 
     using ParseSlotFunction = auto (*)(std::string_view text, void* file_slot) -> Status;
+    using EnvironmentSlotFunction = auto (*)(std::string_view text, void* effective_slot) -> Status;
     using ResolveSlotFunction = auto (*)(void* file_slot, void* effective_slot, const FileLocation& location,
                                          ResolveContext& context) -> Status;
     using CheckSlotFunction = auto (*)(void* slot) -> Status;
@@ -174,6 +182,12 @@ namespace detail {
     [[nodiscard]] auto ParseSlot(std::string_view text, void* file_slot) -> Status
     {
         return ParseSettingText(setting_info<S>, text, *static_cast<OptionalSlot<S>*>(file_slot));
+    }
+
+    template <typename S>
+    [[nodiscard]] auto EnvironmentSlot(std::string_view text, void* effective_slot) -> Status
+    {
+        return ApplyEnvironmentValue(setting_info<S>, text, *static_cast<OptionalSlot<S>*>(effective_slot));
     }
 
     template <typename S>
@@ -225,6 +239,12 @@ namespace detail {
         }
 
         template <std::size_t... I>
+        static constexpr auto MakeEnvironment(std::index_sequence<I...>) -> std::array<EnvironmentSlotFunction, size>
+        {
+            return { &EnvironmentSlot<Setting<I>>... };
+        }
+
+        template <std::size_t... I>
         static constexpr auto MakeResolve(std::index_sequence<I...>) -> std::array<ResolveSlotFunction, size>
         {
             return { &ResolveSlot<Setting<I>>... };
@@ -237,6 +257,7 @@ namespace detail {
         }
 
         static constexpr std::array<ParseSlotFunction, size> parse = MakeParse(std::make_index_sequence<size>());
+        static constexpr std::array<EnvironmentSlotFunction, size> environment = MakeEnvironment(std::make_index_sequence<size>());
         static constexpr std::array<ResolveSlotFunction, size> resolve = MakeResolve(std::make_index_sequence<size>());
         static constexpr std::array<CheckSlotFunction, size> check_test = MakeCheckTest(std::make_index_sequence<size>());
     };
@@ -355,6 +376,28 @@ private:
         });
     }
 
+    /// Applies the environment overrides found in environment, reading it in
+    /// one pass and looking each variable up among the override names.
+    [[nodiscard]] static auto ApplyEnvironment(InitializationState& state, const Environment& environment) -> Status
+    {
+        if constexpr (RegistryType::env_override_count == 0) {
+            return OkStatus();
+        }
+        else {
+            std::bitset<RegistryType::size> applied;
+            Status status;
+            environment.ForEach([&](std::string_view name, std::string_view value) {
+                const std::size_t index = RegistryType::FindEnvOverride(name);
+                if (!status.ok() || index == RegistryType::size || applied.test(index)) {
+                    return;
+                }
+                applied.set(index);
+                status = slot_table::environment[index](value, state.effective_slots[index]);
+            });
+            return status;
+        }
+    }
+
     /// Resolves settings in declaration order through a table of per-setting
     /// functions. A single fold expression over all settings produced one
     /// enormous function whose optimization dominated compile time for large
@@ -390,12 +433,15 @@ auto Configuration<RegistryType>::FromText(std::string text, std::string_view so
     auto state_owner = std::make_unique<InitializationState>();
     auto& state = *state_owner;
     state.context.source = source;
-    state.context.apply_environment = true;
     state.context.record_migrations = true;
     state.unknown_key_policy = options.unknown_keys;
     state.document = std::move(text);
 
     auto status = ParseDocument(state);
+    if (!status.ok()) {
+        return status;
+    }
+    status = ApplyEnvironment(state, options.environment);
     if (!status.ok()) {
         return status;
     }

@@ -1,6 +1,7 @@
 #include <cppfig/cppfig.h>
 #include <gtest/gtest.h>
 
+#include <array>
 #include <atomic>
 #include <cstdlib>
 #include <filesystem>
@@ -277,29 +278,49 @@ namespace {
 
     TEST(ConfigurationIOTest, RejectsInvalidEnvironmentAndFileValues)
     {
-        const TempDirectory directory;
-        directory.write("app.conf", CompleteDocument());
         {
-            const ScopedEnvironment port("CPPFIG_TEST_SERVER_PORT", "not-a-number");
-            auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string());
-            ASSERT_FALSE(loaded.has_value());
+            const std::array<EnvironmentVariable, 1> variables { { { "CPPFIG_TEST_SERVER_PORT", "not-a-number" } } };
+            auto loaded = TestConfiguration::FromText(CompleteDocument(), "app.conf", { .environment = Environment::From(variables) });
+            ASSERT_FALSE(loaded);
             EXPECT_NE(loaded.error().message().find("environment override"), std::string_view::npos);
         }
         {
-            const ScopedEnvironment port("CPPFIG_TEST_SERVER_PORT", "0");
-            auto loaded = LoadFile<TestRegistry>(directory.file("app.conf").string());
-            ASSERT_FALSE(loaded.has_value());
+            const std::array<EnvironmentVariable, 1> variables { { { "CPPFIG_TEST_SERVER_PORT", "0" } } };
+            auto loaded = TestConfiguration::FromText(CompleteDocument(), "app.conf", { .environment = Environment::From(variables) });
+            ASSERT_FALSE(loaded);
             EXPECT_NE(loaded.error().message().find("environment override"), std::string_view::npos);
         }
 
         std::string invalid_file = CompleteDocument();
         const std::string value = "server.port = 9000";
         invalid_file.replace(invalid_file.find(value), value.size(), "server.port = 0");
-        directory.write("invalid.conf", invalid_file);
-        const ScopedEnvironment valid_override("CPPFIG_TEST_SERVER_PORT", "10000");
-        auto loaded = LoadFile<TestRegistry>(directory.file("invalid.conf").string());
-        ASSERT_FALSE(loaded.has_value());
+        const std::array<EnvironmentVariable, 1> valid_override { { { "CPPFIG_TEST_SERVER_PORT", "10000" } } };
+        auto loaded = TestConfiguration::FromText(invalid_file, "invalid.conf", { .environment = Environment::From(valid_override) });
+        ASSERT_FALSE(loaded);
         EXPECT_NE(loaded.error().message().find("file value"), std::string_view::npos);
+    }
+
+    TEST(ConfigurationIOTest, ReadsOverridesFromAGivenEnvironment)
+    {
+        const std::array<EnvironmentVariable, 4> variables { {
+            { "UNRELATED", "ignored" },
+            { "CPPFIG_TEST_SERVER_PORT", "10000" },
+            { "CPPFIG_TEST_SERVER_PORT", "20000" },
+            { "cppfig_test_server_host", "names are case-sensitive" },
+        } };
+        auto loaded = TestConfiguration::FromText(CompleteDocument(), "app.conf", { .environment = Environment::From(variables) });
+        ASSERT_TRUE(loaded) << loaded.error().message();
+        EXPECT_EQ(loaded->config.Get<settings::ServerPort>(), 10000);
+        EXPECT_EQ(loaded->config.Get<settings::ServerHost>(), "filehost");
+        EXPECT_EQ(loaded->document.GetText(), CompleteDocument());
+    }
+
+    TEST(ConfigurationIOTest, NoEnvironmentIgnoresTheProcessEnvironment)
+    {
+        const ScopedEnvironment port("CPPFIG_TEST_SERVER_PORT", "10000");
+        auto loaded = TestConfiguration::FromText(CompleteDocument(), "app.conf", { .environment = Environment::None() });
+        ASSERT_TRUE(loaded) << loaded.error().message();
+        EXPECT_EQ(loaded->config.Get<settings::ServerPort>(), 9000);
     }
 
     TEST(ConfigurationIOTest, RejectsInvalidCustomType)
