@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <limits>
 #include <optional>
 #include <ratio>
@@ -44,12 +45,12 @@ namespace detail {
     };
 
     template <>
-    struct DurationUnit<std::ratio<60>> {
+    struct DurationUnit<std::chrono::minutes::period> {
         static constexpr std::string_view name = "min";
     };
 
     template <>
-    struct DurationUnit<std::ratio<3600>> {
+    struct DurationUnit<std::chrono::hours::period> {
         static constexpr std::string_view name = "h";
     };
 
@@ -63,7 +64,7 @@ namespace detail {
     template <typename Duration, typename FromPeriod>
     [[nodiscard]] auto ConvertDurationExactly(bool negative, unsigned long long magnitude) -> std::optional<Duration>
     {
-        using Rep = typename Duration::rep;
+        using Rep = Duration::rep;
         using Scale = std::ratio_divide<FromPeriod, typename Duration::period>;
         constexpr auto numerator = static_cast<unsigned long long>(Scale::num);
         constexpr auto denominator = static_cast<unsigned long long>(Scale::den);
@@ -133,10 +134,10 @@ struct ConfigTraits<std::chrono::duration<Rep, Period>> {
             return detail::ConvertDurationExactly<value_type, std::ratio<1>>(negative, *magnitude);
         }
         if (unit == "min") {
-            return detail::ConvertDurationExactly<value_type, std::ratio<60>>(negative, *magnitude);
+            return detail::ConvertDurationExactly<value_type, std::chrono::minutes::period>(negative, *magnitude);
         }
         if (unit == "h") {
-            return detail::ConvertDurationExactly<value_type, std::ratio<3600>>(negative, *magnitude);
+            return detail::ConvertDurationExactly<value_type, std::chrono::hours::period>(negative, *magnitude);
         }
         return std::nullopt;
     }

@@ -20,7 +20,9 @@ static_assert(LargeRegistry::size == CPPFIG_SCALE_SETTINGS);
 
 }  // namespace scale
 
-auto LoadLarge(const std::string& path) -> int
+// External linkage keeps the compiler from discarding this function, so the
+// test measures code generation as well as parsing and instantiation.
+auto LoadLarge(const std::string& path) -> int  // NOLINT(misc-use-internal-linkage)
 {
     auto loaded = cppfig::LoadFile<scale::LargeRegistry>(path);
     if (!loaded.has_value() || !cppfig::SaveFile(path, loaded->document).ok()) {

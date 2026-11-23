@@ -1,0 +1,10 @@
+# Inherits the project's checks and relaxes those that fit library code but
+# not tests, fuzzers, benchmarks and examples: their literal values (ports,
+# sizes, iteration counts) read better inline, test bodies and fuzz entry
+# points are long by nature, and helpers taking two strings are clear at
+# their few call sites.
+InheritParentConfig: true
+Checks: >
+  -bugprone-easily-swappable-parameters,
+  -readability-function-cognitive-complexity,
+  -readability-magic-numbers

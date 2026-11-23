@@ -4,7 +4,6 @@
 #include <array>
 #include <cstddef>
 #include <optional>
-#include <type_traits>
 #include <utility>
 
 namespace cppfig::detail {
@@ -24,7 +23,7 @@ template <std::size_t I, typename T>
 auto SelectIndexedType(const IndexedType<I, T>&) -> IndexedType<I, T>;
 
 template <std::size_t I, typename... Types>
-using TypeAt = typename decltype(SelectIndexedType<I>(
+using TypeAt = decltype(SelectIndexedType<I>(
     std::declval<const TypeIndexer<std::make_index_sequence<sizeof...(Types)>, Types...>&>()))::type;
 
 /// One stored value, keyed by its setting's declaration index I.
@@ -82,16 +81,17 @@ template <template <typename> typename Holder, typename Order, typename... Setti
 struct HeldStorage;
 
 template <template <typename> typename Holder, std::size_t... P, typename... Settings>
-struct HeldStorage<Holder, std::index_sequence<P...>, Settings...>
+struct HeldStorage<Holder, std::index_sequence<P...>, Settings...>  // NOLINT(misc-multiple-inheritance): one base per slot
     : StorageSlot<P, Holder<typename TypeAt<P, Settings...>::value_type>>... {
-    using optional_storage = HeldStorage<std::optional, std::index_sequence<P...>, Settings...>;
+    using OptionalStorage = HeldStorage<std::optional, std::index_sequence<P...>, Settings...>;
 
     HeldStorage() = default;
 
     /// Moves each value out of the engaged optional at the same declaration
     /// index in source. Every slot of source must be engaged.
-    HeldStorage(FromEngagedTag, optional_storage& source)
+    HeldStorage(FromEngagedTag /*tag*/, OptionalStorage& source)
         : StorageSlot<P, Holder<typename TypeAt<P, Settings...>::value_type>> {
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access): the caller guarantees every slot is engaged
             std::move(*static_cast<StorageSlot<P, std::optional<typename TypeAt<P, Settings...>::value_type>>&>(source).value)
         }...
     {

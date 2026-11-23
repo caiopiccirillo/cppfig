@@ -94,7 +94,7 @@ private:
 
     [[nodiscard]] static auto MakeKey(std::string_view text, const detail::KeyPosition& position) -> UnknownKey
     {
-        return { text.substr(position.offset, position.length), position.line };
+        return { .path = text.substr(position.offset, position.length), .line = position.line };
     }
 
     std::string_view text_;

@@ -68,14 +68,14 @@ private:
 
         const std::size_t equals = line.find('=', first);
         if (equals == std::string_view::npos) {
-            on_error(ConfError { line_number, first + 1, "missing '=' after the setting path" });
+            on_error(ConfError { .line = line_number, .column = first + 1, .message = "missing '=' after the setting path" });
             return;
         }
 
         const auto path = TrimRight(line.substr(first, equals - first));
         if (!IsPathWellFormed(path)) {
             const std::string message = "ill-formed setting path '" + std::string(path) + "'";
-            on_error(ConfError { line_number, first + 1, message });
+            on_error(ConfError { .line = line_number, .column = first + 1, .message = message });
             return;
         }
 
@@ -85,10 +85,10 @@ private:
         }
         const auto value = DecodeValue(line, value_start, decoded);
         if (!value.ok()) {
-            on_error(ConfError { line_number, value.column, value.message });
+            on_error(ConfError { .line = line_number, .column = value.column, .message = value.message });
             return;
         }
-        on_entry(ConfEntry { path, value.text, line_number, first + 1, value_start + 1 });
+        on_entry(ConfEntry { .path = path, .text = value.text, .line = line_number, .column = first + 1, .value_column = value_start + 1 });
     }
 
     [[nodiscard]] static constexpr auto TrimRight(std::string_view text) -> std::string_view
@@ -99,13 +99,14 @@ private:
 
     [[nodiscard]] static constexpr auto IsPathWellFormed(std::string_view path) -> bool
     {
+        constexpr unsigned char kDelete = 0x7f;
         if (path.empty() || path.front() == '.' || path.back() == '.') {
             return false;
         }
         for (std::size_t i = 0; i < path.size(); ++i) {
             const char c = path[i];
             const auto value = static_cast<unsigned char>(c);
-            if (value <= 0x20U || value == 0x7fU || c == '#' || c == '"' || c == '\\') {
+            if (value <= ' ' || value == kDelete || c == '#' || c == '"' || c == '\\') {
                 return false;
             }
             if (c == '.' && i > 0 && path[i - 1] == '.') {
@@ -126,7 +127,7 @@ private:
 
     [[nodiscard]] static auto Error(std::size_t index, std::string message) -> DecodedValue
     {
-        return DecodedValue { {}, index + 1, std::move(message) };
+        return DecodedValue { .text = {}, .column = index + 1, .message = std::move(message) };
     }
 
     /// Decodes the value starting at index start of line. A `#` outside quotes
@@ -139,7 +140,7 @@ private:
             if (const std::size_t quote = raw.find('"'); quote != std::string_view::npos) {
                 return Error(start + quote, "unexpected quote in an unquoted value");
             }
-            return DecodedValue { raw, 0, {} };
+            return DecodedValue { .text = raw, .column = 0, .message = {} };
         }
 
         decoded.clear();
@@ -150,7 +151,7 @@ private:
                 if (next != std::string_view::npos && line[next] != '#') {
                     return Error(next, "characters after the closing quote");
                 }
-                return DecodedValue { decoded, 0, {} };
+                return DecodedValue { .text = decoded, .column = 0, .message = {} };
             }
             if (c != '\\') {
                 decoded.push_back(c);

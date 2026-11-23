@@ -5,6 +5,7 @@
 #include <benchmark/benchmark.h>
 #include <cppfig/cppfig.h>
 #include <malloc.h>
+#include <stdlib.h>  // NOLINT(modernize-deprecated-headers): setenv and unsetenv are POSIX, not in <cstdlib>
 
 #include <atomic>
 #include <cstddef>
@@ -13,6 +14,8 @@
 #include <filesystem>
 #include <new>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <type_traits>
 
 #include "barrier.h"
@@ -65,28 +68,28 @@ void* operator new(std::size_t size) { return CountedAllocateOrAbort(size, 0); }
 void* operator new[](std::size_t size) { return CountedAllocateOrAbort(size, 0); }
 void* operator new(std::size_t size, std::align_val_t alignment) { return CountedAllocateOrAbort(size, static_cast<std::size_t>(alignment)); }
 void* operator new[](std::size_t size, std::align_val_t alignment) { return CountedAllocateOrAbort(size, static_cast<std::size_t>(alignment)); }
-void* operator new(std::size_t size, const std::nothrow_t&) noexcept { return CountedAllocate(size, 0); }
-void* operator new[](std::size_t size, const std::nothrow_t&) noexcept { return CountedAllocate(size, 0); }
-void* operator new(std::size_t size, std::align_val_t alignment, const std::nothrow_t&) noexcept
+void* operator new(std::size_t size, const std::nothrow_t& /*tag*/) noexcept { return CountedAllocate(size, 0); }
+void* operator new[](std::size_t size, const std::nothrow_t& /*tag*/) noexcept { return CountedAllocate(size, 0); }
+void* operator new(std::size_t size, std::align_val_t alignment, const std::nothrow_t& /*tag*/) noexcept
 {
     return CountedAllocate(size, static_cast<std::size_t>(alignment));
 }
-void* operator new[](std::size_t size, std::align_val_t alignment, const std::nothrow_t&) noexcept
+void* operator new[](std::size_t size, std::align_val_t alignment, const std::nothrow_t& /*tag*/) noexcept
 {
     return CountedAllocate(size, static_cast<std::size_t>(alignment));
 }
 void operator delete(void* pointer) noexcept { Release(pointer); }
 void operator delete[](void* pointer) noexcept { Release(pointer); }
-void operator delete(void* pointer, std::size_t) noexcept { Release(pointer); }
-void operator delete[](void* pointer, std::size_t) noexcept { Release(pointer); }
-void operator delete(void* pointer, std::align_val_t) noexcept { Release(pointer); }
-void operator delete[](void* pointer, std::align_val_t) noexcept { Release(pointer); }
-void operator delete(void* pointer, std::size_t, std::align_val_t) noexcept { Release(pointer); }
-void operator delete[](void* pointer, std::size_t, std::align_val_t) noexcept { Release(pointer); }
-void operator delete(void* pointer, const std::nothrow_t&) noexcept { Release(pointer); }
-void operator delete[](void* pointer, const std::nothrow_t&) noexcept { Release(pointer); }
-void operator delete(void* pointer, std::align_val_t, const std::nothrow_t&) noexcept { Release(pointer); }
-void operator delete[](void* pointer, std::align_val_t, const std::nothrow_t&) noexcept { Release(pointer); }
+void operator delete(void* pointer, std::size_t /*size*/) noexcept { Release(pointer); }
+void operator delete[](void* pointer, std::size_t /*size*/) noexcept { Release(pointer); }
+void operator delete(void* pointer, std::align_val_t /*alignment*/) noexcept { Release(pointer); }
+void operator delete[](void* pointer, std::align_val_t /*alignment*/) noexcept { Release(pointer); }
+void operator delete(void* pointer, std::size_t /*size*/, std::align_val_t /*alignment*/) noexcept { Release(pointer); }
+void operator delete[](void* pointer, std::size_t /*size*/, std::align_val_t /*alignment*/) noexcept { Release(pointer); }
+void operator delete(void* pointer, const std::nothrow_t& /*tag*/) noexcept { Release(pointer); }
+void operator delete[](void* pointer, const std::nothrow_t& /*tag*/) noexcept { Release(pointer); }
+void operator delete(void* pointer, std::align_val_t /*alignment*/, const std::nothrow_t& /*tag*/) noexcept { Release(pointer); }
+void operator delete[](void* pointer, std::align_val_t /*alignment*/, const std::nothrow_t& /*tag*/) noexcept { Release(pointer); }
 // NOLINTEND(misc-new-delete-overloads)
 
 namespace cppfig::bench {
@@ -115,7 +118,7 @@ namespace {
         TemporaryFile(const TemporaryFile&) = delete;
         auto operator=(const TemporaryFile&) -> TemporaryFile& = delete;
 
-        [[nodiscard]] auto path() const -> const std::string& { return path_; }
+        [[nodiscard]] auto Path() const -> const std::string& { return path_; }
 
     private:
         std::string path_;
@@ -161,14 +164,14 @@ namespace {
     void LoadCompleteFile(benchmark::State& state)
     {
         const TemporaryFile file("complete_" + std::to_string(N));
-        if (!CreateCompleteFile<N>(file.path())) {
+        if (!CreateCompleteFile<N>(file.Path())) {
             state.SkipWithError("could not create the configuration file");
             return;
         }
         std::size_t document_bytes = 0;
         const AllocationCounter counter;
         for (auto _ : state) {
-            auto loaded = cppfig::LoadFile<Scale<N>>(file.path());
+            auto loaded = cppfig::LoadFile<Scale<N>>(file.Path());
             document_bytes = loaded->document.GetText().size();
             benchmark::DoNotOptimize(loaded);
         }
@@ -179,7 +182,7 @@ namespace {
         // Heap still held by one load's result: the document's text (with any
         // capacity slack) and whatever the values themselves allocate.
         const auto live_before = live_bytes.load();
-        auto kept = cppfig::LoadFile<Scale<N>>(file.path());
+        auto kept = cppfig::LoadFile<Scale<N>>(file.Path());
         state.counters["retained_bytes"] = static_cast<double>(live_bytes.load() - live_before);
         benchmark::DoNotOptimize(kept);
     }
@@ -191,7 +194,7 @@ namespace {
         const TemporaryFile file("missing_" + std::to_string(N));
         const AllocationCounter counter;
         for (auto _ : state) {
-            auto loaded = cppfig::LoadFile<Scale<N>>(file.path());
+            auto loaded = cppfig::LoadFile<Scale<N>>(file.Path());
             benchmark::DoNotOptimize(loaded);
         }
         counter.Report(state);
@@ -202,7 +205,7 @@ namespace {
     void LoadWithEnvironment(benchmark::State& state)
     {
         const TemporaryFile file("environment_" + std::to_string(N));
-        if (!CreateCompleteFile<N>(file.path())) {
+        if (!CreateCompleteFile<N>(file.Path())) {
             state.SkipWithError("could not create the configuration file");
             return;
         }
@@ -213,7 +216,7 @@ namespace {
         });
         const AllocationCounter counter;
         for (auto _ : state) {
-            auto loaded = cppfig::LoadFile<Scale<N>>(file.path());
+            auto loaded = cppfig::LoadFile<Scale<N>>(file.Path());
             benchmark::DoNotOptimize(loaded);
         }
         counter.Report(state);
@@ -239,14 +242,14 @@ namespace {
     void SaveCompleteDocument(benchmark::State& state)
     {
         const TemporaryFile file("save_" + std::to_string(N));
-        auto loaded = cppfig::LoadFile<Scale<N>>(file.path());
+        auto loaded = cppfig::LoadFile<Scale<N>>(file.Path());
         if (!loaded.has_value()) {
             state.SkipWithError("could not load the configuration");
             return;
         }
         const AllocationCounter counter;
         for (auto _ : state) {
-            auto status = cppfig::SaveFile(file.path(), loaded->document);
+            auto status = cppfig::SaveFile(file.Path(), loaded->document);
             benchmark::DoNotOptimize(status);
         }
         counter.Report(state);

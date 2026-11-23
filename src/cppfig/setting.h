@@ -32,7 +32,7 @@ concept ValidEnvDeclaration = requires {
 };
 
 template <typename S>
-concept ValidValidatorDeclaration = requires(const typename S::value_type& value) {
+concept ValidValidatorDeclaration = requires(const S::value_type& value) {
     { S::validator()(value) } -> std::same_as<ValidationResult>;
 };
 

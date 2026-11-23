@@ -47,7 +47,7 @@ void CheckRoundTrip(std::string_view path, std::string_view value)
     std::vector<Entry> entries;
     bool failed = false;
     cppfig::ConfParser::ForEachEntry(
-        document, [&entries](const cppfig::ConfEntry& entry) { entries.push_back(Entry { std::string(entry.path), std::string(entry.text) }); },
+        document, [&entries](const cppfig::ConfEntry& entry) { entries.push_back(Entry { .path = std::string(entry.path), .text = std::string(entry.text) }); },
         [&failed](const cppfig::ConfError&) { failed = true; });
     CPPFIG_FUZZ_CHECK(!failed);
     CPPFIG_FUZZ_CHECK(entries.size() == 1);
@@ -74,7 +74,7 @@ extern "C" auto LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t siz
         CPPFIG_FUZZ_CHECK(entry.value_column > entry.column + entry.path.size());
         CPPFIG_FUZZ_CHECK(entry.value_column <= line.size() + 1);
 
-        entries.push_back(Entry { std::string(entry.path), std::string(entry.text) });
+        entries.push_back(Entry { .path = std::string(entry.path), .text = std::string(entry.text) });
     };
     const auto on_error = [&](const cppfig::ConfError& error) {
         CPPFIG_FUZZ_CHECK(error.line > previous_line);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cppfig/cppfig.h>
+#include <stdlib.h>  // NOLINT(modernize-deprecated-headers): setenv and unsetenv are POSIX, not in <cstdlib>
 #include <unistd.h>
 
 #include <atomic>
@@ -9,10 +10,13 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <utility>
 
 namespace cppfig::test {
 
@@ -108,7 +112,7 @@ struct Ratio {
 struct Origin {
     static constexpr std::string_view path = "custom.point";
     using value_type = Point;
-    static auto default_value() -> Point { return { 1, 2 }; }
+    static auto default_value() -> Point { return { .x = 1, .y = 2 }; }
 };
 
 struct Aligned {
@@ -135,24 +139,24 @@ public:
         std::filesystem::create_directories(path_);
     }
 
-    ~TempDirectory() { std::filesystem::remove_all(path()); }
+    ~TempDirectory() { std::filesystem::remove_all(Path()); }
 
     TempDirectory(const TempDirectory&) = delete;
     auto operator=(const TempDirectory&) -> TempDirectory& = delete;
 
-    [[nodiscard]] auto path() const -> const std::filesystem::path& { return path_; }
+    [[nodiscard]] auto Path() const -> const std::filesystem::path& { return path_; }
 
-    [[nodiscard]] auto file(std::string_view name) const -> std::filesystem::path { return path_ / name; }
+    [[nodiscard]] auto File(std::string_view name) const -> std::filesystem::path { return path_ / name; }
 
-    void write(std::string_view name, std::string_view contents) const
+    void Write(std::string_view name, std::string_view contents) const
     {
-        std::ofstream output(file(name), std::ios::binary | std::ios::trunc);
+        std::ofstream output(File(name), std::ios::binary | std::ios::trunc);
         output << contents;
     }
 
-    [[nodiscard]] auto read(std::string_view name) const -> std::string
+    [[nodiscard]] auto Read(std::string_view name) const -> std::string
     {
-        std::ifstream input(file(name), std::ios::binary);
+        std::ifstream input(File(name), std::ios::binary);
         return { std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>() };
     }
 
@@ -162,7 +166,7 @@ private:
 
 class ScopedEnvironment {
 public:
-    ScopedEnvironment(std::string name, std::string value)
+    ScopedEnvironment(std::string name, const std::string& value)
         : name_(std::move(name))
     {
         if (const char* previous = std::getenv(name_.c_str())) {

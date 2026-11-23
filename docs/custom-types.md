@@ -40,10 +40,10 @@ Map each enumerator to a name with `EnumTraits` and a `constexpr` table:
 enum class LogLevel { kDebug, kInfo, kWarning, kError };
 
 inline constexpr std::array<cppfig::EnumName<LogLevel>, 4> kLogLevelNames { {
-    { LogLevel::kDebug, "debug" },
-    { LogLevel::kInfo, "info" },
-    { LogLevel::kWarning, "warning" },
-    { LogLevel::kError, "error" },
+    { .value = LogLevel::kDebug, .name = "debug" },
+    { .value = LogLevel::kInfo, .name = "info" },
+    { .value = LogLevel::kWarning, .name = "warning" },
+    { .value = LogLevel::kError, .name = "error" },
 } };
 
 template <>

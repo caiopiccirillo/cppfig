@@ -1,11 +1,11 @@
 #pragma once
 
+#include <array>
 #include <charconv>
 #include <concepts>
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
-#include <iterator>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -52,9 +52,10 @@ namespace detail {
 
         static auto ToString(T value) -> std::string
         {
-            char buffer[32] {};
-            const auto result = std::to_chars(std::begin(buffer), std::end(buffer), value);
-            return std::string(buffer, result.ptr);
+            // Every digit of the largest value, and a sign.
+            std::array<char, std::numeric_limits<T>::digits10 + 2> buffer {};
+            const auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
+            return std::string(buffer.data(), result.ptr);
         }
     };
 
@@ -72,6 +73,10 @@ namespace detail {
         std::from_chars(text, text, value, std::chars_format::general);
         std::to_chars(buffer, buffer, value, std::chars_format::general);
     };
+
+    /// Room for the shortest text that reads back as the same value, for every
+    /// floating-point type including long double.
+    inline constexpr std::size_t kMaxFloatingTextSize = 160;
 
     template <typename T>
     struct FloatingTraits {
@@ -95,9 +100,9 @@ namespace detail {
 
         static auto ToString(T value) -> std::string
         {
-            char buffer[160] {};
-            const auto result = std::to_chars(std::begin(buffer), std::end(buffer), value, std::chars_format::general);
-            return std::string(buffer, result.ptr);
+            std::array<char, kMaxFloatingTextSize> buffer {};
+            const auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value, std::chars_format::general);
+            return std::string(buffer.data(), result.ptr);
         }
 
     private:
@@ -169,8 +174,8 @@ struct EnumName {
 /// @code
 /// enum class Level { kDebug, kInfo };
 /// inline constexpr std::array<cppfig::EnumName<Level>, 2> kLevelNames { {
-///     { Level::kDebug, "debug" },
-///     { Level::kInfo, "info" },
+///     { .value = Level::kDebug, .name = "debug" },
+///     { .value = Level::kInfo, .name = "info" },
 /// } };
 /// template <>
 /// struct cppfig::ConfigTraits<Level> : cppfig::EnumTraits<kLevelNames> { };

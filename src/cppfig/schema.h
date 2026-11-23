@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <string_view>
 #include <type_traits>
-#include <utility>
 
 #include "cppfig/setting.h"
 #include "cppfig/storage.h"
@@ -16,20 +15,21 @@ namespace detail {
 
     // Duplicate setting types are rejected by the sorted path check below:
     // repeating a type necessarily repeats its static path as well.
-    [[nodiscard]] consteval auto IsPathPrefix(std::string_view prefix, std::string_view path) -> bool
+    [[nodiscard]] constexpr auto IsPathPrefix(std::string_view prefix, std::string_view path) -> bool
     {
         return path.size() > prefix.size() && path.starts_with(prefix) && path[prefix.size()] == '.';
     }
 
-    [[nodiscard]] consteval auto IsPathWellFormed(std::string_view path) -> bool
+    [[nodiscard]] constexpr auto IsPathWellFormed(std::string_view path) -> bool
     {
+        constexpr unsigned char kDelete = 0x7f;
         if (path.empty() || path.front() == '.' || path.back() == '.') {
             return false;
         }
         for (std::size_t i = 0; i < path.size(); ++i) {
             const char c = path[i];
-            const unsigned char value = static_cast<unsigned char>(c);
-            if (value <= 0x20U || value == 0x7fU || c == '=' || c == '#' || c == '"' || c == '\\') {
+            const auto value = static_cast<unsigned char>(c);
+            if (value <= ' ' || value == kDelete || c == '=' || c == '#' || c == '"' || c == '\\') {
                 return false;
             }
             if (c == '.' && i > 0 && path[i - 1] == '.') {
@@ -40,19 +40,16 @@ namespace detail {
     }
 
     /// Portable POSIX environment variable name: [A-Za-z_][A-Za-z0-9_]*.
-    [[nodiscard]] consteval auto IsEnvNameWellFormed(std::string_view name) -> bool
+    [[nodiscard]] constexpr auto IsEnvNameWellFormed(std::string_view name) -> bool
     {
         if (name.empty() || (name.front() >= '0' && name.front() <= '9')) {
             return false;
         }
-        for (const char c : name) {
+        return std::ranges::all_of(name, [](const char c) {
             const bool alpha = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
             const bool digit = c >= '0' && c <= '9';
-            if (!alpha && !digit && c != '_') {
-                return false;
-            }
-        }
-        return true;
+            return alpha || digit || c == '_';
+        });
     }
 
     /// A plain list of setting types, for matching a registry's settings
@@ -74,7 +71,7 @@ namespace detail {
         std::size_t first = 0;
         std::size_t last = N;
         while (first < last) {
-            const std::size_t middle = first + (last - first) / 2;
+            const std::size_t middle = first + ((last - first) / 2);
             const auto& entry = table[middle];
             if (entry.key < key) {
                 first = middle + 1;
@@ -103,7 +100,7 @@ class Registry {
 public:
     static constexpr std::size_t size = sizeof...(Settings);
 
-    using setting_list = detail::SettingList<Settings...>;
+    using SettingList = detail::SettingList<Settings...>;
 
     template <typename S>
     static constexpr bool has_setting = (std::is_same_v<S, Settings> || ...);
@@ -164,24 +161,19 @@ private:
     [[nodiscard]] static consteval auto AllPathsWellFormed() -> bool
     {
         constexpr std::array<std::string_view, size> paths { Settings::path... };
-        for (const auto path : paths) {
-            if (!detail::IsPathWellFormed(path)) {
-                return false;
-            }
-        }
-        return true;
+        return std::ranges::all_of(paths, detail::IsPathWellFormed);
     }
 
     [[nodiscard]] static consteval auto MakeSortedPaths() -> std::array<detail::KeyEntry, size>
     {
         std::array<detail::KeyEntry, size> entries {};
         std::size_t index = 0;
-        ((entries[index] = detail::KeyEntry { Settings::path, index }, ++index), ...);
+        ((entries[index] = detail::KeyEntry { .key = Settings::path, .index = index }, ++index), ...);
         std::sort(entries.begin(), entries.end(), [](const auto& left, const auto& right) { return left.key < right.key; });
         return entries;
     }
 
-    inline static constexpr std::array<detail::KeyEntry, size> sorted_paths = MakeSortedPaths();
+    static constexpr std::array<detail::KeyEntry, size> sorted_paths = MakeSortedPaths();
 
     [[nodiscard]] static consteval auto SortedPathsAreUnique() -> bool
     {
@@ -198,29 +190,26 @@ private:
     [[nodiscard]] static consteval auto MakeSortedEnvOverrides() -> std::array<detail::KeyEntry, env_override_count>
     {
         std::array<detail::KeyEntry, env_override_count> entries {};
-        std::size_t count = 0;
-        std::size_t index = 0;
-        ([&] {
-            if constexpr (HasEnvOverride<Settings>) {
-                entries[count++] = detail::KeyEntry { GetEnvOverride<Settings>(), index };
-            }
-            ++index;
-        }(),
-         ...);
-        std::sort(entries.begin(), entries.end(), [](const auto& left, const auto& right) { return left.key < right.key; });
+        if constexpr (env_override_count > 0) {
+            std::size_t count = 0;
+            std::size_t index = 0;
+            ([&] {
+                if constexpr (HasEnvOverride<Settings>) {
+                    entries[count++] = detail::KeyEntry { .key = GetEnvOverride<Settings>(), .index = index };
+                }
+                ++index;
+            }(),
+             ...);
+            std::sort(entries.begin(), entries.end(), [](const auto& left, const auto& right) { return left.key < right.key; });
+        }
         return entries;
     }
 
-    inline static constexpr std::array<detail::KeyEntry, env_override_count> sorted_env_overrides = MakeSortedEnvOverrides();
+    static constexpr std::array<detail::KeyEntry, env_override_count> sorted_env_overrides = MakeSortedEnvOverrides();
 
     [[nodiscard]] static consteval auto AllEnvNamesWellFormed() -> bool
     {
-        for (const auto& entry : sorted_env_overrides) {
-            if (!detail::IsEnvNameWellFormed(entry.key)) {
-                return false;
-            }
-        }
-        return true;
+        return std::ranges::all_of(sorted_env_overrides, [](const detail::KeyEntry& entry) { return detail::IsEnvNameWellFormed(entry.key); });
     }
 
     [[nodiscard]] static consteval auto SortedEnvNamesAreUnique() -> bool

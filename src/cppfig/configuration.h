@@ -16,8 +16,12 @@
 #include "cppfig/conf.h"
 #include "cppfig/document.h"
 #include "cppfig/environment.h"
-#include "cppfig/schema.h"
+#include "cppfig/schema.h"  // IWYU pragma: export
+#include "cppfig/setting.h"
 #include "cppfig/status.h"
+#include "cppfig/storage.h"
+#include "cppfig/traits.h"
+#include "cppfig/validator.h"
 
 namespace cppfig {
 
@@ -135,8 +139,9 @@ namespace detail {
     };
 
     template <typename S>
+    // NOLINTNEXTLINE(readability-redundant-typename): needed; the check misreads this template argument.
     inline constexpr SettingInfo<typename S::value_type> setting_info {
-        S::path, SettingValidatorOf<S>(), SettingValidatorOf<S>() != nullptr && !ConstantDefaultCheck<S>
+        .path = S::path, .validate = SettingValidatorOf<S>(), .check_default = SettingValidatorOf<S>() != nullptr && !ConstantDefaultCheck<S>
     };
 
     // Everything below is instantiated once per value type rather than once
@@ -273,24 +278,24 @@ namespace detail {
     template <typename RegistryType>
     struct SlotTable {
         static constexpr std::size_t size = RegistryType::size;
-        using optional_storage = typename RegistryType::template held_values_type<std::optional>;
+        using OptionalStorage = RegistryType::template held_values_type<std::optional>;
 
         template <std::size_t I>
-        using Setting = typename RegistryType::template SettingAt<I>;
+        using Setting = RegistryType::template SettingAt<I>;
 
         template <std::size_t... I>
-        static auto Addresses(optional_storage& storage, std::index_sequence<I...>) -> std::array<void*, size>
+        static auto Addresses(OptionalStorage& storage, std::index_sequence<I...> /*indices*/) -> std::array<void*, size>
         {
             return { static_cast<void*>(&static_cast<StorageSlot<I, OptionalSlot<Setting<I>>>&>(storage).value)... };
         }
 
-        static auto Addresses(optional_storage& storage) -> std::array<void*, size>
+        static auto Addresses(OptionalStorage& storage) -> std::array<void*, size>
         {
             return Addresses(storage, std::make_index_sequence<size>());
         }
 
         template <std::size_t... I>
-        static constexpr auto MakeFunctions(std::index_sequence<I...>) -> std::array<SlotFunction, size>
+        static constexpr auto MakeFunctions(std::index_sequence<I...> /*indices*/) -> std::array<SlotFunction, size>
         {
             return { &RunSlot<Setting<I>>... };
         }
@@ -329,7 +334,7 @@ template <typename RegistryType>
 class Configuration {
 public:
     using registry_type = RegistryType;
-    using values_type = typename RegistryType::values_type;
+    using values_type = RegistryType::values_type;
 
     Configuration(const Configuration&) = delete;
     auto operator=(const Configuration&) -> Configuration& = delete;
@@ -354,13 +359,13 @@ public:
     [[nodiscard]] static auto FromDefaults() -> StatusOr<Configuration>
     {
         // Candidate storage scales with the registry; keep it off the caller's stack.
-        auto candidates = std::make_unique<candidate_storage>();
+        auto candidates = std::make_unique<CandidateStorage>();
         return FromCandidates(*candidates);
     }
 
     template <typename S>
         requires(RegistryType::template has_setting<S>)
-    [[nodiscard]] auto Get() const& noexcept -> const typename S::value_type&
+    [[nodiscard]] auto Get() const& noexcept -> const S::value_type&
     {
         using Slot = detail::StorageSlot<RegistryType::template index<S>, typename S::value_type>;
         return static_cast<const Slot&>(values_).value;
@@ -370,21 +375,21 @@ public:
     /// end of the full expression; keep the configuration in a variable instead.
     template <typename S>
         requires(RegistryType::template has_setting<S>)
-    auto Get() const&& -> const typename S::value_type& = delete;
+    auto Get() const&& -> const S::value_type& = delete;
 
 private:
     friend class ConfigurationBuilder<RegistryType>;
 
-    using candidate_storage = typename RegistryType::template held_values_type<std::optional>;
-    using slot_table = detail::SlotTable<RegistryType>;
+    using CandidateStorage = RegistryType::template held_values_type<std::optional>;
+    using SlotTable = detail::SlotTable<RegistryType>;
 
     /// Everything loading needs besides the text, kept together on the heap.
     /// Values are parsed straight into the one candidate slot of their setting:
     /// a file value, then an environment override replacing it, then the
     /// default for settings that are still empty.
     struct LoadState {
-        candidate_storage values;
-        std::array<void*, RegistryType::size> slots = slot_table::Addresses(values);
+        CandidateStorage values;
+        std::array<void*, RegistryType::size> slots = SlotTable::Addresses(values);
         /// Line of each setting's file entry; 0 when the file lacks the setting.
         std::array<std::uint32_t, RegistryType::size> file_lines {};
         std::string_view source;
@@ -400,19 +405,19 @@ private:
     };
 
     /// Moves every value out of candidates, all of which must be engaged.
-    explicit Configuration(candidate_storage& candidates)
+    explicit Configuration(CandidateStorage& candidates)
         : values_(detail::from_engaged, candidates)
     {
     }
 
     /// Validates the values already in candidates, fills the empty ones from
     /// their defaults and moves them all into a configuration.
-    [[nodiscard]] static auto FromCandidates(candidate_storage& candidates) -> StatusOr<Configuration>
+    [[nodiscard]] static auto FromCandidates(CandidateStorage& candidates) -> StatusOr<Configuration>
     {
-        const auto slots = slot_table::Addresses(candidates);
+        const auto slots = SlotTable::Addresses(candidates);
         detail::ErrorList errors;
         for (std::size_t i = 0; i < RegistryType::size; ++i) {
-            if (auto status = slot_table::Run(i, slots[i], { detail::SlotOperation::kCheck, {} }); !status.ok()) {
+            if (auto status = SlotTable::Run(i, slots[i], { detail::SlotOperation::kCheck, {} }); !status.ok()) {
                 errors.Add(status.message());
             }
         }
@@ -429,7 +434,7 @@ private:
             if (index == RegistryType::size) {
                 if (state.unknown_key_policy == UnknownKeyPolicy::kPreserve) {
                     const auto offset = static_cast<std::size_t>(entry.path.data() - text.data());
-                    state.unknown_keys.push_back(detail::KeyPosition { offset, entry.path.size(), entry.line });
+                    state.unknown_keys.push_back(detail::KeyPosition { .offset = offset, .length = entry.path.size(), .line = entry.line });
                 }
                 else {
                     const std::string message = "unknown setting '" + std::string(entry.path) + "'";
@@ -445,7 +450,7 @@ private:
             }
             state.file_lines[index] = detail::CompactLine(entry.line);
 
-            if (auto status = slot_table::Run(index, state.slots[index], { detail::SlotOperation::kAssignFileText, entry.text }); !status.ok()) {
+            if (auto status = SlotTable::Run(index, state.slots[index], { detail::SlotOperation::kAssignFileText, entry.text }); !status.ok()) {
                 state.errors.AddAt(state.source, entry.line, entry.value_column, status.message());
             }
         };
@@ -467,7 +472,7 @@ private:
                     return;
                 }
                 applied.set(index);
-                if (auto status = slot_table::Run(index, state.slots[index], { detail::SlotOperation::kAssignEnvironmentText, value }); !status.ok()) {
+                if (auto status = SlotTable::Run(index, state.slots[index], { detail::SlotOperation::kAssignEnvironmentText, value }); !status.ok()) {
                     state.errors.Add("environment variable ", name, ": ", status.message());
                 }
             });
@@ -482,7 +487,7 @@ private:
     {
         for (std::size_t i = 0; i < RegistryType::size; ++i) {
             if (state.file_lines[i] == 0) {
-                if (auto status = slot_table::Run(i, state.slots[i], { detail::SlotOperation::kAddDefault, {}, &state.migrations }); !status.ok()) {
+                if (auto status = SlotTable::Run(i, state.slots[i], { detail::SlotOperation::kAddDefault, {}, &state.migrations }); !status.ok()) {
                     state.errors.Add(status.message());
                 }
             }
@@ -524,7 +529,7 @@ public:
     /// of this registry, with their own value type, are accepted.
     template <typename S>
         requires(RegistryType::template has_setting<S>)
-    auto Set(typename S::value_type value) -> ConfigurationBuilder&
+    auto Set(S::value_type value) -> ConfigurationBuilder&
     {
         using Slot = detail::StorageSlot<RegistryType::template index<S>, std::optional<typename S::value_type>>;
         static_cast<Slot&>(values_).value.emplace(std::move(value));
@@ -543,7 +548,7 @@ public:
     }
 
 private:
-    typename Configuration<RegistryType>::candidate_storage values_;
+    Configuration<RegistryType>::CandidateStorage values_;
 };
 
 template <typename RegistryType>

@@ -6,32 +6,69 @@ Checks: >
   performance-*,
   portability-*,
   readability-*,
-  -modernize-use-trailing-return-type,
+  -google-runtime-float,
+  -google-runtime-int,
   -misc-include-cleaner,
+  -modernize-use-trailing-return-type,
+  -portability-avoid-pragma-once,
   -readability-identifier-length
 
+# Why the checks above are off:
+# - google-runtime-int, google-runtime-float: cppfig converts every fundamental
+#   arithmetic type, so long, long long and long double appear by design.
+# - misc-include-cleaner: clangd reports includes as you edit (see .clangd).
+# - modernize-use-trailing-return-type: only functions returning a value use
+#   the trailing form; void functions keep the leading one.
+# - portability-avoid-pragma-once: every supported compiler has #pragma once.
+# - readability-identifier-length: short names such as c, i and fd are clear.
+#
+# test/, fuzz/, benchmark/ and examples/ relax a few more in their own
+# .clang-tidy files.
+
+# Report findings in the project's own headers, not only in .cpp files.
+HeaderFilterRegex: '/(src|test|fuzz|benchmark|examples)/'
+
 CheckOptions:
+  # Structs whose members are all public are plain data, even when they have
+  # member functions (validators, ValidationResult, ConfError).
+  - { key: misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic, value: true }
+
+  # std::from_chars takes an end pointer and std::memcpy a size, so passing
+  # string_view::data() to them is safe.
+  - { key: bugprone-suspicious-stringview-data-usage.AllowedCallees, value: '::std::from_chars;::memcpy' }
+
+  # Naming. The Google style, with the standard library's lower_case names
+  # wherever cppfig's types have to match them.
+
   # Namespaces: lower_case
   - { key: readability-identifier-naming.NamespaceCase,          value: lower_case }
 
-  # Types: CamelCase (classes, structs, template params, enums)
+  # Types: CamelCase (classes, structs, template parameters)
   - { key: readability-identifier-naming.ClassCase,              value: CamelCase  }
   - { key: readability-identifier-naming.StructCase,             value: CamelCase  }
   - { key: readability-identifier-naming.TemplateParameterCase,  value: CamelCase  }
-  - { key: readability-identifier-naming.EnumConstantCase,       value: CamelCase  }
 
-  # Type aliases: CamelCase (matching type naming convention)
-  # STL-style trait aliases (value_type, data_type, etc.) are excluded via regex.
+  # Enumerators: kCamelCase (kReject, kInvalidArgument)
+  - { key: readability-identifier-naming.EnumConstantCase,       value: CamelCase  }
+  - { key: readability-identifier-naming.EnumConstantPrefix,     value: k          }
+
+  # Type aliases: CamelCase, except member types in the standard library's
+  # form: type, value_type and other *_type names, and the iterator members.
   - { key: readability-identifier-naming.TypeAliasCase,          value: CamelCase  }
-  - { key: readability-identifier-naming.TypeAliasIgnoredRegexp, value: "^(value_type|data_type|serializer_type|schema_type|mutex_type|shared_lock|unique_lock|validator_fn|setting_value_type)$" }
+  - { key: readability-identifier-naming.TypeAliasIgnoredRegexp, value: '^(type|[a-z][a-z0-9_]*_type|iterator_category|pointer|reference)$' }
   - { key: readability-identifier-naming.TypedefCase,            value: CamelCase  }
 
-  # Functions: CamelCase for public API (Get, Set, Load, Save, etc.)
-  # Setting trait functions (default_value, validator) are excluded via regex.
+  # Functions: CamelCase (Get, FromText, LoadFile), except:
+  # - the members a setting declares: default_value, validator;
+  # - members named as in the standard library so that StatusOr reads like
+  #   std::expected and UnknownKeys like a range: value, has_value, error,
+  #   begin, end, size, empty;
+  # - Status's accessors, named as in absl::Status: ok, code, message.
   - { key: readability-identifier-naming.FunctionCase,           value: CamelCase  }
-  - { key: readability-identifier-naming.FunctionIgnoredRegexp,  value: "^(default_value|validator)$" }
+  - { key: readability-identifier-naming.FunctionIgnoredRegexp,  value: '^(default_value|validator|value|has_value|error|begin|end|size|empty|ok|code|message)$' }
 
-  # Variables and members: lower_case with _ suffix for private/protected
+  # Variables and members: lower_case, with a trailing _ when private or
+  # protected
   - { key: readability-identifier-naming.VariableCase,           value: lower_case }
   - { key: readability-identifier-naming.PublicMemberCase,       value: lower_case }
   - { key: readability-identifier-naming.PrivateMemberCase,      value: lower_case }
@@ -39,11 +76,16 @@ CheckOptions:
   - { key: readability-identifier-naming.PrivateMemberSuffix,    value: _          }
   - { key: readability-identifier-naming.ProtectedMemberSuffix,  value: _          }
 
-  # Constants: lower_case (STL trait convention: path, env_override, size)
-  - { key: readability-identifier-naming.ConstexprVariableCase,  value: lower_case }
-  - { key: readability-identifier-naming.GlobalConstantCase,     value: lower_case }
-  - { key: readability-identifier-naming.MemberConstantCase,     value: lower_case }
-  - { key: readability-identifier-naming.StaticConstantCase,     value: lower_case }
+  # Constants: lower_case like the members a setting declares (path,
+  # env_override) and the registry's (size), or kCamelCase for a named
+  # constant (kMaxReported, kLogLevelNames).
+  - { key: readability-identifier-naming.ConstexprVariableCase,         value: lower_case }
+  - { key: readability-identifier-naming.ConstexprVariableIgnoredRegexp, value: '^k[A-Z][A-Za-z0-9]*$' }
+  - { key: readability-identifier-naming.GlobalConstantCase,            value: lower_case }
+  - { key: readability-identifier-naming.GlobalConstantIgnoredRegexp,   value: '^k[A-Z][A-Za-z0-9]*$' }
+  - { key: readability-identifier-naming.MemberConstantCase,            value: lower_case }
+  - { key: readability-identifier-naming.StaticConstantCase,            value: lower_case }
+  - { key: readability-identifier-naming.StaticConstantIgnoredRegexp,   value: '^k[A-Z][A-Za-z0-9]*$' }
 
   # Macros: UPPER_CASE
   - { key: readability-identifier-naming.MacroDefinitionCase,    value: UPPER_CASE }

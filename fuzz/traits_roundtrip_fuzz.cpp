@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <ratio>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -27,17 +28,19 @@
 #include "fuzz_check.h"
 
 namespace fuzz {
+namespace {
 
-enum class Color : std::uint8_t { kRed,
-                                  kGreen,
-                                  kBlue };
+    enum class Color : std::uint8_t { kRed,
+                                      kGreen,
+                                      kBlue };
 
-inline constexpr std::array<cppfig::EnumName<Color>, 3> kColorNames { {
-    { Color::kRed, "red" },
-    { Color::kGreen, "green" },
-    { Color::kBlue, "blue" },
-} };
+    constexpr std::array<cppfig::EnumName<Color>, 3> kColorNames { {
+        { .value = Color::kRed, .name = "red" },
+        { .value = Color::kGreen, .name = "green" },
+        { .value = Color::kBlue, .name = "blue" },
+    } };
 
+}  // namespace
 }  // namespace fuzz
 
 template <>
