@@ -82,8 +82,13 @@ else()
 endif()
 
 # Create the 'docs' target.
+# The Doxyfile reads the theme and output directories from the environment,
+# so the HTML lands in this build tree, styled by the theme downloaded above.
 add_custom_target(docs
-    COMMAND ${DOXYGEN_EXECUTABLE} "${CMAKE_SOURCE_DIR}/Doxyfile"
+    COMMAND ${CMAKE_COMMAND} -E env
+        "CPPFIG_DOCS_THEME_DIR=${_DOXYGEN_AWESOME_DIR}"
+        "CPPFIG_DOCS_OUTPUT_DIR=${CMAKE_BINARY_DIR}"
+        ${DOXYGEN_EXECUTABLE} "${CMAKE_SOURCE_DIR}/Doxyfile"
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Generating Doxygen documentation"
     VERBATIM
@@ -94,7 +99,7 @@ find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_FOUND)
     add_custom_target(docs-serve
         COMMAND ${Python3_EXECUTABLE} -m http.server 8080
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/build/docs/html
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/html
         COMMENT "Serving documentation at http://localhost:8080"
         VERBATIM
     )

@@ -135,16 +135,16 @@
         {
             "name": "config-docs",
             "displayName": "Documentation",
-            "description": "Configure build for Doxygen documentation generation",
+            "description": "Configure only the Doxygen documentation: no tests, benchmarks, examples or vcpkg dependencies",
             "binaryDir": "${sourceDir}/build/docs",
             "generator": "Ninja",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
-                "CMAKE_C_COMPILER": "/usr/bin/gcc",
-                "CMAKE_CXX_COMPILER": "/usr/bin/g++",
-                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third/vcpkg/scripts/buildsystems/vcpkg.cmake",
-                "STRICT_BUILD": "OFF"
+                "STRICT_BUILD": "OFF",
+                "CPPFIG_BUILD_TESTS": "OFF",
+                "CPPFIG_BUILD_BENCHMARKS": "OFF",
+                "CPPFIG_BUILD_EXAMPLES": "OFF",
+                "CPPFIG_INSTALL": "OFF"
             }
         }
     ],

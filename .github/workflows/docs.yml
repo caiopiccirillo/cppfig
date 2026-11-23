@@ -28,10 +28,9 @@ jobs:
               run: |
                   sudo apt-get update
                   sudo apt-get install -y doxygen graphviz ninja-build
-            - name: Setup submodules
-              run: git submodule update --init --recursive
-            - name: Configure CMake
-              # We only need to configure so that Docs.cmake downloads the theme.
+            - name: Build documentation
+              # Configures only the docs (no tests, so no vcpkg or submodule),
+              # downloads the theme, and runs Doxygen.
               run: cmake --workflow --preset docs
 
             - name: Upload artifact for Pages
