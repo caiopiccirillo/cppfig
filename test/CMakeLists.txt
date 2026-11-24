@@ -26,9 +26,10 @@ if(TARGET allocation_test)
     target_include_directories(allocation_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/compile_scale)
 endif()
 
-# Each case must fail to compile with its own diagnostic. Matching the message
-# (rather than only expecting a non-zero exit) keeps an unrelated error, such as
-# a typo in the case itself, from passing the test.
+# Each case must fail to compile, with its own diagnostic. The script checks
+# both: matching the message keeps an unrelated error, such as a typo in the
+# case itself, from passing the test, and requiring the failure keeps a matching
+# warning from passing it.
 set(compile_fail_invalid_default_regex "A constexpr-evaluable default value failed its setting validator")
 set(compile_fail_duplicate_setting_regex "Registry paths must be unique")
 set(compile_fail_unregistered_setting_regex "has_setting")
@@ -40,13 +41,14 @@ foreach(case_name invalid_default duplicate_setting unregistered_setting duplica
     set(test_name compile_fail_${case_name})
     add_test(
         NAME ${test_name}
-        COMMAND ${CMAKE_CXX_COMPILER}
-            -std=c++20
-            -I${PROJECT_SOURCE_DIR}/src
-            -c ${CMAKE_CURRENT_SOURCE_DIR}/compile_fail/${case_name}.cpp
-            -o ${CMAKE_CURRENT_BINARY_DIR}/${test_name}.o
+        COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=${CMAKE_CXX_COMPILER}
+            -DINCLUDE_DIR=${PROJECT_SOURCE_DIR}/src
+            -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/compile_fail/${case_name}.cpp
+            -DOBJECT=${CMAKE_CURRENT_BINARY_DIR}/${test_name}.o
+            "-DEXPECTED=${${test_name}_regex}"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/compile_fail/expect_compile_failure.cmake
     )
-    set_tests_properties(${test_name} PROPERTIES PASS_REGULAR_EXPRESSION "${${test_name}_regex}")
 endforeach()
 
 # Compile-time budget: the full initialization path for a 1024-setting registry
