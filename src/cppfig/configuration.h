@@ -217,8 +217,8 @@ namespace detail {
 
     // Per-setting entry points. They are free functions keyed on the setting
     // alone and reach their slots through type-erased pointers, so their mangled
-    // names do not spell out the whole registry (which, at 1024 settings, made
-    // each name ~20 KB and dominated compile time and object size).
+    // names do not spell out the whole registry (at 1024 settings, such a name
+    // is about 20 KB, and names that size dominate compile time and object size).
 
     template <typename S>
     using OptionalSlot = std::optional<typename S::value_type>;
@@ -481,8 +481,8 @@ private:
 
     /// Fills settings the text lacks from their defaults, recording each as a
     /// migration. Goes through a table of per-setting functions: a single fold
-    /// expression over all settings produced one enormous function whose
-    /// optimization dominated compile time for large registries.
+    /// expression over all settings would be one enormous function whose
+    /// optimization dominates compile time for large registries.
     static void CompleteFromDefaults(LoadState& state)
     {
         for (std::size_t i = 0; i < RegistryType::size; ++i) {

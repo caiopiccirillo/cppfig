@@ -1,9 +1,8 @@
 # Install.cmake
 # Install, export and packaging rules for the header-only cppfig target.
 #
-# Without these, cppfig can only be consumed with add_subdirectory: there is
-# nothing to install and nothing for find_package(cppfig) to find, even though
-# CPack was being included.
+# They let consumers install cppfig and find it with find_package(cppfig), as
+# well as add it with add_subdirectory, and let CPack package it.
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)

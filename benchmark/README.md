@@ -1,6 +1,6 @@
 # cppfig benchmarks
 
-Google Benchmark suites for reads, initialization, saving, allocations and memory. Current results and the comparison with the pre-redesign implementation are in [docs/BENCHMARK_RESULTS.md](../docs/BENCHMARK_RESULTS.md); the baseline is in [docs/BASELINE_RESULTS.md](../docs/BASELINE_RESULTS.md).
+Google Benchmark suites for reads, initialization, saving, allocations and memory. Measured results are in [docs/BENCHMARK_RESULTS.md](../docs/BENCHMARK_RESULTS.md).
 
 ## Building and running
 
@@ -29,13 +29,13 @@ TMPDIR=/path/on/disk ./build/release/gcc/benchmark/cppfig_benchmark --benchmark_
 
 ## Suites
 
-### `benchmark_main.cpp`: comparison with the baseline
+### `benchmark_main.cpp`: small registries
 
-The same settings, registry sizes and file format as the pre-redesign suite, so results compare directly.
+Hand-written registries of 1, 5 and 14 settings, loaded from and saved to a flat `.conf` file.
 
 | Benchmark | Measures |
 | --- | --- |
-| `GetString`, `GetInt`, `GetDouble`, `GetBool`, `GetValidated` | Reading a setting into a copy, as the old API returned |
+| `GetString`, `GetInt`, `GetDouble`, `GetBool`, `GetValidated` | Reading a setting into a copy |
 | `GetStringReference` | Reading a string through the returned reference |
 | `LoadSmallRegistry`, `LoadMediumRegistry`, `LoadLargeRegistry` | Loading a complete existing file of 1, 5 and 14 settings |
 | `SaveSmallRegistry`, `SaveMediumRegistry`, `SaveLargeRegistry` | Saving a loaded document, wall time |
