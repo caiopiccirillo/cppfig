@@ -95,7 +95,8 @@ struct MinValidator : ValidatorOps<MinValidator<T>> {
 
     [[nodiscard]] constexpr auto operator()(const T& value) const -> ValidationResult
     {
-        if (value < minimum) {
+        // Stated positively so that NaN, which compares false, is rejected.
+        if (!(value >= minimum)) {
             if (std::is_constant_evaluated()) {
                 return ValidationResult::Error("Value is less than the minimum");
             }
@@ -111,7 +112,7 @@ struct MaxValidator : ValidatorOps<MaxValidator<T>> {
 
     [[nodiscard]] constexpr auto operator()(const T& value) const -> ValidationResult
     {
-        if (value > maximum) {
+        if (!(value <= maximum)) {
             if (std::is_constant_evaluated()) {
                 return ValidationResult::Error("Value exceeds the maximum");
             }
@@ -128,7 +129,7 @@ struct RangeValidator : ValidatorOps<RangeValidator<T>> {
 
     [[nodiscard]] constexpr auto operator()(const T& value) const -> ValidationResult
     {
-        if (value < minimum || value > maximum) {
+        if (!(value >= minimum && value <= maximum)) {
             if (std::is_constant_evaluated()) {
                 return ValidationResult::Error("Value is outside the allowed range");
             }

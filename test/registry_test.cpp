@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -282,6 +283,36 @@ namespace {
         EXPECT_TRUE(OneOf(1, 2)(2));
         EXPECT_TRUE(Predicate<int>([](int value) { return value % 2 == 0; }, "must be even")(4));
         EXPECT_TRUE(AlwaysValid<std::string>()("anything"));
+    }
+
+    // NaN compares false with everything, so a bound written as "reject when
+    // below" would let it through.
+    TEST(ValidatorTest, OrderedValidatorsRejectNaN)
+    {
+        for (const double nan : { std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::signaling_NaN() }) {
+            EXPECT_FALSE(Min(0.0)(nan));
+            EXPECT_FALSE(Max(1.0)(nan));
+            EXPECT_FALSE(Range(0.0, 1.0)(nan));
+            EXPECT_FALSE(Positive<double>()(nan));
+            EXPECT_FALSE(NonNegative<double>()(nan));
+        }
+        EXPECT_FALSE(Range(0.0F, 1.0F)(std::numeric_limits<float>::quiet_NaN()));
+    }
+
+    struct Ratio {
+        static constexpr std::string_view path = "ratio";
+        using value_type = double;
+        static auto default_value() -> double { return 0.5; }
+        static auto validator() { return Range(0.0, 1.0); }
+    };
+
+    struct RatioRegistry : Registry<Ratio> { };
+
+    TEST(ValidatorTest, LoadingRejectsNaNOutsideAnOrderedRange)
+    {
+        auto loaded = Configuration<RatioRegistry>::FromText("ratio = nan\n", "app.conf", { .environment = Environment::None() });
+        ASSERT_FALSE(loaded);
+        EXPECT_NE(loaded.error().message().find("ratio"), std::string_view::npos) << loaded.error().message();
     }
 
     // Every built-in validator runs at compile time, so constant defaults of
