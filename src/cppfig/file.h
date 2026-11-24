@@ -41,7 +41,8 @@ namespace detail {
     [[nodiscard]] inline auto ErrorText(int code) -> std::string { return std::generic_category().message(code); }
 
     /// Writes all of data to fd, retrying short writes and interruptions.
-    /// Returns 0 or the failing errno value.
+    /// Returns 0 or the failing errno value. A write that makes no progress is
+    /// reported as EIO rather than retried forever.
     [[nodiscard]] inline auto WriteAll(int fd, std::string_view data) -> int
     {
         while (!data.empty()) {
@@ -51,6 +52,9 @@ namespace detail {
                     continue;
                 }
                 return errno;
+            }
+            if (written == 0) {
+                return EIO;
             }
             data.remove_prefix(static_cast<std::size_t>(written));
         }
@@ -212,6 +216,9 @@ template <typename RegistryType>
 [[nodiscard]] inline auto SaveFile(const std::filesystem::path& path, const ConfDocument& document) -> Status
 {
     namespace fs = std::filesystem;
+    if (path.empty()) {
+        return InvalidArgumentError("Configuration file path must not be empty");
+    }
     fs::path destination(path);
     std::error_code error;
     if (fs::is_symlink(fs::symlink_status(destination, error))) {
