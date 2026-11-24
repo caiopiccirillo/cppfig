@@ -4,7 +4,6 @@
 #include <charconv>
 #include <concepts>
 #include <cstddef>
-#include <filesystem>
 #include <limits>
 #include <optional>
 #include <string>
@@ -151,13 +150,6 @@ template <>
 struct ConfigTraits<std::string> {
     static auto FromString(std::string_view text) -> std::optional<std::string> { return std::string(text); }
     static auto ToString(const std::string& value) -> std::string { return value; }
-};
-
-/// Paths are stored as text in the native narrow encoding.
-template <>
-struct ConfigTraits<std::filesystem::path> {
-    static auto FromString(std::string_view text) -> std::optional<std::filesystem::path> { return std::filesystem::path(text); }
-    static auto ToString(const std::filesystem::path& value) -> std::string { return value.string(); }
 };
 
 /// @brief One enumerator and its name in a .conf file, for EnumTraits.

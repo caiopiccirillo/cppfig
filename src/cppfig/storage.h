@@ -46,7 +46,9 @@ inline constexpr FromEngagedTag from_engaged {};
 
 /// Declaration indices sorted by descending value alignment (ties keep
 /// declaration order). Laying slots out in this order leaves no padding between
-/// them, because every type's size is a multiple of its alignment.
+/// them, because every type's size is a multiple of its alignment. The slots
+/// are base classes, so this relies on the ABI laying bases out in order, as
+/// the Itanium C++ ABI used by GCC and Clang does; C++ does not require it.
 template <typename... Settings>
 struct StorageOrder {
     static constexpr std::size_t size = sizeof...(Settings);

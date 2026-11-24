@@ -495,6 +495,16 @@ namespace {
         EXPECT_TRUE(std::filesystem::exists(path));
     }
 
+    // Without the check, an empty path writes a temporary file into the
+    // working directory before the rename fails.
+    TEST(ConfigurationIOTest, SaveRejectsAnEmptyPath)
+    {
+        auto loaded = TestConfiguration::FromText(CompleteDocument(), "inline", { .environment = Environment::None() });
+        ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
+        const auto status = SaveFile("", loaded->document);
+        EXPECT_TRUE(IsInvalidArgument(status)) << status.message();
+    }
+
     TEST(ConfigurationIOTest, LoadsFromTextWithoutAFile)
     {
         auto loaded = TestConfiguration::FromText(CompleteDocument(), "inline");

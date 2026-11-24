@@ -141,7 +141,7 @@ namespace detail {
     template <typename S>
     // NOLINTNEXTLINE(readability-redundant-typename): needed; the check misreads this template argument.
     inline constexpr SettingInfo<typename S::value_type> setting_info {
-        .path = S::path, .validate = SettingValidatorOf<S>(), .check_default = SettingValidatorOf<S>() != nullptr && !ConstantDefaultCheck<S>
+        .path = S::path, .validate = SettingValidatorOf<S>(), .check_default = HasValidator<S> && !ConstantDefaultCheck<S>
     };
 
     // Everything below is instantiated once per value type rather than once

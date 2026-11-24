@@ -9,6 +9,7 @@
 
 #include <cppfig/chrono.h>
 #include <cppfig/cppfig.h>
+#include <cppfig/path.h>
 
 #include <array>
 #include <chrono>

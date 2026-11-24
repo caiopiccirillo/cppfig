@@ -52,7 +52,7 @@ using AppRegistry = cppfig::Registry<settings::ServerHost, settings::ServerPort,
 
 Both work everywhere. The derived struct gives the registry its own short name, so compiler errors, clangd hovers and symbol names show `Configuration<AppRegistry>` rather than the whole list of settings, and large registries compile slightly faster.
 
-The registry holds no values, only compile-time metadata. Each `Configuration<AppRegistry>` stores one value per setting, laid out by alignment so that there is no padding between them.
+The registry holds no values, only compile-time metadata. Each `Configuration<AppRegistry>` stores one value per setting, laid out by alignment so that, with GCC and Clang, there is no padding between them.
 
 ## Compile-time checks
 
@@ -78,7 +78,7 @@ Defaults that are not `constexpr`, such as most `std::string` defaults, are vali
 
 ## Value types
 
-Built in: `bool`, every standard integer type, `float`, `double`, `long double` where the standard library supports it, `std::string` and `std::filesystem::path`. With `#include <cppfig/chrono.h>`, `std::chrono` durations too. Enums and your own types need a `ConfigTraits` specialization. See [Custom Types](custom-types.md).
+Built in: `bool`, every standard integer type, `float`, `double`, `long double` where the standard library supports it, `std::string` and `std::filesystem::path` (from `<cppfig/path.h>`, which `<cppfig/cppfig.h>` and `<cppfig/file.h>` include). With `#include <cppfig/chrono.h>`, `std::chrono` durations too. Enums and your own types need a `ConfigTraits` specialization. See [Custom Types](custom-types.md).
 
 ## Paths
 

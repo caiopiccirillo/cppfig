@@ -52,7 +52,7 @@ The numeric validators take their type from the arguments, so match the setting'
 
 | Validator | Accepts |
 | --- | --- |
-| `OneOf(a, b, c)` | One of the listed values; text is compared as `std::string_view`, and `OneOf<T>(...)` fixes the element type |
+| `OneOf(a, b, c)` | One of the listed values; `OneOf<T>(...)` fixes the element type. String literals and `std::string_view` values are kept as views, so they must outlive the validator; `std::string` values are copied |
 | `Predicate<T>(function, message)` | Values for which `function(value)` is true; otherwise fails with `message`, which is not copied (pass a string literal) |
 | `AlwaysValid<T>()` | Everything |
 

@@ -18,6 +18,7 @@
 
 #include "cppfig/configuration.h"
 #include "cppfig/document.h"
+#include "cppfig/path.h"  // IWYU pragma: export
 #include "cppfig/status.h"
 
 #if __has_include(<unistd.h>)
@@ -41,7 +42,8 @@ namespace detail {
     [[nodiscard]] inline auto ErrorText(int code) -> std::string { return std::generic_category().message(code); }
 
     /// Writes all of data to fd, retrying short writes and interruptions.
-    /// Returns 0 or the failing errno value.
+    /// Returns 0 or the failing errno value. A write that makes no progress is
+    /// reported as EIO rather than retried forever.
     [[nodiscard]] inline auto WriteAll(int fd, std::string_view data) -> int
     {
         while (!data.empty()) {
@@ -51,6 +53,9 @@ namespace detail {
                     continue;
                 }
                 return errno;
+            }
+            if (written == 0) {
+                return EIO;
             }
             data.remove_prefix(static_cast<std::size_t>(written));
         }
@@ -206,12 +211,21 @@ template <typename RegistryType>
 ///
 /// The text is written to a temporary file unique to this call, flushed to
 /// disk and renamed over the destination, so readers and concurrent savers see
-/// either the old or the new file. An existing file keeps its permissions (and
-/// owner, where the process may set it); a symlink keeps pointing at its
-/// target, which is what gets replaced. Missing parent directories are created.
+/// either the old or the new file. The directory is then flushed so that the
+/// rename survives a crash; that step is best effort, and its failure is not
+/// reported because the file has already been replaced. Without POSIX I/O the
+/// replacement is atomic but nothing is flushed.
+///
+/// An existing file keeps its permission bits (and owner, where the process may
+/// set it); other metadata, such as ACLs, extended attributes and hard links to
+/// the old file, is not carried over. A symlink keeps pointing at its target,
+/// which is what gets replaced. Missing parent directories are created.
 [[nodiscard]] inline auto SaveFile(const std::filesystem::path& path, const ConfDocument& document) -> Status
 {
     namespace fs = std::filesystem;
+    if (path.empty()) {
+        return InvalidArgumentError("Configuration file path must not be empty");
+    }
     fs::path destination(path);
     std::error_code error;
     if (fs::is_symlink(fs::symlink_status(destination, error))) {

@@ -1,5 +1,6 @@
 #include <cppfig/chrono.h>
 #include <cppfig/cppfig.h>
+#include <cppfig/path.h>
 #include <gtest/gtest.h>
 
 #include <array>

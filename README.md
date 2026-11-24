@@ -18,8 +18,8 @@ const int& port = config.Get<settings::ServerPort>();  // no lookup, no parsing,
 - **IDE-friendly.** Settings are plain structs; clangd completes `Get<settings::...>()` and shows the real value type on hover.
 - **Validated, all-or-nothing initialization.** Defaults, file values and environment overrides are converted and validated once. Loading either yields a complete valid configuration or every error found, each with `file:line:column`.
 - **Lock-free concurrent reads.** The configuration is immutable once loaded, so any number of threads can read it without synchronization.
-- **Comment-preserving saves and migrations.** Saving writes your file back untouched, appending only settings it is missing. Saves are atomic and durable, and keep the file's permissions and symlinks.
-- **Lean memory.** The configuration holds the values and nothing else, with no padding between them; the source text lives in a separate, exactly sized document you can discard.
+- **Comment-preserving saves and migrations.** Saving writes your file back untouched, appending only settings it is missing. Saves are atomic, are flushed to disk before they replace the file, and keep the file's permissions, its owner where allowed, and symlinks.
+- **Lean memory.** The configuration holds the values and nothing else, ordered by alignment so that GCC and Clang leave no padding between them; the source text lives in a separate document you can discard.
 - **No exceptions required.** Errors are returned as `Status`/`StatusOr`; the library builds with `-fno-exceptions`.
 - **Testable.** `ConfigurationBuilder` makes a real configuration from values set in code, and `Environment::From` replaces the process environment, so tests need neither files nor `setenv`.
 
@@ -161,6 +161,7 @@ src/cppfig/
 ├── conf.h            # .conf parser and value escaping
 ├── traits.h          # ConfigTraits conversions, EnumTraits
 ├── chrono.h          # Opt-in std::chrono::duration conversions
+├── path.h            # std::filesystem::path conversions (included by file.h)
 ├── validator.h       # Validators
 └── status.h          # Status and StatusOr
 test/                 # Unit, compile-fail and compile-scale tests

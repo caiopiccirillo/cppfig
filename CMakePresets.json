@@ -62,6 +62,22 @@
             }
         },
         {
+            "name": "config-noexcept-gcc",
+            "displayName": "No exceptions GCC",
+            "description": "Configure debug build with GCC and -fno-exceptions",
+            "binaryDir": "${sourceDir}/build/noexcept/gcc",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_C_COMPILER": "/usr/bin/gcc",
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "STRICT_BUILD": "ON",
+                "CMAKE_CXX_FLAGS": "-fno-exceptions"
+            }
+        },
+        {
             "name": "config-sanitize-clang",
             "displayName": "Sanitizers Clang",
             "description": "Configure debug build with AddressSanitizer and UndefinedBehaviorSanitizer",
@@ -71,6 +87,23 @@
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_C_COMPILER": "/usr/local/bin/clang",
                 "CMAKE_CXX_COMPILER": "/usr/local/bin/clang++",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "STRICT_BUILD": "ON",
+                "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all",
+                "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+            }
+        },
+        {
+            "name": "config-sanitize-gcc",
+            "displayName": "Sanitizers GCC",
+            "description": "Configure debug build with AddressSanitizer and UndefinedBehaviorSanitizer using GCC",
+            "binaryDir": "${sourceDir}/build/sanitize/gcc",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_C_COMPILER": "/usr/bin/gcc",
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
                 "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third/vcpkg/scripts/buildsystems/vcpkg.cmake",
                 "STRICT_BUILD": "ON",
@@ -174,10 +207,22 @@
             "description": "Build release version with GCC"
         },
         {
+            "name": "build-noexcept-gcc",
+            "configurePreset": "config-noexcept-gcc",
+            "displayName": "No exceptions GCC",
+            "description": "Build with GCC and -fno-exceptions"
+        },
+        {
             "name": "build-sanitize-clang",
             "configurePreset": "config-sanitize-clang",
             "displayName": "Sanitizers Clang",
             "description": "Build with ASan and UBSan enabled"
+        },
+        {
+            "name": "build-sanitize-gcc",
+            "configurePreset": "config-sanitize-gcc",
+            "displayName": "Sanitizers GCC",
+            "description": "Build with ASan and UBSan enabled using GCC"
         },
         {
             "name": "build-tsan-clang",
@@ -202,7 +247,9 @@
             "configurePreset": "config-docs",
             "displayName": "Documentation",
             "description": "Build Doxygen documentation",
-            "targets": ["docs"]
+            "targets": [
+                "docs"
+            ]
         }
     ],
     "testPresets": [
@@ -231,10 +278,22 @@
             "description": "Test release version with GCC"
         },
         {
+            "name": "test-noexcept-gcc",
+            "configurePreset": "config-noexcept-gcc",
+            "displayName": "Test No exceptions GCC",
+            "description": "Run tests built with GCC and -fno-exceptions"
+        },
+        {
             "name": "test-sanitize-clang",
             "configurePreset": "config-sanitize-clang",
             "displayName": "Test Sanitizers Clang",
             "description": "Run tests under ASan and UBSan"
+        },
+        {
+            "name": "test-sanitize-gcc",
+            "configurePreset": "config-sanitize-gcc",
+            "displayName": "Test Sanitizers GCC",
+            "description": "Run tests under ASan and UBSan built with GCC"
         },
         {
             "name": "test-tsan-clang",
@@ -315,6 +374,19 @@
             ]
         },
         {
+            "name": "noexcept-gcc",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "config-noexcept-gcc"
+                },
+                {
+                    "type": "build",
+                    "name": "build-noexcept-gcc"
+                }
+            ]
+        },
+        {
             "name": "sanitize-clang",
             "steps": [
                 {
@@ -328,6 +400,23 @@
                 {
                     "type": "test",
                     "name": "test-sanitize-clang"
+                }
+            ]
+        },
+        {
+            "name": "sanitize-gcc",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "config-sanitize-gcc"
+                },
+                {
+                    "type": "build",
+                    "name": "build-sanitize-gcc"
+                },
+                {
+                    "type": "test",
+                    "name": "test-sanitize-gcc"
                 }
             ]
         },

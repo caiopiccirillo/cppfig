@@ -144,13 +144,13 @@ public:
     /// @brief Constructs a StatusOr holding an error.
     ///
     /// An OK status carries no value, so a StatusOr built from one would hold
-    /// neither a value nor an error.
+    /// neither a value nor an error. Debug builds assert; release builds store
+    /// an internal error instead, so the result is never both empty and OK.
     ///
     /// @pre status must not be OK.
     StatusOr(Status status)  // NOLINT(google-explicit-constructor)
-        : storage_(std::move(status))
+        : storage_(ErrorFrom(std::move(status)))
     {
-        assert(!std::get<Status>(storage_).ok() && "StatusOr must not be constructed from an OK status");
     }
 
     /// @brief Returns true if a value is present.
@@ -200,6 +200,15 @@ public:
     [[nodiscard]] auto operator->() -> T* { return &value(); }
 
 private:
+    [[nodiscard]] static auto ErrorFrom(Status status) -> Status
+    {
+        assert(!status.ok() && "StatusOr must not be constructed from an OK status");
+        if (status.ok()) {
+            return InternalError("StatusOr was constructed from an OK status");
+        }
+        return status;
+    }
+
     std::variant<Status, T> storage_;
 };
 

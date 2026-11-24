@@ -10,7 +10,7 @@ Every value type needs a `cppfig::ConfigTraits<T>` specialization that converts 
 | `short`, `int`, `long`, `long long`, their unsigned forms, `signed char`, `unsigned char`, and the `<cstdint>` aliases | Decimal, as `std::from_chars` reads it | Exact: no `+`, no prefix, no trailing text, range-checked. `char`, `wchar_t` and `charN_t` are text, not numbers, and have no conversion. |
 | `float`, `double`, `long double` | `std::from_chars` general format | `long double` only where the standard library supports it |
 | `std::string` | The text as is | Written quoted when needed; see [the format](conf-format.md#writing) |
-| `std::filesystem::path` | The path in the native narrow encoding | |
+| `std::filesystem::path` | The path in the native narrow encoding | In `<cppfig/path.h>`, which `<cppfig/cppfig.h>` and `<cppfig/file.h>` include |
 | `std::chrono::duration<Rep, Period>` | An integer and a unit: `250ms`, `30s`, `5min`, `2h` | Needs `#include <cppfig/chrono.h>`. See below. |
 
 ### Durations

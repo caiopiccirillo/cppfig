@@ -148,7 +148,9 @@ namespace {
     }
 
     // Values are parsed into one set of candidate slots, so loading a complete
-    // file costs the same number of allocations whatever the registry's size.
+    // file costs the same number of allocations whatever the registry's size,
+    // as long as every value fits in place. The generated registry's strings
+    // fit the small-string buffer; a longer string allocates once per value.
     TEST(AllocationTest, LoadingACompleteFileAllocatesAFixedNumberOfTimes)
     {
         const auto small = CountAllocationsOfLoadingDefaults<scale::GeneratedRegistry<16>>();

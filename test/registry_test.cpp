@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -284,6 +285,49 @@ namespace {
         EXPECT_TRUE(AlwaysValid<std::string>()("anything"));
     }
 
+    // NaN compares false with everything, so a bound written as "reject when
+    // below" would let it through.
+    TEST(ValidatorTest, OrderedValidatorsRejectNaN)
+    {
+        for (const double nan : { std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::signaling_NaN() }) {
+            EXPECT_FALSE(Min(0.0)(nan));
+            EXPECT_FALSE(Max(1.0)(nan));
+            EXPECT_FALSE(Range(0.0, 1.0)(nan));
+            EXPECT_FALSE(Positive<double>()(nan));
+            EXPECT_FALSE(NonNegative<double>()(nan));
+        }
+        EXPECT_FALSE(Range(0.0F, 1.0F)(std::numeric_limits<float>::quiet_NaN()));
+    }
+
+    struct Ratio {
+        static constexpr std::string_view path = "ratio";
+        using value_type = double;
+        static auto default_value() -> double { return 0.5; }
+        static auto validator() { return Range(0.0, 1.0); }
+    };
+
+    struct RatioRegistry : Registry<Ratio> { };
+
+    TEST(ValidatorTest, LoadingRejectsNaNOutsideAnOrderedRange)
+    {
+        auto loaded = Configuration<RatioRegistry>::FromText("ratio = nan\n", "app.conf", { .environment = Environment::None() });
+        ASSERT_FALSE(loaded);
+        EXPECT_NE(loaded.error().message().find("ratio"), std::string_view::npos) << loaded.error().message();
+    }
+
+    // Temporary std::string values are destroyed when the OneOf call returns,
+    // so OneOf must copy them rather than keep views (caught by ASan otherwise).
+    TEST(ValidatorTest, OneOfCopiesStdStringValues)
+    {
+        const auto validator = OneOf(std::string("a-long-allowed-value-that-allocates"), std::string("another-long-allowed-value"));
+        static_assert(std::is_same_v<decltype(validator.allowed_values)::value_type, std::string>);
+        EXPECT_TRUE(validator(std::string("a-long-allowed-value-that-allocates")));
+        EXPECT_FALSE(validator(std::string("a-value-that-was-never-allowed")));
+
+        // String literals are still held as views, without copying.
+        static_assert(std::is_same_v<decltype(OneOf("debug", "info").allowed_values)::value_type, std::string_view>);
+    }
+
     // Every built-in validator runs at compile time, so constant defaults of
     // string settings can be checked as well as numeric ones.
     static_assert(static_cast<bool>(OneOf("debug", "info")(std::string("info"))));
@@ -302,6 +346,17 @@ namespace {
 
     static_assert(detail::ConstantDefaultCheck<ConstantLevel>);
     static_assert(Registry<ConstantLevel>::size == 1);
+
+#ifdef NDEBUG
+    // Debug builds assert instead; release builds must not produce a result
+    // that holds neither a value nor an error.
+    TEST(StatusOrTest, OkStatusBecomesAnInternalErrorInReleaseBuilds)
+    {
+        const StatusOr<int> result = OkStatus();
+        EXPECT_FALSE(result.has_value());
+        EXPECT_TRUE(IsInternal(result.error()));
+    }
+#endif
 
     TEST(BuilderTest, BuildsAConfigurationFromValuesSetInCode)
     {
