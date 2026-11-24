@@ -195,8 +195,9 @@ struct MaxLengthValidator : ValidatorOps<MaxLengthValidator> {
     }
 };
 
-/// Accepts values equal to one of N allowed values, held in place: building
-/// and running it never allocates, and it can run at compile time.
+/// Accepts values equal to one of N allowed values, held in place. It can run
+/// at compile time, and building and running it never allocates unless the
+/// allowed values are std::string objects, which it copies.
 template <typename Element, std::size_t N>
 struct OneOfValidator : ValidatorOps<OneOfValidator<Element, N>> {
     std::array<Element, N> allowed_values;
@@ -275,8 +276,9 @@ template <typename T>
 
 namespace detail {
 
-    /// Text is compared as std::string_view, so the allowed values of a string
-    /// setting are not copied into std::string objects.
+    /// Character pointers are held as std::string_view, so string literals are
+    /// not copied. A std::string is copied: it is often a temporary, and a view
+    /// of it would dangle as soon as the OneOf call returns.
     template <typename T>
     struct OneOfElementOf {
         using type = T;
@@ -292,11 +294,6 @@ namespace detail {
         using type = std::string_view;
     };
 
-    template <>
-    struct OneOfElementOf<std::string> {
-        using type = std::string_view;
-    };
-
     template <typename Element, typename... Values>
     using OneOfElement = OneOfElementOf<
         std::conditional_t<std::is_void_v<Element>, std::common_type_t<std::decay_t<Values>...>, Element>>::type;
@@ -304,7 +301,11 @@ namespace detail {
 }  // namespace detail
 
 /// @brief Accepts one of the listed values. The element type is deduced, or
-/// given explicitly as in OneOf<unsigned>(80, 443); text is held as std::string_view.
+/// given explicitly as in OneOf<unsigned>(80, 443).
+///
+/// String literals, character pointers and std::string_view values are held as
+/// views, so the text they refer to must outlive the validator; a string literal
+/// always does. std::string values are copied.
 template <typename Element = void, typename... Values>
 [[nodiscard]] constexpr auto OneOf(const Values&... values)
     -> OneOfValidator<detail::OneOfElement<Element, Values...>, sizeof...(Values)>

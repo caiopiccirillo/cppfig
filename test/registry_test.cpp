@@ -315,6 +315,19 @@ namespace {
         EXPECT_NE(loaded.error().message().find("ratio"), std::string_view::npos) << loaded.error().message();
     }
 
+    // Temporary std::string values are destroyed when the OneOf call returns,
+    // so OneOf must copy them rather than keep views (caught by ASan otherwise).
+    TEST(ValidatorTest, OneOfCopiesStdStringValues)
+    {
+        const auto validator = OneOf(std::string("a-long-allowed-value-that-allocates"), std::string("another-long-allowed-value"));
+        static_assert(std::is_same_v<decltype(validator.allowed_values)::value_type, std::string>);
+        EXPECT_TRUE(validator(std::string("a-long-allowed-value-that-allocates")));
+        EXPECT_FALSE(validator(std::string("a-value-that-was-never-allowed")));
+
+        // String literals are still held as views, without copying.
+        static_assert(std::is_same_v<decltype(OneOf("debug", "info").allowed_values)::value_type, std::string_view>);
+    }
+
     // Every built-in validator runs at compile time, so constant defaults of
     // string settings can be checked as well as numeric ones.
     static_assert(static_cast<bool>(OneOf("debug", "info")(std::string("info"))));
