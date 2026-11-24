@@ -347,6 +347,17 @@ namespace {
     static_assert(detail::ConstantDefaultCheck<ConstantLevel>);
     static_assert(Registry<ConstantLevel>::size == 1);
 
+#ifdef NDEBUG
+    // Debug builds assert instead; release builds must not produce a result
+    // that holds neither a value nor an error.
+    TEST(StatusOrTest, OkStatusBecomesAnInternalErrorInReleaseBuilds)
+    {
+        const StatusOr<int> result = OkStatus();
+        EXPECT_FALSE(result.has_value());
+        EXPECT_TRUE(IsInternal(result.error()));
+    }
+#endif
+
     TEST(BuilderTest, BuildsAConfigurationFromValuesSetInCode)
     {
         ConfigurationBuilder<TestRegistry> builder;
