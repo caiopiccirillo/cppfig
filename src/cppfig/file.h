@@ -210,9 +210,15 @@ template <typename RegistryType>
 ///
 /// The text is written to a temporary file unique to this call, flushed to
 /// disk and renamed over the destination, so readers and concurrent savers see
-/// either the old or the new file. An existing file keeps its permissions (and
-/// owner, where the process may set it); a symlink keeps pointing at its
-/// target, which is what gets replaced. Missing parent directories are created.
+/// either the old or the new file. The directory is then flushed so that the
+/// rename survives a crash; that step is best effort, and its failure is not
+/// reported because the file has already been replaced. Without POSIX I/O the
+/// replacement is atomic but nothing is flushed.
+///
+/// An existing file keeps its permission bits (and owner, where the process may
+/// set it); other metadata, such as ACLs, extended attributes and hard links to
+/// the old file, is not carried over. A symlink keeps pointing at its target,
+/// which is what gets replaced. Missing parent directories are created.
 [[nodiscard]] inline auto SaveFile(const std::filesystem::path& path, const ConfDocument& document) -> Status
 {
     namespace fs = std::filesystem;

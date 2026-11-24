@@ -115,7 +115,7 @@ public:
 
     /// True when settings missing from the text were appended to it, so the
     /// text differs from what was read. A missing file reads as empty text, so
-    /// it always needs saving.
+    /// it needs saving whenever the registry has at least one setting.
     [[nodiscard]] auto NeedsSave() const noexcept -> bool { return needs_save_; }
 
     /// Entries that were kept because their path is not in the registry, in
@@ -134,9 +134,10 @@ private:
     }
 
     /// Returns text with migrated entries appended after it, leaving the
-    /// existing text untouched. The result is allocated once at its exact size:
-    /// the document keeps it for as long as the caller does, so growth slack
-    /// would be memory held for nothing.
+    /// existing text untouched. The result is allocated once, reserved at the
+    /// size it needs: the document keeps it for as long as the caller does, so
+    /// growth slack would be memory held for nothing. Text that needs no
+    /// migration is kept as given, with whatever capacity it already had.
     [[nodiscard]] static auto AppendMigrations(std::string text, std::string_view migrations) -> std::string
     {
         if (migrations.empty()) {

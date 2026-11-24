@@ -52,7 +52,7 @@ using AppRegistry = cppfig::Registry<settings::ServerHost, settings::ServerPort,
 
 Both work everywhere. The derived struct gives the registry its own short name, so compiler errors, clangd hovers and symbol names show `Configuration<AppRegistry>` rather than the whole list of settings, and large registries compile slightly faster.
 
-The registry holds no values, only compile-time metadata. Each `Configuration<AppRegistry>` stores one value per setting, laid out by alignment so that there is no padding between them.
+The registry holds no values, only compile-time metadata. Each `Configuration<AppRegistry>` stores one value per setting, laid out by alignment so that, with GCC and Clang, there is no padding between them.
 
 ## Compile-time checks
 

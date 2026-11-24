@@ -51,7 +51,7 @@ Reads are now a load from a fixed offset in the configuration object: no lookup,
 
 ### Saving is durable now, and that costs time on real disks
 
-The old save wrote the file in place with no flush. The new save writes a temporary file, `fsync`s it, renames it over the destination and `fsync`s the directory, so a crash leaves either the old or the new file. On tmpfs `fsync` is nearly free, which is why the table above shows a small gain. On ext4 the flushes dominate:
+The old save wrote the file in place with no flush. The new save writes a temporary file, `fsync`s it, renames it over the destination and `fsync`s the directory, so a crash leaves either the old or the new file. The directory `fsync` is best effort: if it fails, the file has already been replaced, so the save still reports success. On systems without POSIX I/O, the save is atomic but not flushed. On tmpfs `fsync` is nearly free, which is why the table above shows a small gain. On ext4 the flushes dominate:
 
 | Save on ext4 | Wall time | CPU time |
 | --- | ---: | ---: |
@@ -86,7 +86,7 @@ The figures in this section were re-measured after the memory and architecture r
 
 Where the gains come from:
 
-- The file is read into one allocation of its size, and migrations are appended into one new exactly sized string. Before, the text grew geometrically while it was read and the document kept the slack: the retained heap was 1.7 times the text.
+- The file is read into one allocation of its size, and migrations are appended into one new string reserved at the size it needs (the standard library may round a reservation up). Before, the text grew geometrically while it was read and the document kept the slack: the retained heap was 1.7 times the text.
 - Loading parses values straight into a single set of candidate slots instead of separate file and effective copies, records lines in 4 bytes, and builds a default only when the file lacks the setting.
 - The environment is read in one pass and looked up among the sorted override names, instead of one `getenv` scan of the whole environment per override.
 - Every per-setting operation goes through one function and one table, instead of three: fewer load-time relocations, unwind entries and functions to compile.
@@ -114,7 +114,7 @@ With every override set, the 1024-setting load reads an environment holding 256 
 | Save | 14 | 14 | 14 |
 | Reading every setting | 0 | 0 | 0 |
 
-Loading a complete file allocates a fixed number of times, whatever the number of settings or the size of the file. With a missing file, the migrations string grows with the number of settings, so the count grows with its logarithm. The single `FromDefaults` allocation is the temporary candidate storage, kept on the heap so that large registries do not need a large stack.
+In this workload, loading a complete file allocates a fixed number of times, whatever the number of settings or the size of the file, because every string value fits the small-string buffer. A string value too long for that buffer, or a custom type that owns memory, adds its own allocations, so in general the count grows with the number of such values. With a missing file, the migrations string grows with the number of settings, so the count grows with its logarithm. The single `FromDefaults` allocation is the temporary candidate storage, kept on the heap so that large registries do not need a large stack.
 
 ### Memory
 
@@ -125,7 +125,7 @@ Loading a complete file allocates a fixed number of times, whatever the number o
 | Document text (`ConfDocument`) | 251 bytes | 2,134 bytes | 18,068 bytes |
 | Heap retained by a loaded result | 264 bytes | 2,136 bytes | 18,072 bytes |
 
-The average value size in this mix is (4 + 32 + 1 + 8) / 4 = 11.25 bytes, so the configuration holds the values and nothing else: storage is ordered by alignment, leaving no padding between values. The 16-setting figure includes 4 bytes of tail padding to the 8-byte alignment of the whole object. The document is separate and can be discarded once saved. The heap a loaded result keeps is the document's text and nothing more: it is read and stored at its exact size, and these strings fit the small-string buffer.
+The average value size in this mix is (4 + 32 + 1 + 8) / 4 = 11.25 bytes, so the configuration holds the values and nothing else: storage is ordered by alignment, leaving no padding between values. This is a property of the Itanium C++ ABI that GCC and Clang use, which lays base classes out in order; the C++ standard leaves that layout to the implementation. The 16-setting figure includes 4 bytes of tail padding to the 8-byte alignment of the whole object. The document is separate and can be discarded once saved. The heap a loaded result keeps is the document's text and nothing more, because these strings fit the small-string buffer and no key is unknown. Long strings, owning custom types and preserved unknown keys add to it.
 
 ### Reads
 
