@@ -8,6 +8,9 @@
 namespace cppfig {
 
 /// @brief One `path = value` entry. Columns are 1-based byte offsets in the line.
+///
+/// The views are valid only until the callback that receives the entry
+/// returns: a quoted value is decoded into a buffer reused for the next one.
 struct ConfEntry {
     std::string_view path;
     std::string_view text;
@@ -17,6 +20,9 @@ struct ConfEntry {
 };
 
 /// @brief A syntax error on one line. The column is a 1-based byte offset.
+///
+/// The message is valid only until the callback that receives the error
+/// returns; copy it to keep it.
 struct ConfError {
     std::size_t line;
     std::size_t column;
@@ -34,6 +40,10 @@ public:
     /// Calls on_entry for each entry and on_error for each malformed line, in
     /// line order. A malformed line is skipped and parsing continues with the
     /// next one, so every error in a document is found in one pass.
+    ///
+    /// Every view passed to a callback is valid only until that callback
+    /// returns. Paths and unquoted values view document, but quoted values and
+    /// error messages view temporary storage, so copy what must be kept.
     template <typename EntryFn, typename ErrorFn>
     static void ForEachEntry(std::string_view document, EntryFn&& on_entry, ErrorFn&& on_error)
     {
