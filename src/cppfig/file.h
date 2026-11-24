@@ -18,6 +18,7 @@
 
 #include "cppfig/configuration.h"
 #include "cppfig/document.h"
+#include "cppfig/path.h"  // IWYU pragma: export
 #include "cppfig/status.h"
 
 #if __has_include(<unistd.h>)

@@ -51,6 +51,16 @@ foreach(case_name invalid_default duplicate_setting unregistered_setting duplica
     )
 endforeach()
 
+# The core headers must not include <filesystem>: it is opt-in through
+# <cppfig/path.h> and <cppfig/file.h>.
+add_test(
+    NAME core_headers_do_not_include_filesystem
+    COMMAND ${CMAKE_CXX_COMPILER}
+        -std=c++20
+        -I${PROJECT_SOURCE_DIR}/src
+        -fsyntax-only ${CMAKE_CURRENT_SOURCE_DIR}/core_headers/no_filesystem.cpp
+)
+
 # Compile-time budget: the full initialization path for a 1024-setting registry
 # must build at -O2 well within the timeout. Exclude with `ctest -LE compile-scale`.
 add_test(

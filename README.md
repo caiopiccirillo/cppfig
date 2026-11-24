@@ -161,6 +161,7 @@ src/cppfig/
 ├── conf.h            # .conf parser and value escaping
 ├── traits.h          # ConfigTraits conversions, EnumTraits
 ├── chrono.h          # Opt-in std::chrono::duration conversions
+├── path.h            # std::filesystem::path conversions (included by file.h)
 ├── validator.h       # Validators
 └── status.h          # Status and StatusOr
 test/                 # Unit, compile-fail and compile-scale tests

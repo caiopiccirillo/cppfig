@@ -6,6 +6,7 @@ set(CPPFIG_CORE_HEADERS
     cppfig/document.h
     cppfig/environment.h
     cppfig/file.h
+    cppfig/path.h
     cppfig/schema.h
     cppfig/setting.h
     cppfig/status.h

@@ -78,7 +78,7 @@ Defaults that are not `constexpr`, such as most `std::string` defaults, are vali
 
 ## Value types
 
-Built in: `bool`, every standard integer type, `float`, `double`, `long double` where the standard library supports it, `std::string` and `std::filesystem::path`. With `#include <cppfig/chrono.h>`, `std::chrono` durations too. Enums and your own types need a `ConfigTraits` specialization. See [Custom Types](custom-types.md).
+Built in: `bool`, every standard integer type, `float`, `double`, `long double` where the standard library supports it, `std::string` and `std::filesystem::path` (from `<cppfig/path.h>`, which `<cppfig/cppfig.h>` and `<cppfig/file.h>` include). With `#include <cppfig/chrono.h>`, `std::chrono` durations too. Enums and your own types need a `ConfigTraits` specialization. See [Custom Types](custom-types.md).
 
 ## Paths
 
