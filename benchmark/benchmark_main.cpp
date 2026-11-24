@@ -1,6 +1,5 @@
-// Workloads equivalent to the pre-redesign suite recorded in
-// docs/BASELINE_RESULTS.md: the same settings, registry sizes (1, 5 and 14
-// settings) and flat .conf files, so results can be compared directly.
+// Reads, loading and saving for small hand-written registries of 1, 5 and 14
+// settings in flat .conf files. Results are in docs/BENCHMARK_RESULTS.md.
 #include <benchmark/benchmark.h>
 #include <cppfig/cppfig.h>
 
@@ -138,7 +137,7 @@ namespace {
         std::string path_;
     };
 
-    /// Reads a setting the way callers of the pre-redesign API did: as a copy.
+    /// Reads a setting into a copy.
     /// The configuration's address escapes before the loop and KeepValue
     /// clobbers memory, so every iteration loads the value again.
     template <typename S>
@@ -186,7 +185,7 @@ namespace {
     }
     BENCHMARK(GetStringReference);
 
-    /// Loads a complete, existing file, as the pre-redesign Load benchmarks did.
+    /// Loads a complete, existing file.
     template <typename RegistryType>
     void LoadExisting(benchmark::State& state)
     {
@@ -208,8 +207,8 @@ namespace {
     BENCHMARK(LoadExisting<LargeRegistry>)->Name("LoadLargeRegistry");
 
     /// Saves a loaded document. Each save writes a temporary file, fsyncs it,
-    /// renames it over the destination and fsyncs the directory; the pre-redesign
-    /// save did not flush to disk, so most of the difference is durability.
+    /// renames it over the destination and fsyncs the directory, so on a real
+    /// disk most of the time is spent flushing.
     template <typename RegistryType>
     void SaveDocument(benchmark::State& state)
     {

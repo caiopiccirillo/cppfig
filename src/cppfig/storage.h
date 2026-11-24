@@ -71,14 +71,15 @@ struct StorageOrder {
     using type = decltype(Make(std::make_index_sequence<size>()));
 };
 
-/// Non-recursive indexed storage. Unlike libstdc++'s recursive tuple
-/// implementation, this supports large registries within default template-depth
-/// limits. Slots are laid out in storage order but addressed by declaration index.
+/// Non-recursive indexed storage, so large registries stay within default
+/// template-depth limits (a recursive std::tuple, as libstdc++ implements it,
+/// does not). Slots are laid out in storage order but addressed by declaration
+/// index.
 ///
 /// Access a slot by casting to StorageSlot<I, Holder<T>> rather than through a
-/// per-index member function: any function instantiated per index on this type carries the entire registry
-/// in its mangled name, which dominated compile time and object size for large
-/// registries.
+/// per-index member function: any function instantiated per index on this type
+/// carries the entire registry in its mangled name, and for large registries
+/// those names dominate compile time and object size.
 template <template <typename> typename Holder, typename Order, typename... Settings>
 struct HeldStorage;
 

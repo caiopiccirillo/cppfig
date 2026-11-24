@@ -125,7 +125,8 @@ cmake --workflow --preset=debug-gcc         # or debug-clang, release-gcc, relea
 ctest --test-dir build/debug/gcc --output-on-failure
 ctest --test-dir build/debug/gcc -LE compile-scale   # skip the 1024-setting compile-time test
 
-cmake --workflow --preset=sanitize-clang    # ASan + UBSan, runs the tests
+cmake --workflow --preset=sanitize-clang    # ASan + UBSan, runs the tests (sanitize-gcc for GCC)
+cmake --workflow --preset=noexcept-gcc      # build with -fno-exceptions
 cmake --workflow --preset=tsan-clang        # ThreadSanitizer, runs the tests
 cmake --workflow --preset=coverage          # then: ninja -C build/coverage coverage
 cmake --workflow --preset=fuzz-clang        # libFuzzer + ASan/UBSan, 30 s per fuzzer

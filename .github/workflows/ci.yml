@@ -25,10 +25,9 @@ env:
 
 jobs:
   # Builds the devcontainer image once and publishes it, so the jobs below pull
-  # a ready image instead of each rebuilding it. Previously every job set
-  # `cacheFrom` while also setting `push: never`, so nothing was ever published
-  # for the cache to hit and each one rebuilt the LLVM layer from scratch —
-  # about 83 seconds per job.
+  # a ready image instead of each rebuilding the LLVM layer (about 83 seconds
+  # per job). The other jobs set `push: never`, so their `cacheFrom` only hits
+  # because this job publishes the image.
   devcontainer:
     name: Devcontainer image
     runs-on: ubuntu-latest
@@ -88,8 +87,8 @@ jobs:
         with:
           submodules: recursive
           # vcpkg needs full history to resolve the manifest's builtin-baseline.
-          # Fetching it with the checkout replaces a separate
-          # `git fetch --unshallow`, which intermittently failed with
+          # Fetching it with the checkout avoids a separate
+          # `git fetch --unshallow`, which can fail with
           # "fatal: shallow file has changed since we read it".
           fetch-depth: 0
 
@@ -358,8 +357,8 @@ jobs:
         with:
           submodules: recursive
           # vcpkg needs full history to resolve the manifest's builtin-baseline.
-          # Fetching it with the checkout replaces a separate
-          # `git fetch --unshallow`, which intermittently failed with
+          # Fetching it with the checkout avoids a separate
+          # `git fetch --unshallow`, which can fail with
           # "fatal: shallow file has changed since we read it".
           fetch-depth: 0
 
