@@ -78,6 +78,10 @@ jobs:
           - compiler: gcc
             preset: release-gcc
             build_dir: release/gcc
+          # The library promises to build without exceptions.
+          - compiler: gcc
+            preset: noexcept-gcc
+            build_dir: noexcept/gcc
 
     steps:
       - uses: actions/checkout@v4
@@ -146,6 +150,10 @@ jobs:
         include:
           - sanitizer: asan-ubsan
             preset: sanitize-clang
+          # GCC rejects some constant expressions under -fsanitize=undefined
+          # that Clang accepts, so both compilers are checked.
+          - sanitizer: asan-ubsan-gcc
+            preset: sanitize-gcc
           - sanitizer: tsan
             preset: tsan-clang
 
