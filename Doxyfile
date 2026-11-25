@@ -28,8 +28,8 @@ ABBREVIATE_BRIEF       = "The $name class" \
 ALWAYS_DETAILED_SEC    = NO
 INLINE_INHERITED_MEMB  = NO
 FULL_PATH_NAMES        = YES
-STRIP_FROM_PATH        =
-STRIP_FROM_INC_PATH    =
+STRIP_FROM_PATH        = src .
+STRIP_FROM_INC_PATH    = src
 SHORT_NAMES            = NO
 JAVADOC_AUTOBRIEF      = NO
 JAVADOC_BANNER         = NO
@@ -81,7 +81,7 @@ CASE_SENSE_NAMES       = YES
 HIDE_SCOPE_NAMES       = NO
 HIDE_COMPOUND_REFERENCE= NO
 SHOW_HEADERFILE        = YES
-SHOW_INCLUDE_FILES     = YES
+SHOW_INCLUDE_FILES     = NO
 SHOW_GROUPED_MEMB_INC  = NO
 FORCE_LOCAL_INCLUDES   = NO
 INLINE_INFO            = YES
@@ -118,9 +118,17 @@ WARN_LINE_FORMAT       = "at line $line of file $file"
 WARN_LOGFILE           =
 
 # Configuration options related to the input files
+# The guides are listed one by one, in reading order, which is the order the
+# navigation shows them in.
 INPUT                  = README.md \
-                         src/ \
-                         docs/
+                         docs/getting-started.md \
+                         docs/defining-settings.md \
+                         docs/conf-format.md \
+                         docs/custom-types.md \
+                         docs/validators.md \
+                         docs/testing.md \
+                         docs/BENCHMARK_RESULTS.md \
+                         src/
 INPUT_ENCODING         = UTF-8
 INPUT_FILE_ENCODING    =
 FILE_PATTERNS          = *.c \
@@ -147,7 +155,8 @@ EXCLUDE_PATTERNS       = */.cache/* \
                          */test/* \
                          */benchmark/* \
                          */examples/*
-EXCLUDE_SYMBOLS        =
+# Implementation details, not part of the API.
+EXCLUDE_SYMBOLS        = cppfig::detail
 EXAMPLE_PATH           =
 EXAMPLE_PATTERNS       = *
 EXAMPLE_RECURSIVE      = NO
@@ -261,22 +270,22 @@ EXTERNAL_PAGES         = NO
 DOT_NUM_THREADS        = 0
 DOT_FONTPATH           =
 CLASS_GRAPH            = YES
-COLLABORATION_GRAPH    = YES
+COLLABORATION_GRAPH    = NO
 GROUP_GRAPHS           = YES
 UML_LOOK               = NO
 UML_LIMIT_NUM_FIELDS   = 10
 DOT_UML_DETAILS        = NO
 DOT_WRAP_THRESHOLD     = 17
 TEMPLATE_RELATIONS     = NO
-INCLUDE_GRAPH          = YES
-INCLUDED_BY_GRAPH      = YES
+INCLUDE_GRAPH          = NO
+INCLUDED_BY_GRAPH      = NO
 CALL_GRAPH             = NO
 CALLER_GRAPH           = NO
-GRAPHICAL_HIERARCHY    = YES
-DIRECTORY_GRAPH        = YES
+GRAPHICAL_HIERARCHY    = NO
+DIRECTORY_GRAPH        = NO
 DIR_GRAPH_MAX_DEPTH    = 1
 DOT_IMAGE_FORMAT       = svg
-INTERACTIVE_SVG        = YES
+INTERACTIVE_SVG        = NO
 DOT_PATH               =
 DOTFILE_DIRS           =
 MSCFILE_DIRS           =
@@ -288,4 +297,4 @@ DOT_GRAPH_MAX_NODES    = 50
 MAX_DOT_GRAPH_DEPTH    = 0
 DOT_MULTI_TARGETS      = NO
 GENERATE_LEGEND        = YES
-DOT_CLEANUP            = NO
+DOT_CLEANUP            = YES
