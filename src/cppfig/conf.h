@@ -34,7 +34,7 @@ struct ConfError {
 /// The grammar is documented in docs/conf-format.md. In short: blank lines
 /// and lines starting with `#` are ignored; `#` outside quotes starts a
 /// comment; unquoted values are trimmed views into the source; quoted values
-/// support \\, \", \n, \r and \t and use one temporary decoding string per entry.
+/// support `\\`, `\"`, `\n`, `\r` and `\t` and use one temporary decoding string per entry.
 class ConfParser {
 public:
     /// Calls on_entry for each entry and on_error for each malformed line, in

@@ -1,0 +1,130 @@
+/*
+ * cppfig's colors on top of doxygen-awesome-css: a neutral palette with one
+ * blue accent, code highlighting close to GitHub's, and inline code drawn as a
+ * light tint instead of a bordered box, so it reads as part of the sentence.
+ *
+ * The dark palette is declared twice, as the theme does: once for readers whose
+ * system prefers dark (unless they chose light with the toggle) and once for
+ * readers who chose dark with the toggle.
+ */
+
+html {
+    --primary-color: #0969da;
+    --primary-dark-color: #0550ae;
+    --primary-light-color: #54aeff;
+    --link-color: var(--primary-color);
+
+    --page-background-color: #ffffff;
+    --page-foreground-color: #1f2328;
+    --page-secondary-foreground-color: #59636e;
+    --separator-color: #d1d9e0;
+
+    --side-nav-background: #f6f8fa;
+    --tablehead-background: #f6f8fa;
+    --blockquote-background: #f6f8fa;
+    --blockquote-foreground: #59636e;
+
+    --code-background: rgba(129, 139, 152, 0.15);
+    --code-foreground: var(--page-foreground-color);
+
+    --fragment-background: #f6f8fa;
+    --fragment-foreground: #1f2328;
+    --fragment-keyword: #cf222e;
+    --fragment-keywordtype: #cf222e;
+    --fragment-keywordflow: #cf222e;
+    --fragment-token: #0a3069;
+    --fragment-comment: #59636e;
+    --fragment-link: #0550ae;
+    --fragment-preprocessor: #8250df;
+    --fragment-linenumber-color: #8c959f;
+    --fragment-linenumber-background: #f6f8fa;
+    --fragment-linenumber-border: #d1d9e0;
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not(.light-mode) {
+        --primary-color: #4493f8;
+        --primary-dark-color: #79c0ff;
+        --primary-light-color: #1f6feb;
+        --link-color: var(--primary-color);
+
+        --page-background-color: #0d1117;
+        --page-foreground-color: #e6edf3;
+        --page-secondary-foreground-color: #9198a1;
+        --separator-color: #3d444d;
+
+        --side-nav-background: #151b23;
+        --tablehead-background: #151b23;
+        --blockquote-background: #151b23;
+        --blockquote-foreground: #9198a1;
+
+        --code-background: rgba(101, 108, 118, 0.25);
+        --code-foreground: var(--page-foreground-color);
+
+        --fragment-background: #151b23;
+        --fragment-foreground: #e6edf3;
+        --fragment-keyword: #ff7b72;
+        --fragment-keywordtype: #ff7b72;
+        --fragment-keywordflow: #ff7b72;
+        --fragment-token: #a5d6ff;
+        --fragment-comment: #9198a1;
+        --fragment-link: #79c0ff;
+        --fragment-preprocessor: #d2a8ff;
+        --fragment-linenumber-color: #656c76;
+        --fragment-linenumber-background: #151b23;
+        --fragment-linenumber-border: #3d444d;
+    }
+}
+
+html.dark-mode {
+    --primary-color: #4493f8;
+    --primary-dark-color: #79c0ff;
+    --primary-light-color: #1f6feb;
+    --link-color: var(--primary-color);
+
+    --page-background-color: #0d1117;
+    --page-foreground-color: #e6edf3;
+    --page-secondary-foreground-color: #9198a1;
+    --separator-color: #3d444d;
+
+    --side-nav-background: #151b23;
+    --tablehead-background: #151b23;
+    --blockquote-background: #151b23;
+    --blockquote-foreground: #9198a1;
+
+    --code-background: rgba(101, 108, 118, 0.25);
+    --code-foreground: var(--page-foreground-color);
+
+    --fragment-background: #151b23;
+    --fragment-foreground: #e6edf3;
+    --fragment-keyword: #ff7b72;
+    --fragment-keywordtype: #ff7b72;
+    --fragment-keywordflow: #ff7b72;
+    --fragment-token: #a5d6ff;
+    --fragment-comment: #9198a1;
+    --fragment-link: #79c0ff;
+    --fragment-preprocessor: #d2a8ff;
+    --fragment-linenumber-color: #656c76;
+    --fragment-linenumber-background: #151b23;
+    --fragment-linenumber-border: #3d444d;
+}
+
+/* The sidebar's header holds the project name, its two-line brief and the
+   search box; the theme's 120 px cuts the search box off. */
+html {
+    --top-height: 142px;
+}
+
+/* Inline code: a tint, no border, and padding small enough not to push the
+   surrounding punctuation away. Code blocks keep their border. */
+code {
+    border: none;
+    border-radius: 6px;
+    padding: 0.15em 0.4em;
+}
+
+/* Links inside inline code take the link color, like other links. */
+code a,
+code a:visited {
+    color: var(--link-color);
+}

@@ -1,13 +1,13 @@
-# Doxyfile for cppfig — modern C++20 configuration library
-# Generated for Doxygen ≥ 1.9 with doxygen-awesome-css theme.
+# Doxyfile for cppfig. Build the documentation with the docs target
+# (cmake --workflow --preset docs): cmake/Docs.cmake generates a Doxyfile that
+# includes this one and adds the doxygen-awesome-css theme, the output
+# directory and the settings that depend on the installed Doxygen version.
 
 DOXYFILE_ENCODING      = UTF-8
 PROJECT_NAME           = "cppfig"
 PROJECT_NUMBER         = "0.1.0"
 PROJECT_BRIEF          = "Modern C++20 compile-time type-safe configuration library"
 PROJECT_LOGO           =
-# Set by the docs target in cmake/Docs.cmake.
-OUTPUT_DIRECTORY       = $(CPPFIG_DOCS_OUTPUT_DIR)
 CREATE_SUBDIRS         = NO
 CREATE_SUBDIRS_LEVEL   = 8
 ALLOW_UNICODE_NAMES    = NO
@@ -28,8 +28,8 @@ ABBREVIATE_BRIEF       = "The $name class" \
 ALWAYS_DETAILED_SEC    = NO
 INLINE_INHERITED_MEMB  = NO
 FULL_PATH_NAMES        = YES
-STRIP_FROM_PATH        =
-STRIP_FROM_INC_PATH    =
+STRIP_FROM_PATH        = src .
+STRIP_FROM_INC_PATH    = src
 SHORT_NAMES            = NO
 JAVADOC_AUTOBRIEF      = NO
 JAVADOC_BANNER         = NO
@@ -81,7 +81,7 @@ CASE_SENSE_NAMES       = YES
 HIDE_SCOPE_NAMES       = NO
 HIDE_COMPOUND_REFERENCE= NO
 SHOW_HEADERFILE        = YES
-SHOW_INCLUDE_FILES     = YES
+SHOW_INCLUDE_FILES     = NO
 SHOW_GROUPED_MEMB_INC  = NO
 FORCE_LOCAL_INCLUDES   = NO
 INLINE_INFO            = YES
@@ -118,9 +118,17 @@ WARN_LINE_FORMAT       = "at line $line of file $file"
 WARN_LOGFILE           =
 
 # Configuration options related to the input files
+# The guides are listed one by one, in reading order, which is the order the
+# navigation shows them in.
 INPUT                  = README.md \
-                         src/ \
-                         docs/
+                         docs/getting-started.md \
+                         docs/defining-settings.md \
+                         docs/conf-format.md \
+                         docs/custom-types.md \
+                         docs/validators.md \
+                         docs/testing.md \
+                         docs/BENCHMARK_RESULTS.md \
+                         src/
 INPUT_ENCODING         = UTF-8
 INPUT_FILE_ENCODING    =
 FILE_PATTERNS          = *.c \
@@ -147,7 +155,8 @@ EXCLUDE_PATTERNS       = */.cache/* \
                          */test/* \
                          */benchmark/* \
                          */examples/*
-EXCLUDE_SYMBOLS        =
+# Implementation details, not part of the API.
+EXCLUDE_SYMBOLS        = cppfig::detail
 EXAMPLE_PATH           =
 EXAMPLE_PATTERNS       = *
 EXAMPLE_RECURSIVE      = NO
@@ -182,17 +191,10 @@ IGNORE_PREFIX          =
 GENERATE_HTML          = YES
 HTML_OUTPUT            = html
 HTML_FILE_EXTENSION    = .html
-HTML_HEADER            =
+# HTML_HEADER, HTML_EXTRA_STYLESHEET and HTML_EXTRA_FILES are set by
+# cmake/Docs.cmake, which downloads the theme.
 HTML_FOOTER            =
 HTML_STYLESHEET        =
-# CPPFIG_DOCS_THEME_DIR is set by the docs target in cmake/Docs.cmake, which
-# downloads the theme there.
-HTML_EXTRA_STYLESHEET  = $(CPPFIG_DOCS_THEME_DIR)/doxygen-awesome.css \
-                         $(CPPFIG_DOCS_THEME_DIR)/doxygen-awesome-sidebar-only.css
-HTML_EXTRA_FILES       = $(CPPFIG_DOCS_THEME_DIR)/doxygen-awesome-darkmode-toggle.js \
-                         $(CPPFIG_DOCS_THEME_DIR)/doxygen-awesome-fragment-copy-button.js \
-                         $(CPPFIG_DOCS_THEME_DIR)/doxygen-awesome-paragraph-link.js \
-                         $(CPPFIG_DOCS_THEME_DIR)/doxygen-awesome-interactive-toc.js
 HTML_COLORSTYLE        = LIGHT
 HTML_COLORSTYLE_HUE    = 220
 HTML_COLORSTYLE_SAT    = 100
@@ -268,22 +270,22 @@ EXTERNAL_PAGES         = NO
 DOT_NUM_THREADS        = 0
 DOT_FONTPATH           =
 CLASS_GRAPH            = YES
-COLLABORATION_GRAPH    = YES
+COLLABORATION_GRAPH    = NO
 GROUP_GRAPHS           = YES
 UML_LOOK               = NO
 UML_LIMIT_NUM_FIELDS   = 10
 DOT_UML_DETAILS        = NO
 DOT_WRAP_THRESHOLD     = 17
 TEMPLATE_RELATIONS     = NO
-INCLUDE_GRAPH          = YES
-INCLUDED_BY_GRAPH      = YES
+INCLUDE_GRAPH          = NO
+INCLUDED_BY_GRAPH      = NO
 CALL_GRAPH             = NO
 CALLER_GRAPH           = NO
-GRAPHICAL_HIERARCHY    = YES
-DIRECTORY_GRAPH        = YES
+GRAPHICAL_HIERARCHY    = NO
+DIRECTORY_GRAPH        = NO
 DIR_GRAPH_MAX_DEPTH    = 1
 DOT_IMAGE_FORMAT       = svg
-INTERACTIVE_SVG        = YES
+INTERACTIVE_SVG        = NO
 DOT_PATH               =
 DOTFILE_DIRS           =
 MSCFILE_DIRS           =
@@ -295,4 +297,4 @@ DOT_GRAPH_MAX_NODES    = 50
 MAX_DOT_GRAPH_DEPTH    = 0
 DOT_MULTI_TARGETS      = NO
 GENERATE_LEGEND        = YES
-DOT_CLEANUP            = NO
+DOT_CLEANUP            = YES

@@ -61,7 +61,7 @@ Instantiating a registry checks:
 | Rule | Diagnostic |
 | --- | --- |
 | Every member is a valid setting: `path`, `value_type`, `default_value()` returning `value_type`, a `ConfigTraits` conversion, a validator of the right type | Unsatisfied `IsSetting` constraint naming the setting |
-| Paths are well formed: non-empty dot-separated segments without whitespace, `=`, `#`, `"` or `\` | `Registry paths must be non-empty and contain only valid non-empty segments` |
+| Paths are well formed: non-empty dot-separated segments without whitespace, `=`, `#`, a double quote or a backslash | `Registry paths must be non-empty and contain only valid non-empty segments` |
 | Paths are unique, and no path is a prefix of another (`server` next to `server.port`); this also rejects listing a setting twice | `Registry paths must be unique and neither path may be a prefix of another` |
 | Environment variable names match `[A-Za-z_][A-Za-z0-9_]*` | `Environment override names must be non-empty and match [A-Za-z_][A-Za-z0-9_]*` |
 | Environment variable names are unique | `Environment override names must be unique within a Registry` |
