@@ -1,13 +1,13 @@
-# Doxyfile for cppfig — modern C++20 configuration library
-# Generated for Doxygen ≥ 1.9 with doxygen-awesome-css theme.
+# Doxyfile for cppfig. Build the documentation with the docs target
+# (cmake --workflow --preset docs): cmake/Docs.cmake generates a Doxyfile that
+# includes this one and adds the doxygen-awesome-css theme, the output
+# directory and the settings that depend on the installed Doxygen version.
 
 DOXYFILE_ENCODING      = UTF-8
 PROJECT_NAME           = "cppfig"
 PROJECT_NUMBER         = "0.1.0"
 PROJECT_BRIEF          = "Modern C++20 compile-time type-safe configuration library"
 PROJECT_LOGO           =
-# Set by the docs target in cmake/Docs.cmake.
-OUTPUT_DIRECTORY       = $(CPPFIG_DOCS_OUTPUT_DIR)
 CREATE_SUBDIRS         = NO
 CREATE_SUBDIRS_LEVEL   = 8
 ALLOW_UNICODE_NAMES    = NO
@@ -182,17 +182,10 @@ IGNORE_PREFIX          =
 GENERATE_HTML          = YES
 HTML_OUTPUT            = html
 HTML_FILE_EXTENSION    = .html
-HTML_HEADER            =
+# HTML_HEADER, HTML_EXTRA_STYLESHEET and HTML_EXTRA_FILES are set by
+# cmake/Docs.cmake, which downloads the theme.
 HTML_FOOTER            =
 HTML_STYLESHEET        =
-# CPPFIG_DOCS_THEME_DIR is set by the docs target in cmake/Docs.cmake, which
-# downloads the theme there.
-HTML_EXTRA_STYLESHEET  = $(CPPFIG_DOCS_THEME_DIR)/doxygen-awesome.css \
-                         $(CPPFIG_DOCS_THEME_DIR)/doxygen-awesome-sidebar-only.css
-HTML_EXTRA_FILES       = $(CPPFIG_DOCS_THEME_DIR)/doxygen-awesome-darkmode-toggle.js \
-                         $(CPPFIG_DOCS_THEME_DIR)/doxygen-awesome-fragment-copy-button.js \
-                         $(CPPFIG_DOCS_THEME_DIR)/doxygen-awesome-paragraph-link.js \
-                         $(CPPFIG_DOCS_THEME_DIR)/doxygen-awesome-interactive-toc.js
 HTML_COLORSTYLE        = LIGHT
 HTML_COLORSTYLE_HUE    = 220
 HTML_COLORSTYLE_SAT    = 100
