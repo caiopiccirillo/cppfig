@@ -14,7 +14,7 @@
 
 /// @file
 /// ConfigTraits for std::chrono::duration. Kept out of cppfig.h because the
-/// full <chrono> header roughly doubles cppfig's parse time; include it in the
+/// full `<chrono>` header roughly doubles cppfig's parse time; include it in the
 /// translation units that declare duration settings.
 
 namespace cppfig {

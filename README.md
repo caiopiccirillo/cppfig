@@ -3,7 +3,7 @@
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/caiopiccirillo/cppfig)
 [![Documentation](https://img.shields.io/badge/docs-online-blue.svg)](https://caiopiccirillo.github.io/cppfig/)
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B20)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/caiopiccirillo/cppfig/blob/main/LICENSE)
 
 A header-only C++20 configuration library. You declare settings as types and list them in a registry; cppfig checks the registry at compile time, loads a flat `.conf` file and environment overrides once, and gives you a frozen configuration whose reads are a single load from typed storage.
 
@@ -181,4 +181,4 @@ docs/                 # Guides and measurements
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT License - see [LICENSE](https://github.com/caiopiccirillo/cppfig/blob/main/LICENSE) for details.
